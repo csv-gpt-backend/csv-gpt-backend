@@ -1,4 +1,4 @@
 fastapi
 uvicorn
-openai>=1.0.0
 requests
+openai>=1.0.0
