@@ -6,39 +6,35 @@ from typing import List, Dict, Any
 import os, csv, io, requests
 from openai import OpenAI
 
-app = FastAPI(
-    title="CSV QA Backend",
-    description="Descarga CSV desde URLs (Wix), construye contexto y responde de forma estricta con OpenAI.",
-    version="1.0.0",
-)
+app = FastAPI(title="CSV GPT5 QA")
 
-# ======= Config =======
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # configúralo en Render → Settings → Environment
-OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-5")  # p.ej. gpt-5 o gpt-4o-mini
-MAX_ROWS       = int(os.getenv("MAX_ROWS_PER_CSV", "300"))
+# ===== Configuración =====
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")  # Forzar gpt-5 por defecto
+MAX_ROWS = 300  # Número máximo de filas a procesar por CSV
 
-# CORS (en producción limita a tu dominio de Anvil)
+# CORS (permite llamadas desde Anvil)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # ej: ["https://TU-APP.anvil.app"]
+    allow_origins=["*"],  # luego limita a tu dominio Anvil
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ======= Modelos =======
-class AskURLsBody(BaseModel):
+# ===== Schemas =====
+class AskBody(BaseModel):
     question: str
     urls: List[str]
 
-# ======= Utilidades CSV =======
+# ===== Utilidades CSV =====
 def sniff_delimiter(sample: str) -> str:
     try:
-        return csv.Sniffer().sniff(sample, delimiters=[",",";","|","\t"]).delimiter
-    except Exception:
+        return csv.Sniffer().sniff(sample, delimiters=[",",";","\t"]).delimiter
+    except:
         return ";" if ";" in sample and "," not in sample else ","
 
-def fetch_csv_from_url(url: str, max_rows: int = MAX_ROWS) -> Dict[str, Any]:
+def fetch_csv(url: str, max_rows=MAX_ROWS) -> Dict[str, Any]:
     r = requests.get(url, timeout=30)
     r.raise_for_status()
     text = r.text
@@ -50,78 +46,78 @@ def fetch_csv_from_url(url: str, max_rows: int = MAX_ROWS) -> Dict[str, Any]:
     if not rows:
         return {"name": name, "columns": [], "rows": []}
 
-    cols = [c.strip() for c in rows[0]]
-    body = []
+    columns = [c.strip() for c in rows[0]]
+    data = []
     for rrow in rows[1:max_rows+1]:
-        body.append({cols[i]: (rrow[i] if i < len(cols) else "") for i in range(len(cols))})
-    return {"name": name, "columns": cols, "rows": body}
+        data.append({columns[i]: rrow[i] if i < len(rrow) else "" for i in range(len(columns))})
 
-def compact_csv(csv_obj: Dict[str, Any], max_rows: int = MAX_ROWS) -> str:
-    head = f"# {csv_obj['name']}\ncolumns: {', '.join(csv_obj['columns'])}\n"
-    lines = []
-    for i, row in enumerate(csv_obj["rows"][:max_rows], start=1):
-        parts = []
-        for k in csv_obj["columns"]:
-            v = str(row.get(k, "")).replace("\n", " ").replace("\r", " ")
-            parts.append(f"{k}={v}")
-        lines.append(f"{i}. " + "; ".join(parts))
-    return head + "\n".join(lines)
+    return {"name": name, "columns": columns, "rows": data}
 
-def build_prompt_strict(question: str, csvs: List[Dict[str, Any]]) -> str:
-    parts = [
+# ===== GPT =====
+def build_prompt(question: str, csvs: List[Dict[str, Any]]) -> str:
+    context_parts = [
         "Eres un analista de datos ESTRICTO.",
-        "REGLAS:",
-        "1) SOLO usar información que aparece en los CSV provistos.",
-        "2) Si falta información, responde exactamente: 'No hay datos suficientes para responder.'",
-        "3) Responde en español, conciso.",
-        "4) Cita archivo y columnas cuando corresponda.",
-        "5) No inventes ni uses conocimiento externo.\n",
+        "Reglas:",
+        "1) SOLO usa la información contenida en los CSV.",
+        "2) Si no hay datos suficientes, responde exactamente: 'No hay datos suficientes para responder.'",
+        "3) Responde en español, claro y conciso.\n",
         "=== CONTEXTO CSV ===\n",
     ]
-    for c in csvs:
-        parts.append(compact_csv(c))
-        parts.append("\n---\n")
-    parts.append(f"=== PREGUNTA ===\n{question}\n")
-    parts.append("=== INSTRUCCIÓN FINAL ===\nResponde cumpliendo estrictamente las reglas.")
-    return "\n".join(parts)
+    for csv_obj in csvs:
+        context_parts.append(f"# {csv_obj['name']}\nColumnas: {', '.join(csv_obj['columns'])}\n")
+        for i, row in enumerate(csv_obj["rows"][:5], start=1):  # solo las primeras 5 filas
+            context_parts.append(f"{i}. " + "; ".join(f"{k}={v}" for k, v in row.items()))
+        context_parts.append("\n---\n")
+    context_parts.append(f"=== PREGUNTA ===\n{question}")
+    return "\n".join(context_parts)
 
-def openai_answer_strict(prompt: str) -> str:
+def ask_gpt(prompt: str) -> str:
     if not OPENAI_API_KEY:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY no configurada en el entorno.")
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY no configurada")
     client = OpenAI(api_key=OPENAI_API_KEY)
     resp = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
-            {"role": "system",
-             "content": "Eres un analista de datos muy estricto. Si algo no está en el contexto, di: 'No hay datos suficientes para responder.'"},
-            {"role": "user", "content": prompt},
+            {"role": "system", "content": "Eres un analista de datos estricto y preciso."},
+            {"role": "user", "content": prompt}
         ],
         temperature=0.1,
-        max_tokens=900,
+        max_tokens=800
     )
     return resp.choices[0].message.content.strip()
 
-# ======= Endpoints =======
-@app.get("/")
-def root():
-    return {"message": "API ok"}
+# ===== Endpoints =====
+@app.get("/ping")
+def ping():
+    return {"status": "ok"}
 
 @app.get("/model")
-def current_model():
+def model_name():
     return {"model": OPENAI_MODEL}
 
-@app.post("/ask_urls")
-def ask_urls(body: AskURLsBody):
+@app.post("/ask")
+def ask(body: AskBody):
     csvs = []
-    for u in body.urls:
+    confirmations = []
+    for url in body.urls:
         try:
-            csvs.append(fetch_csv_from_url(u))
+            d = fetch_csv(url)
+            csvs.append(d)
+            confirmations.append({
+                "name": d["name"],
+                "columns": len(d["columns"]),
+                "rows": len(d["rows"])
+            })
         except Exception as e:
-            csvs.append({"name": u, "columns": [], "rows": [], "error": str(e)})
+            confirmations.append({"name": url, "error": str(e)})
 
-    if not any(c.get("rows") for c in csvs):
-        raise HTTPException(status_code=400, detail="No se pudo leer ningún CSV válido desde las URLs.")
+    if not any(c["rows"] for c in csvs if "rows" in c):
+        raise HTTPException(status_code=400, detail="No se pudo leer ningún CSV válido.")
 
-    prompt = build_prompt_strict(body.question, csvs)
-    answer = openai_answer_strict(prompt)
-    return {"answer": answer, "model": OPENAI_MODEL}
+    prompt = build_prompt(body.question, csvs)
+    answer = ask_gpt(prompt)
+    return {
+        "answer": answer,
+        "model": OPENAI_MODEL,
+        "csvs_loaded": confirmations
+    }
