@@ -2,6 +2,7 @@
   "name": "csv-gpt-backend",
   "type": "module",
   "dependencies": {
-    "csv-parser": "^3.0.0"
+    "openai": "^4.56.0"
   }
 }
+
