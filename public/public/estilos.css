@@ -1,21 +1,62 @@
-/* Reducir tamaño de letra en toda la tabla */
-#tabla {
-  font-size: 12px;      /* tamaño más pequeño */
-  line-height: 1.2;     /* menos espacio vertical */
-  padding: 2px;
+/* Contenedor general */
+body {
+  font-family: Arial, sans-serif;
+  background-color: #ffffff;
+  margin: 0;
+  padding: 0;
+  font-size: 12px; /* Tamaño base más pequeño */
 }
 
-/* Ajustar las celdas para que no se vean muy grandes */
-#tabla td {
-  padding: 4px 6px;
-  white-space: nowrap;  /* evita que se divida en varias líneas */
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Encabezados más compactos */
-#tabla th {
-  font-size: 12px;
+/* Título principal */
+h1, h2, h3 {
+  font-size: 14px; /* Más pequeño que el normal */
   font-weight: bold;
-  padding: 4px 6px;
+  margin-bottom: 8px;
+  color: #333333;
+}
+
+/* Caja de búsqueda */
+#resultadosContainer {
+  font-size: 11px; /* Letra pequeña para los resultados */
+  color: #222222;
+  line-height: 1.4;
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background: #f9f9f9;
+  max-height: 250px; /* Limita el tamaño máximo */
+  overflow-y: auto;  /* Scroll si hay muchos resultados */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Cada resultado individual */
+.resultado-item {
+  padding: 4px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.resultado-item:last-child {
+  border-bottom: none;
+}
+
+/* Texto destacado como nombre del estudiante */
+.resultado-item strong {
+  font-size: 12px;
+  color: #000000;
+}
+
+/* Botones */
+button {
+  font-size: 11px;
+  padding: 4px 8px;
+  margin: 2px;
+  border: 1px solid #ccc;
+  background-color: #f0f0f0;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #e0e0e0;
 }
