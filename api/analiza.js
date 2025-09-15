@@ -6,7 +6,7 @@ import Papa from 'papaparse';
 const MODEL = process.env.MODEL || 'gpt-5';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// -------- Utilidades numéricas --------
+// ---------- Utilidades numéricas ----------
 const isNumber = (v) => v !== null && v !== '' && !isNaN(Number(v));
 const toNum = (v) => (isNumber(v) ? Number(v) : null);
 
@@ -40,7 +40,7 @@ function stats(values) {
   };
 }
 
-// -------- Cacheo del CSV en memoria fría --------
+// ---------- Cacheo del CSV ----------
 async function loadCsvOnce() {
   if (globalThis.__CSV_CACHE) return globalThis.__CSV_CACHE;
   const filePath = path.join(process.cwd(), 'public', 'datos.csv');
@@ -58,7 +58,7 @@ async function loadCsvOnce() {
   return rows;
 }
 
-// -------- Detecciones y helpers --------
+// ---------- Detecciones y helpers ----------
 function detectNumericCols(rows) {
   if (!rows.length) return [];
   const cols = Object.keys(rows[0] || {});
@@ -107,7 +107,7 @@ function extractPossibleAlumno(q) {
   return mName ? mName[1] : null;
 }
 
-// -------- Prompts --------
+// ---------- Prompts ----------
 function buildSystemPrompt(groupCol, numericCols, detectedGroups) {
   return `
 Eres un analista que responde en ESPAÑOL. Reglas:
@@ -115,7 +115,7 @@ Eres un analista que responde en ESPAÑOL. Reglas:
 - Incluye TODOS los grupos detectados (${detectedGroups.join(', ')}) en comparaciones.
 - Cuando compares grupos, usa "Formato: Tabla" y "Fuente: Ambos".
 - Reporta métricas exactas calculadas (n, min, max, media, p25, p50, p75, p90).
-- No inventes alumnos ni variables. Di si faltan datos.
+- No inventes alumnos ni variables. Si faltan datos, dilo.
 
 Variables numéricas detectadas: ${numericCols.join(', ')}
 Columna de grupo: ${groupCol}
@@ -137,7 +137,7 @@ Instrucción final: Responde en español, conciso y centrado en la pregunta. Si 
 `;
 }
 
-// -------- Llamada a OpenAI (Responses API, sin temperature) --------
+// ---------- Llamada a OpenAI (Responses API; sin temperature) ----------
 async function callOpenAI({ system, user }) {
   if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY no está configurado.');
   const res = await fetch('https://api.openai.com/v1/responses', {
@@ -152,7 +152,6 @@ async function callOpenAI({ system, user }) {
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      // ¡NO incluir "temperature" aquí!
     }),
   });
   if (!res.ok) {
@@ -168,7 +167,7 @@ async function callOpenAI({ system, user }) {
   return text;
 }
 
-// -------- Handler --------
+// ---------- Handler ----------
 export default async function handler(req, res) {
   try {
     const rows = await loadCsvOnce();
@@ -187,7 +186,6 @@ export default async function handler(req, res) {
 
     const alumnoFromQ = alumnoParam || extractPossibleAlumno(q || '');
     const studentRows = pickStudentRows(rows, alumnoFromQ, alumnoCol);
-
     const groupMetrics = computeGroupMetrics(rows, groupCol, numericCols);
 
     const system = buildSystemPrompt(groupCol, numericCols, detectedGroups);
@@ -205,14 +203,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       answer: answerText,
-      selection: {
-        alumno: alumnoFromQ || null,
-        groups: detectedGroups,
-      },
-      metrics: {
-        numericCols,
-        groupMetrics,
-      },
+      selection: { alumno: alumnoFromQ || null, groups: detectedGroups },
+      metrics: { numericCols, groupMetrics },
     });
   } catch (err) {
     console.error(err);
