@@ -1,0 +1,21 @@
+/* Reducir tamaño de letra en toda la tabla */
+#tabla {
+  font-size: 12px;      /* tamaño más pequeño */
+  line-height: 1.2;     /* menos espacio vertical */
+  padding: 2px;
+}
+
+/* Ajustar las celdas para que no se vean muy grandes */
+#tabla td {
+  padding: 4px 6px;
+  white-space: nowrap;  /* evita que se divida en varias líneas */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Encabezados más compactos */
+#tabla th {
+  font-size: 12px;
+  font-weight: bold;
+  padding: 4px 6px;
+}
