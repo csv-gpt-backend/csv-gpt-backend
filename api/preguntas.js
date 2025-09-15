@@ -1,31 +1,41 @@
 import fs from 'fs';
 import path from 'path';
-import csv from 'csv-parser';
 
 export default function handler(req, res) {
-  // Permitir que Wix consuma la API
+  // CORS para poder llamarlo desde Wix
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
   if (req.method === 'OPTIONS') return res.status(204).end();
 
+  const q = (req.query.q || '').toString().toLowerCase().trim();
   const filePath = path.join(process.cwd(), 'public', 'datos.csv');
-  const results = [];
-  const q = (req.query.q || '').toLowerCase();
 
-  fs.createReadStream(filePath)
-    .pipe(csv({ separator: ';' })) // <- ¡Aquí se especifica el separador correcto!
-    .on('data', (row) => results.push(row))
-    .on('end', () => {
-      const filtrado = q
-        ? results.filter(r => JSON.stringify(r).toLowerCase().includes(q))
-        : results;
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
 
-      res.status(200).json({
-        total: filtrado.length,
-        resultados: filtrado
-      });
-    })
-    .on('error', (err) => res.status(500).json({ error: err.message }));
+    // Normalizamos saltos de línea y BOM
+    const text = raw.replace(/^\uFEFF/, '').replace(/\r/g, '');
+    const lines = text.split('\n').filter(l => l.trim() !== '');
+
+    if (lines.length === 0) {
+      return res.status(200).json({ file: 'datos.csv', total: 0, resultados: [] });
+    }
+
+    const headers = lines[0].split(';').map(h => h.trim());
+    const rows = lines.slice(1).map(line => {
+      const cols = line.split(';').map(v => v.trim());
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = cols[i] ?? ''; });
+      return obj;
+    });
+
+    const resultados = q
+      ? rows.filter(r => JSON.stringify(r).toLowerCase().includes(q))
+      : rows;
+
+    res.status(200).json({ file: 'datos.csv', total: resultados.length, resultados });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Error leyendo CSV' });
+  }
 }
