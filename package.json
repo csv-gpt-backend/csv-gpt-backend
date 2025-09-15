@@ -1,0 +1,7 @@
+{
+  "name": "csv-gpt-backend",
+  "type": "module",
+  "dependencies": {
+    "csv-parser": "^3.0.0"
+  }
+}
