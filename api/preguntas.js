@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 
 export default function handler(req, res) {
-  // CORS para poder llamarlo desde Wix
+  // CORS para permitir llamadas desde Wix
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const q = (req.query.q || '').toString().toLowerCase().trim();
@@ -14,7 +15,7 @@ export default function handler(req, res) {
   try {
     const raw = fs.readFileSync(filePath, 'utf8');
 
-    // Normalizamos saltos de línea y BOM
+    // Limpiar saltos de línea y BOM
     const text = raw.replace(/^\uFEFF/, '').replace(/\r/g, '');
     const lines = text.split('\n').filter(l => l.trim() !== '');
 
