@@ -2,11 +2,10 @@ import fs from 'fs';
 import path from 'path';
 
 export default function handler(req, res) {
-  // CORS para permitir llamadas desde Wix
+  // CORS para poder llamar desde Wix
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const q = (req.query.q || '').toString().toLowerCase().trim();
@@ -15,14 +14,14 @@ export default function handler(req, res) {
   try {
     const raw = fs.readFileSync(filePath, 'utf8');
 
-    // Limpiar saltos de línea y BOM
+    // Normalizamos BOM y saltos de línea (Windows/Mac)
     const text = raw.replace(/^\uFEFF/, '').replace(/\r/g, '');
     const lines = text.split('\n').filter(l => l.trim() !== '');
-
     if (lines.length === 0) {
       return res.status(200).json({ file: 'datos.csv', total: 0, resultados: [] });
     }
 
+    // CSV con punto y coma ;
     const headers = lines[0].split(';').map(h => h.trim());
     const rows = lines.slice(1).map(line => {
       const cols = line.split(';').map(v => v.trim());
