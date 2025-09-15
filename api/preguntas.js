@@ -20,7 +20,7 @@ export default function handler(req, res) {
 
   const rows = [];
   fs.createReadStream(filePath)
-    .pipe(csv(/* { separator: ';' }  <- usa esto si tu CSV va con ; */))
+     .pipe(csv({ separator: ';' }))
     .on('data', (row) => rows.push(row))
     .on('end', () => {
       let out = q
