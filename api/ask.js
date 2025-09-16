@@ -1,12 +1,14 @@
-// api/ask.js — ÚNICO endpoint. GPT-5 + Code Interpreter con CSV.
-// Robustecido: CORS siempre, GET/OPTIONS/HEAD, diag/dryrun para depurar.
+// api/ask.js — GPT-5 con Code Interpreter y archivo CSV usando Assistants v2.
+// Corrige el 400 "Unknown parameter: tool_resources" de Responses.
+// Incluye CORS siempre, y endpoints ping/diag/dryrun para depurar.
 
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import OpenAI from "openai";
 
-const MODEL = process.env.OPENAI_MODEL || "gpt-5"; // cambia si tu cuenta usa otro ID
+const MODEL = process.env.OPENAI_MODEL || "gpt-5"; // ajusta si tu cuenta usa otro ID
+
 const CSV_CANDIDATES = [
   path.join(process.cwd(), "public", "datos.csv"),
   path.join(process.cwd(), "datos.csv"),
@@ -43,11 +45,37 @@ async function getOrUploadFileId() {
   return { fileId: uploaded.id, source: "uploaded" };
 }
 
+// Esperar a que el run termine
+async function waitForRunCompletion(threadId, runId, timeoutMs = 120000, intervalMs = 1500) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const run = await client.beta.threads.runs.retrieve(threadId, runId);
+    if (run.status === "completed") return run;
+    if (run.status === "failed" || run.status === "expired" || run.status === "cancelled") {
+      throw new Error(`Run ${run.status}: ${run.last_error?.message || "sin detalles"}`);
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  throw new Error("Timeout esperando a que el run complete.");
+}
+
+// Extraer texto de los mensajes del thread (último del asistente)
+function extractAssistantText(messagesList) {
+  for (const m of messagesList.data) {
+    if (m.role === "assistant") {
+      let out = "";
+      for (const p of m.content) {
+        if (p.type === "text") out += p.text.value + "\n";
+      }
+      if (out.trim()) return out.trim();
+    }
+  }
+  return "(sin texto)";
+}
+
 export default async function handler(req, res) {
-  // CORS SIEMPRE
   try { setCors(res); } catch {}
 
-  // OPTIONS/HEAD
   if (req.method === "OPTIONS" || req.method === "HEAD") {
     res.status(200).end();
     return;
@@ -78,26 +106,35 @@ export default async function handler(req, res) {
         csvCandidates: CSV_CANDIDATES,
         csvFound: !!csvPath,
         csvPath,
-        vercel: !!process.env.VERCEL,
+        sdkVersion: OpenAI.VERSION,
         node: process.version
       });
       return;
     }
 
-    // Dryrun: probar lectura del CSV con pandas
+    const { fileId } = await getOrUploadFileId();
+
+    // Dryrun: contar filas con pandas y responder "filas = N"
     if (qRaw.toLowerCase() === "dryrun") {
-      const { fileId } = await getOrUploadFileId();
-      const resp = await client.responses.create({
+      const thread = await client.beta.threads.create({
+        messages: [{
+          role: "user",
+          content:
+`Carga el CSV adjunto con pandas y responde EXACTAMENTE "filas = N" (sin más texto).`,
+        }],
+      });
+
+      const run = await client.beta.threads.runs.create(thread.id, {
         model: MODEL,
+        instructions: "Eres un analista. Usa Code Interpreter.",
         tools: [{ type: "code_interpreter" }],
         tool_resources: { code_interpreter: { file_ids: [fileId] } },
-        input: `SYSTEM:
-Eres un analista. Usa pandas para cargar el CSV adjunto.
-
-USER:
-Carga el CSV y responde SOLO: "filas = N" (sin más texto).`
       });
-      res.status(200).json({ ok:true, respuesta: resp.output_text || "(sin texto)" });
+
+      await waitForRunCompletion(thread.id, run.id);
+      const messages = await client.beta.threads.messages.list(thread.id, { limit: 10 });
+      const text = extractAssistantText(messages);
+      res.status(200).json({ ok:true, respuesta: text });
       return;
     }
 
@@ -107,30 +144,6 @@ Carga el CSV y responde SOLO: "filas = N" (sin más texto).`
       return;
     }
 
-    const { fileId } = await getOrUploadFileId();
-
-    const system = `Eres un analista educativo. Usa ÚNICAMENTE el CSV adjunto.
-Carga el CSV con Python (pandas) y realiza los cálculos necesarios.
-Responde en español (6–8 líneas), claro y conciso. No inventes datos ni columnas.`;
-
-    const user = `Pregunta: ${qRaw}
-
-Instrucciones:
-- Carga el CSV adjunto (usa pandas).
-- Calcula medias, percentiles y comparaciones por alumno/dimensión cuando aplique.
-- Redacta en lenguaje natural citando valores clave.`;
-
-    const resp = await client.responses.create({
-      model: MODEL,
-      tools: [{ type: "code_interpreter" }],
-      tool_resources: { code_interpreter: { file_ids: [fileId] } },
-      input: `SYSTEM:\n${system}\n\nUSER:\n${user}`
-    });
-
-    res.status(200).json({ ok:true, respuesta: resp.output_text || "(sin texto)" });
-  } catch (e) {
-    // Si algo se rompe ANTES, esto asegura respuesta con CORS
-    try { setCors(res); } catch {}
-    res.status(500).json({ ok:false, error: e?.message || "Error interno" });
-  }
-}
+    const system =
+`Eres un analista educativo. Usa EXCLUSIVAMENTE el CSV adjunto.
+Car
