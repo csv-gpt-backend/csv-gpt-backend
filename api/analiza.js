@@ -1,24 +1,28 @@
-// api/analiza.js  (Vercel – ESM)
+// api/analiza.js  (Vercel – ESM, con CORS + DIAGNÓSTICO)
 
 import fs from "fs/promises";
 import path from "path";
 import OpenAI from "openai";
 
-// ---------- CONFIG ----------
-const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini"; // cambia cuando uses GPT-5
+// ========= CONFIG =========
+const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini"; // cámbialo cuando uses GPT-5
 const CSV_CANDIDATES = [
   path.join(process.cwd(), "public", "datos.csv"),
   path.join(process.cwd(), "datos.csv"),
 ];
+const DEBUG_FLAG = process.env.DEBUG === "1"; // activa modo debug desde Vercel si quieres
 
 let __csvCache = { rows: null, headers: null };
 
-// ---------- CSV ----------
+// ========= CSV =========
 async function readCsvFile() {
   for (const p of CSV_CANDIDATES) {
-    try { return await fs.readFile(p, "utf8"); } catch {}
+    try {
+      const txt = await fs.readFile(p, "utf8");
+      return { txt, path: p };
+    } catch {}
   }
-  throw new Error("No encontré public/datos.csv ni ./datos.csv en el deployment.");
+  throw new Error("No encontré public/datos.csv ni ./datos.csv en el deploy.");
 }
 
 function parseCsv(text) {
@@ -27,7 +31,6 @@ function parseCsv(text) {
 
   for (let i = 0; i < text.length; i++) {
     const ch = text[i], next = text[i + 1];
-
     if (inQuotes) {
       if (ch === '"' && next === '"') { cell += '"'; i++; }
       else if (ch === '"') inQuotes = false;
@@ -45,18 +48,20 @@ function parseCsv(text) {
 
 async function loadCsvOnce() {
   if (__csvCache.rows) return __csvCache;
-  const raw = await readCsvFile();
-  const arr = parseCsv(raw);
+  const { txt, path: usedPath } = await readCsvFile();
+  const arr = parseCsv(txt);
   if (arr.length < 2) throw new Error("CSV vacío o sin datos suficientes.");
+
   const headers = arr[0].map(h => String(h).trim());
   const rows = arr.slice(1).map(r => {
     const o = {}; headers.forEach((h,i)=> o[h] = r[i] ?? ""); return o;
   });
-  __csvCache = { rows, headers };
+
+  __csvCache = { rows, headers, usedPath, rowCount: rows.length };
   return __csvCache;
 }
 
-// ---------- helpers ----------
+// ========= helpers =========
 function isNumeric(v) {
   const s = typeof v === "string" ? v.replace(",", ".").trim() : v;
   return s !== "" && Number.isFinite(Number(s));
@@ -112,7 +117,7 @@ function extractNameFromQuestion(q) {
   return null;
 }
 
-// ---------- OpenAI ----------
+// ========= OpenAI =========
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 async function askOpenAI({ model, system, input }) {
@@ -121,29 +126,69 @@ async function askOpenAI({ model, system, input }) {
   }
   const r = await client.responses.create({
     model: model || DEFAULT_MODEL,
-    // Sin 'temperature' para evitar "Unsupported parameter"
+    // Nota: sin 'temperature' para evitar "Unsupported parameter"
     system,
     input,
   });
   return r.output_text || "";
 }
 
-// ---------- handler ----------
+// ========= Handler =========
 export default async function handler(req, res) {
-  // CORS
+  // --- CORS ---
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") { res.status(200).end(); return; }
+  // --------------
 
   try {
     const q = (req.query?.q || req.body?.q || "").toString().trim();
-    if (!q) { res.status(400).json({ ok:false, error:"Falta el parámetro q." }); return; }
+    const diag = req.query?.diag === "1" || req.body?.diag === "1";
+    const debug = DEBUG_FLAG || req.query?.debug === "1" || req.body?.debug === "1";
 
-    const { rows, headers } = await loadCsvOnce();
+    // PING de salud
+    if (q.toLowerCase() === "ping") {
+      res.status(200).json({ ok: true, respuesta: "pong" });
+      return;
+    }
+
+    if (diag) {
+      const out = { ok: true, step: "diag" };
+      try {
+        out.hasApiKey = Boolean(process.env.OPENAI_API_KEY);
+        const csv = await loadCsvOnce();
+        out.csvPath = csv.usedPath;
+        out.headers = csv.headers;
+        out.rowCount = csv.rowCount;
+        out.numericCols = csv.headers.filter(h => csv.rows.some(r => isNumeric(r[h])));
+      } catch (e) {
+        out.ok = false;
+        out.error = `DIAG: ${e.message}`;
+      }
+      res.status(200).json(out);
+      return;
+    }
+
+    if (!q) {
+      res.status(400).json({ ok:false, error:"Falta el parámetro q." });
+      return;
+    }
+
+    // 1) CSV
+    let csv;
+    try {
+      csv = await loadCsvOnce();
+    } catch (e) {
+      if (debug) return res.status(200).json({ ok:false, step:"loadCsv", error:e.message });
+      throw e;
+    }
+
+    const { rows, headers } = csv;
     const nameCol = detectNameColumn(headers);
     const numericCols = headers.filter(h => rows.some(r => isNumeric(r[h])));
 
+    // 2) alumno
     const alumnoQ = (req.query?.alumno || "").toString().trim();
     const alumnoName = alumnoQ || extractNameFromQuestion(q) || "";
     let alumnoRow = null;
@@ -152,8 +197,10 @@ export default async function handler(req, res) {
       alumnoRow = rows.find(r => String(r[nameCol]||"").toLowerCase().includes(needle)) || null;
     }
 
+    // 3) métricas
     const groupMetrics = computeMetrics(rows, numericCols);
 
+    // 4) payload para el modelo
     const payload = {
       alumno: alumnoRow ? String(alumnoRow[nameCol]) : "(no encontrado)",
       nameColumn: nameCol,
@@ -177,7 +224,13 @@ Instrucción:
 - Si preguntan por una dimensión (p.ej. AUTOESTIMA), compara con media y percentiles.
 - Respuesta breve (6–8 líneas).`;
 
-    const respuesta = await askOpenAI({ system, input: prompt, model: DEFAULT_MODEL });
+    let respuesta;
+    try {
+      respuesta = await askOpenAI({ system, input: prompt, model: DEFAULT_MODEL });
+    } catch (e) {
+      if (debug) return res.status(200).json({ ok:false, step:"openai", error:e.message });
+      throw e;
+    }
 
     res.status(200).json({ ok:true, respuesta, alumno: payload.alumno, metrics: groupMetrics });
   } catch (e) {
