@@ -1,13 +1,16 @@
 // api/ask.js — Vercel Serverless (Node 18+, CommonJS)
-// CSV -> GPT-5 en cada consulta. CORS siempre. Health checks en JSON.
+// ✔ CORS siempre
+// ✔ Health checks en JSON: ping / version / diag
+// ✔ Lee CSV (api/data.csv o data.csv) y lo manda COMPLETO al modelo en cada consulta
 
 const fs = require("fs");
 const path = require("path");
 
-const VERSION = "gpt5-csv-direct-main-4"; // <- DEBE verse en ?q=version
+const VERSION = "gpt5-csv-direct-main-5"; // <-- DEBE verse en ?q=version
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
 
+/* ===== Utils ===== */
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -19,7 +22,6 @@ function send(res, code, obj) {
   cors(res);
   res.end(JSON.stringify(obj));
 }
-
 function detectDelimiter(sample) {
   const head = sample.split(/\r?\n/).slice(0, 3).join("\n");
   const counts = [
@@ -41,15 +43,15 @@ function loadCSV() {
       const first = (csv.split(/\r?\n/).find(Boolean) || "");
       const headers = first.split(delim).map(h => h.trim());
       const rows = Math.max(0, csv.split(/\r?\n/).filter(Boolean).length - 1);
-      return { csv, file: f, headers, rows };
+      return { csv, filePath: f, rows, headers };
     }
   }
   throw new Error("CSV no encontrado (api/data.csv o data.csv).");
 }
-
 async function callOpenAI(system, user) {
   const payload = {
-    model: "gpt-5",             // Si no está habilitado, usa "gpt-4o"
+    // Si tu cuenta no tiene gpt-5, cambia a "gpt-4o"
+    model: "gpt-5",
     temperature: 0,
     response_format: { type: "json_object" },
     messages: [{ role: "system", content: system }, { role: "user", content: user }],
@@ -65,6 +67,7 @@ async function callOpenAI(system, user) {
   try { return JSON.parse(text); } catch { return { respuesta: text }; }
 }
 
+/* ===== Handler ===== */
 module.exports = async (req, res) => {
   try {
     if (req.method === "OPTIONS") { cors(res); res.statusCode = 204; return res.end(); }
@@ -73,26 +76,29 @@ module.exports = async (req, res) => {
     const q = (isGET ? req.query.q : req.body?.q)?.toString().trim() || "";
     const csvInline = isGET ? null : (req.body?.csv ?? null);
 
-    // Health checks (SIEMPRE JSON)
+    // ---- Health checks (SIEMPRE JSON) ----
     if (!q || q.toLowerCase() === "ping")    return send(res, 200, { ok: true });
     if (q.toLowerCase() === "version")       return send(res, 200, { version: VERSION });
 
-    // Cargar CSV (inline o del deploy)
-    let csv, file, headers, rows;
+    // ---- Cargar CSV (inline o disco) ----
+    let csv, filePath, rows, headers, source = "fs";
     if (typeof csvInline === "string" && csvInline.trim()) {
-      csv = csvInline; file = "(inline)";
+      csv = csvInline; filePath = "(inline)"; source = "inline";
       const delim = detectDelimiter(csv);
       headers = (csv.split(/\r?\n/).find(Boolean) || "").split(delim).map(h=>h.trim());
       rows = Math.max(0, csv.split(/\r?\n/).filter(Boolean).length - 1);
     } else {
-      const loaded = loadCSV(); csv = loaded.csv; file = loaded.file; headers = loaded.headers; rows = loaded.rows;
+      const loaded = loadCSV();
+      csv = loaded.csv; filePath = loaded.filePath; rows = loaded.rows; headers = loaded.headers;
     }
+
     if (q.toLowerCase() === "diag") {
-      return send(res, 200, { file, rows, headers });
+      return send(res, 200, { source, filePath, url: null, rows, headers });
     }
 
     if (!OPENAI_API_KEY) return send(res, 500, { error: "Falta OPENAI_API_KEY en Vercel" });
 
+    // ---- Prompt CSV → GPT (solo JSON) ----
     const system = `
 Eres un analista de datos. Recibirás el CSV COMPLETO entre <CSV>...</CSV> y una pregunta.
 Responde SOLO JSON válido:
@@ -102,7 +108,7 @@ Responde SOLO JSON válido:
   "stats": { "n": <int>, "mean": <num>, "extra": {...} } // si aplica
 }
 Reglas:
-- Normaliza mayúsculas/acentos; acepta sinónimos (ASERTIVIDAD, PHINTERPERSONALES, etc.).
+- Normaliza mayúsculas/acentos y acepta sinónimos (ASERTIVIDAD, PHINTERPERSONALES, etc.).
 - "por separado"/"por paralelo" => agrupa por la columna de paralelo/sección (A y B).
 - Ranking = orden descendente (mayor→menor) con n y promedio.
 - Incluye TODOS los grupos detectados. Si la columna exacta no existe, indica el equivalente usado.
