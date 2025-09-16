@@ -1,12 +1,12 @@
-// api/ask_gpt.js — CSV → GPT-5 (Responses API) con CORS
-// Env var aceptadas (usa una): OPENAI_API_KEY / OPENAI_KEY / OPENAI_API / CLAVE_API_DE_OPENAI / API_KEY
+// api/ask.js — CSV → GPT-5 (Responses API) con CORS
+// Env vars admitidas (usa una): OPENAI_API_KEY / OPENAI_KEY / OPENAI_API / CLAVE_API_DE_OPENAI / API_KEY
 
 const fs = require('fs');
 const path = require('path');
 
-const BUILD_TAG = 'gpt5-only-2025-09-16';
+const BUILD_TAG = 'gpt5-ask-2025-09-16';
 
-// --- API key (acepta varios nombres) ---
+// --- API key (varios nombres admitidos)
 const ENV_KEYS = ['OPENAI_API_KEY','OPENAI_KEY','OPENAI_API','CLAVE_API_DE_OPENAI','API_KEY'];
 let USED_ENV = null;
 function pickKey(){
@@ -18,7 +18,7 @@ function pickKey(){
 }
 const OPENAI_API_KEY = pickKey();
 
-// --- utilidades CSV ---
+// --- utilidades CSV
 const norm = s => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase().trim();
 const toNum = v => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
 const detectDelimiter = first => ((first.match(/;/g)||[]).length > (first.match(/,/g)||[]).length) ? ';' : ',';
@@ -45,7 +45,7 @@ function loadOnce(){
   if (CACHE) return CACHE;
   const candidates = [
     path.join(__dirname, 'data.csv'),      // /api/data.csv
-    path.join(__dirname, '..', 'data.csv') // /data.csv
+    path.join(__dirname, '..', 'data.csv') // /data.csv (raíz)
   ];
   for (const fp of candidates){
     if (fs.existsSync(fp)){
@@ -59,7 +59,7 @@ function loadOnce(){
 }
 
 function setCORS(res, origin='*'){
-  res.setHeader('Access-Control-Allow-Origin', origin); // luego limita a tu dominio Wix
+  res.setHeader('Access-Control-Allow-Origin', origin); // si quieres, cámbialo a tu dominio Wix
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -80,6 +80,7 @@ function buildRowsForLLM(rows, headersRaw, headersNorm){
   return out;
 }
 
+// --- llamada a GPT-5 (Responses API)
 async function askOpenAI(question, table, formatPref){
   if (!OPENAI_API_KEY) return { error: `Falta API key. Usa una de: ${ENV_KEYS.join(' / ')}` };
 
@@ -105,7 +106,7 @@ async function askOpenAI(question, table, formatPref){
   ].join('\n');
 
   const payload = {
-    model: 'gpt-5-mini', // o 'gpt-5'
+    model: 'gpt-5-mini', // cambia a 'gpt-5' si usas el modelo mayor
     input: [
       { role: 'system', content: system },
       { role: 'user',   content: user   }
@@ -131,6 +132,7 @@ async function askOpenAI(question, table, formatPref){
   return { text };
 }
 
+// --- handler
 module.exports = async (req, res) => {
   setCORS(res, req.headers.origin || '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
