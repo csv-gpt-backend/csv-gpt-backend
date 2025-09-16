@@ -3,9 +3,9 @@ const fs = require("fs");
 const path = require("path");
 
 // ===== Build/version =====
-const VERSION = "gpt5-csv-direct-main-12";
+const VERSION = "gpt5-csv-direct-main-13";
 
-// ===== Modelo (forzado a GPT-5; puedes sobrescribir con OPENAI_MODEL) =====
+// ===== Modelo (forzado a GPT-5; override opcional por OPENAI_MODEL) =====
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
 
 // ===== API Key =====
@@ -59,18 +59,16 @@ function loadCSVFromFS() {
 }
 
 // ---------- OpenAI ----------
-async function askOpenAI({ system, user }) {
+async function askOpenAI({ system, user, maxTokens = 300, timeoutMs = 35000 }) {
   if (!OPENAI_API_KEY) throw new Error("Falta OPENAI_API_KEY en Vercel (Production).");
 
-  // Timeout ~55s para evitar colgar la función
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 55_000);
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
 
   const payload = {
     model: MODEL, // GPT-5
-    // No enviar 'temperature' con GPT-5
     response_format: { type: "json_object" },
-    max_completion_tokens: 900, // <-- correcto para GPT-5
+    max_completion_tokens: Math.max(64, Math.min(maxTokens, 1200)),
     messages: [
       { role: "system", content: system },
       { role: "user",   content: user   },
@@ -100,7 +98,8 @@ async function askOpenAI({ system, user }) {
     catch { return { respuesta: text }; }
   } catch (e) {
     clearTimeout(timer);
-    if (e.name === "AbortError") throw new Error("Timeout: OpenAI tardó demasiado en responder (~55s).");
+    if (e.name === "AbortError")
+      throw new Error(`Timeout: OpenAI tardó demasiado en responder (~${timeoutMs/1000}s).`);
     throw e;
   }
 }
@@ -114,9 +113,9 @@ module.exports = async (req, res) => {
       return res.end();
     }
 
-    // leer q de query o body
-    let q = "";
-    try { q = new URL(req.url, `http://${req.headers.host}`).searchParams.get("q") || ""; } catch {}
+    // leer query/body
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    let q = url.searchParams.get("q") || "";
     if (!q && req.method !== "GET") {
       const b = typeof req.body === "string" ? safeJSON(req.body) : (req.body || {});
       q = (b.q || "");
@@ -124,12 +123,18 @@ module.exports = async (req, res) => {
     q = (q || "").toString().trim();
     const ql = q.toLowerCase();
 
-    // health / utilidades
+    // parámetros opcionales
+    const maxParam = parseInt(url.searchParams.get("max") || "", 10);
+    const tParam = parseInt(url.searchParams.get("t") || "", 10);
+    const maxTokens = Number.isFinite(maxParam) ? maxParam : 300;
+    const timeoutMs = Number.isFinite(tParam) ? tParam : 35000;
+
+    // health
     if (!q || ql === "ping")   return sendJSON(res, 200, { ok: true });
     if (ql === "version")      return sendJSON(res, 200, { version: VERSION });
     if (ql === "model")        return sendJSON(res, 200, { model: MODEL });
 
-    // CSV inline (POST.csv) o desde archivo
+    // CSV inline o archivo
     let csvInfo;
     if (req.method !== "GET") {
       const body = typeof req.body === "string" ? safeJSON(req.body) : (req.body || {});
@@ -151,20 +156,21 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Prompt
+    // Prompt estricto y breve
     const system = `
-Eres un analista de datos. Devuelve SIEMPRE JSON válido con esta forma:
+Eres un analista de datos. Devuelve SIEMPRE JSON válido, conciso, con esta forma:
 {
-  "respuesta": "texto claro en español",
-  "tabla": { "headers": [..], "rows": [[..], ..] },
-  "stats": { "n": <int>, "mean": <number> }
+  "respuesta": "texto breve en español",
+  "tabla": { "headers": [..], "rows": [[..], ..] }
 }
-- Te paso el CSV entre <CSV>...</CSV>. La primera fila son encabezados.
-- Acepta sinónimos/variantes (acentos, mayúsculas).
+- El CSV viene entre <CSV>...</CSV>; la primera fila son encabezados.
+- Acepta sinónimos (acentos/mayúsculas).
 - "por separado"/"por paralelo" => agrupa por la columna de paralelo (A,B,...).
-- "ranking" => ordena de mayor a menor e incluye la posición.
-- Si preguntan por una persona vs promedio, calcula ambos y muéstralos.
-- Nada de Markdown; solo JSON.`;
+- "ranking" => máximo 10 filas (mayor a menor) y añade "posición".
+- Si preguntan por una persona vs promedio, incluye SOLO una frase clara y, si aplica, 2-3 filas de contexto.
+- Si no hay datos para la consulta, responde con {"respuesta":"No encontrado"}.
+- No devuelvas Markdown ni texto fuera del JSON.
+`;
 
     const user = `<CSV>
 ${csvInfo.csv}
@@ -173,7 +179,7 @@ ${csvInfo.csv}
 Pregunta:
 ${q}`;
 
-    const out = await askOpenAI({ system, user });
+    const out = await askOpenAI({ system, user, maxTokens, timeoutMs });
     return sendJSON(res, 200, out);
 
   } catch (err) {
