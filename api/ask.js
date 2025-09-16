@@ -1,237 +1,183 @@
-// api/ask.js
-import fs from "fs/promises";
-import path from "path";
+const fs = require("fs");
+const path = require("path");
+const { parse } = require("csv-parse/sync");
 
-// ---------- util: CORS ----------
-function setCORS(res) {
+/**
+ * Endpoint: GET /api/ask?alumno=Julia&campos=AUTOESTIMA,EMPATIA&fuente=Ambos&formato=tabla
+ * - alumno   (obligatorio): nombre exacto o parcial (case-insensitive)
+ * - campos   (opcional): lista separada por comas. Si se omite, usa métricas por defecto.
+ * - fuente   (opcional): "A", "B" o "Ambos" (si tu CSV no distingue, se ignora)
+ * - formato  (opcional): "tabla" | "json" (por ahora ambos devuelven JSON con rows)
+ */
+
+function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
-// ---------- parse CSV simple (sin comillas complejas) ----------
-function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length === 0) return { headers: [], rows: [] };
-
-  const headers = lines[0].split(",").map(h => h.trim());
-  const rows = lines.slice(1).map(line => {
-    const cols = line.split(",");
-    const obj = {};
-    headers.forEach((h, i) => {
-      const raw = (cols[i] ?? "").trim();
-      const num = Number(raw.replace(",", "."));
-      obj[h] = Number.isFinite(num) && raw !== "" ? num : raw;
-    });
-    return obj;
-  });
-  return { headers, rows };
+function tryRead(file, enc) {
+  try { return fs.readFileSync(file, enc); } catch { return null; }
 }
 
-// ---------- detectar columna probable de nombre ----------
-function detectNameColumn(headers, rows) {
+function guessDelimiter(sample) {
+  const s = sample || "";
+  const sc = (s.match(/;/g) || []).length;
+  const cc = (s.match(/,/g) || []).length;
+  return sc > cc ? ";" : ",";
+}
+
+function findNameKey(headers) {
+  const candidates = ["Nombre", "NOMBRE", "Apellidos y Nombres", "APELLIDOS Y NOMBRES", "Estudiante", "ESTUDIANTE"];
   const lower = headers.map(h => h.toLowerCase());
-  let idx = lower.findIndex(h => h.includes("nombre"));
-  if (idx === -1) idx = lower.findIndex(h => h.includes("alumno"));
-  if (idx !== -1) return headers[idx];
+  let key = null;
 
-  // fallback: columna con más strings no numéricos
-  let best = { header: null, score: -1 };
-  for (const h of headers) {
-    let score = 0;
-    for (const r of rows) {
-      const v = r[h];
-      if (typeof v === "string" && v.trim() !== "" && isNaN(Number(v))) score++;
-    }
-    if (score > best.score) best = { header: h, score };
+  for (const c of candidates) {
+    const i = lower.indexOf(c.toLowerCase());
+    if (i >= 0) { key = headers[i]; break; }
   }
-  return best.header || headers[0];
+  return key || headers[0]; // fallback al primero
 }
 
-// ---------- helpers estadísticos ----------
-function mean(nums) {
-  if (!nums.length) return NaN;
-  return nums.reduce((a, b) => a + b, 0) / nums.length;
-}
-function getNumeric(rows, col) {
-  return rows
-    .map(r => r[col])
-    .filter(v => typeof v === "number" && Number.isFinite(v));
-}
-function fmt(n) {
-  return Number.isFinite(n) ? n.toFixed(2) : "N/A";
+function toNumberOrNull(v) {
+  if (v === null || v === undefined) return null;
+  const n = Number(String(v).replace(",", "."));
+  return isNaN(n) ? null : n;
 }
 
-// ---------- parser simple de consulta ----------
-function normalize(s) {
-  return s
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quita tildes
-    .toLowerCase();
+function mean(arr) {
+  const a = arr.filter(x => typeof x === "number" && !isNaN(x));
+  if (a.length === 0) return null;
+  return a.reduce((s, x) => s + x, 0) / a.length;
 }
 
-function parseQuery(qRaw) {
-  // Soporta expresiones básicas:
-  // - "promedio de AUTOESTIMA"
-  // - "promedio en AUTOESTIMA"
-  // - "nota de "Julia" en AUTOESTIMA"
-  // - "calificacion de Julia en AUTOESTIMA"
-  // - "top 5 en AUTOESTIMA"
-  // - "peor 3 en AUTOESTIMA" | "bottom 3 de AUTOESTIMA"
-  // - "resumen de AUTOESTIMA"
-  // - "fila de Julia" | "datos de "Julia""
-  const q = normalize(qRaw);
-
-  // alumno entre comillas (si viene)
-  const quoted = qRaw.match(/"([^"]+)"/);
-  const studentQuoted = quoted ? quoted[1].trim() : null;
-
-  // alumno suelto (sin comillas)
-  let studentPlain = null;
-  const mAlumno = q.match(/\bde\s+([a-záéíóúñ\.\- ]+)\s+(?:en|de)\b/);
-  if (mAlumno && !studentQuoted) {
-    studentPlain = mAlumno[1].trim();
+module.exports = async (req, res) => {
+  setCors(res);
+  if (req.method === "OPTIONS") {
+    res.statusCode = 200; return res.end();
   }
-
-  // columna
-  let mCol = q.match(/\b(?:en|de)\s+([a-záéíóúñ0-9\.\- _]+)$/i);
-  let column = mCol ? mCol[1].trim() : null;
-
-  // tipos
-  if (/^ping$/.test(q)) return { type: "ping" };
-  if (/^fila de\b|^datos de\b/.test(q) && (studentQuoted || studentPlain)) {
-    return { type: "fila", alumno: studentQuoted || studentPlain };
-  }
-  if (/^resumen de\b|^resumen en\b/.test(q) && column) {
-    return { type: "resumen", columna: column };
-  }
-  if (/^promedio de\b|^promedio en\b/.test(q) && column) {
-    return { type: "promedio", columna: column };
-  }
-  if (/\b(?:nota|calificacion|valor)\s+de\b/.test(q) && (studentQuoted || studentPlain) && column) {
-    return { type: "valor", alumno: studentQuoted || studentPlain, columna: column };
-  }
-  // top N
-  let mTop = q.match(/\btop\s+(\d+)\s+(?:en|de)\s+([a-z0-9\.\- _]+)/i);
-  if (mTop) return { type: "top", n: parseInt(mTop[1],10), columna: mTop[2].trim() };
-  // bottom/peor N
-  let mBottom = q.match(/\b(?:bottom|peor)\s+(\d+)\s+(?:en|de)\s+([a-z0-9\.\- _]+)/i);
-  if (mBottom) return { type: "bottom", n: parseInt(mBottom[1],10), columna: mBottom[2].trim() };
-
-  return { type: "unknown" };
-}
-
-// ---------- endpoint principal ----------
-export default async function handler(req, res) {
-  setCORS(res);
-  if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    const q = (req.method === "POST" ? req.body?.q : req.query?.q) ?? "";
-    const qStr = String(q || "").trim();
-    if (!qStr) return res.status(400).json({ ok: false, error: "Falta parámetro q" });
+    const url = new URL(req.url, "http://localhost");
+    const alumnoQ = (url.searchParams.get("alumno") || "").trim();
+    const camposQ = (url.searchParams.get("campos") || "").trim();
+    const fuente = (url.searchParams.get("fuente") || "Ambos").trim(); // "A" | "B" | "Ambos"
+    const formato = (url.searchParams.get("formato") || "tabla").trim();
 
-    if (normalize(qStr) === "ping") {
-      return res.status(200).json({ ok: true, respuesta: "pong" });
+    if (!alumnoQ) {
+      res.statusCode = 400;
+      return res.json?.({ ok: false, error: "Falta el parámetro 'alumno'." }) || res.end('{"ok":false,"error":"Falta el parámetro alumno."}');
     }
 
-    // lee CSV
     const csvPath = path.join(process.cwd(), "public", "datos.csv");
-    const csvText = await fs.readFile(csvPath, "utf8");
-    const { headers, rows } = parseCSV(csvText);
-    if (headers.length === 0 || rows.length === 0) {
-      return res.status(200).json({ ok: true, respuesta: "No hay datos en el CSV." });
+    let csv = tryRead(csvPath, "utf8");
+    if (!csv) csv = tryRead(csvPath, "latin1");
+    if (!csv) {
+      res.statusCode = 500;
+      return res.json?.({ ok: false, error: "No se pudo leer public/datos.csv" }) || res.end('{"ok":false,"error":"No se pudo leer CSV"}');
     }
 
-    const nameCol = detectNameColumn(headers, rows);
-    const parsed = parseQuery(qStr);
-    const lowerHeaders = headers.map(h => ({ raw: h, norm: normalize(h) }));
+    const firstChunk = csv.slice(0, 5000);
+    const delimiter = guessDelimiter(firstChunk);
 
-    // helper para mapear nombre de columna escrito por el usuario a header real
-    function resolveColumn(colUser) {
-      const n = normalize(colUser);
-      const hit = lowerHeaders.find(h => h.norm === n || h.norm.includes(n) || n.includes(h.norm));
-      return hit?.raw || null;
+    const records = parse(csv, {
+      delimiter,
+      columns: true,
+      skip_empty_lines: true,
+      trim: true
+    });
+
+    if (!records.length) {
+      res.statusCode = 400;
+      return res.json?.({ ok: false, error: "CSV vacío o sin cabeceras." }) || res.end('{"ok":false,"error":"CSV vacío"}');
     }
 
-    // --------- casos ----------
-    if (parsed.type === "fila") {
-      const alumno = (parsed.alumno || "").toLowerCase();
-      const row = rows.find(r => String(r[nameCol] ?? "").toLowerCase().includes(alumno));
-      const out = row ? JSON.stringify(row, null, 2) : `No se encontró el alumno "${parsed.alumno}".`;
-      return res.status(200).json({ ok: true, respuesta: out });
+    const headers = Object.keys(records[0]);
+    const nameKey = findNameKey(headers);
+
+    // Si existiera columna de grupo (A/B), intenta detectarla
+    const groupKeyCandidates = ["Grupo", "GRUPO", "Paralelo", "PARALELO", "Curso", "CURSO", "Sección", "SECCIÓN"];
+    const lowerHeaders = headers.map(h => h.toLowerCase());
+    let groupKey = null;
+    for (const c of groupKeyCandidates) {
+      const i = lowerHeaders.indexOf(c.toLowerCase());
+      if (i >= 0) { groupKey = headers[i]; break; }
     }
 
-    if (parsed.type === "resumen") {
-      const col = resolveColumn(parsed.columna);
-      if (!col) return res.status(200).json({ ok: true, respuesta: `Columna no encontrada: ${parsed.columna}` });
-
-      const nums = getNumeric(rows, col);
-      if (!nums.length) return res.status(200).json({ ok: true, respuesta: `La columna "${col}" no es numérica o no tiene datos.` });
-
-      const min = Math.min(...nums), max = Math.max(...nums), prom = mean(nums);
-      const txt = `Resumen de "${col}" (n=${nums.length}): min=${fmt(min)}, max=${fmt(max)}, promedio=${fmt(prom)}.`;
-      return res.status(200).json({ ok: true, respuesta: txt });
-    }
-
-    if (parsed.type === "promedio") {
-      const col = resolveColumn(parsed.columna);
-      if (!col) return res.status(200).json({ ok: true, respuesta: `Columna no encontrada: ${parsed.columna}` });
-
-      const nums = getNumeric(rows, col);
-      if (!nums.length) return res.status(200).json({ ok: true, respuesta: `La columna "${col}" no es numérica o no tiene datos.` });
-
-      const prom = mean(nums);
-      return res.status(200).json({ ok: true, respuesta: `Promedio de "${col}": ${fmt(prom)} (n=${nums.length}).` });
-    }
-
-    if (parsed.type === "valor") {
-      const col = resolveColumn(parsed.columna);
-      if (!col) return res.status(200).json({ ok: true, respuesta: `Columna no encontrada: ${parsed.columna}` });
-
-      const alumno = (parsed.alumno || "").toLowerCase();
-      const row = rows.find(r => String(r[nameCol] ?? "").toLowerCase().includes(alumno));
-      if (!row) return res.status(200).json({ ok: true, respuesta: `No se encontró el alumno "${parsed.alumno}".` });
-
-      const v = row[col];
-      const isNum = typeof v === "number" && Number.isFinite(v);
-      return res.status(200).json({
-        ok: true,
-        respuesta: `Valor de "${col}" para ${row[nameCol]}: ${isNum ? fmt(v) : (v ?? "N/A")}.`
+    // Filtrado por grupo si aplica
+    let data = records;
+    const wantA = fuente.toLowerCase() === "a";
+    const wantB = fuente.toLowerCase() === "b";
+    if (groupKey && (wantA || wantB)) {
+      data = records.filter(r => {
+        const g = (r[groupKey] || "").toString().toUpperCase();
+        if (wantA) return g.includes("A");
+        if (wantB) return g.includes("B");
+        return true;
       });
     }
 
-    if (parsed.type === "top" || parsed.type === "bottom") {
-      const n = Math.max(1, Math.min(50, parsed.n || 5));
-      const col = resolveColumn(parsed.columna);
-      if (!col) return res.status(200).json({ ok: true, respuesta: `Columna no encontrada: ${parsed.columna}` });
-
-      const arr = rows
-        .map(r => ({ nombre: r[nameCol], val: r[col] }))
-        .filter(x => typeof x.val === "number" && Number.isFinite(x.val));
-
-      if (!arr.length) return res.status(200).json({ ok: true, respuesta: `La columna "${col}" no es numérica o no tiene datos.` });
-
-      arr.sort((a, b) => (parsed.type === "top" ? b.val - a.val : a.val - b.val));
-      const take = arr.slice(0, n);
-      const lines = take.map((x, i) => `${i + 1}. ${x.nombre}: ${fmt(x.val)}`).join("\n");
-      return res.status(200).json({ ok: true, respuesta: `${parsed.type.toUpperCase()} ${n} en "${col}":\n${lines}` });
+    // Buscar alumno (match parcial, case-insensitive)
+    const alumno = data.find(r => (r[nameKey] || "").toLowerCase().includes(alumnoQ.toLowerCase()));
+    if (!alumno) {
+      res.statusCode = 404;
+      return res.json?.({ ok: false, error: `No se encontró alumno que coincida con "${alumnoQ}".` }) ||
+             res.end(JSON.stringify({ ok:false, error:`No se encontró alumno "${alumnoQ}"` }));
     }
 
-    // fallback
-    const ayuda =
-`No pude interpretar la consulta.
-Pruebas útiles:
-- "promedio de AUTOESTIMA"
-- "resumen de AUTOESTIMA"
-- "valor de "Julia" en AUTOESTIMA"
-- "top 5 en MATEMATICAS"
-- "bottom 3 de LECTURA"
-- "fila de "Julia""`;
+    // Métricas objetivo
+    const metricKeysDefault = ["AUTOESTIMA","EMPATIA","FISICO","TENSION","RESPONSABILIDAD","COOPERACION"];
+    let metricKeys = metricKeysDefault.filter(k => headers.includes(k));
+    if (camposQ) {
+      const asked = camposQ.split(",").map(s => s.trim()).filter(Boolean);
+      metricKeys = asked.filter(k => headers.includes(k));
+      if (!metricKeys.length) {
+        res.statusCode = 400;
+        return res.json?.({ ok:false, error:`Ninguna columna coincide con 'campos'. Disponibles: ${headers.join(", ")}` }) ||
+               res.end(`{"ok":false,"error":"Campos inválidos"}`);
+      }
+    }
 
-    return res.status(200).json({ ok: true, respuesta: ayuda });
+    // Conjuntos para promedios A, B, total
+    let dataA = data, dataB = data, dataTotal = data;
+    if (groupKey) {
+      dataA = data.filter(r => (r[groupKey] || "").toString().toUpperCase().includes("A"));
+      dataB = data.filter(r => (r[groupKey] || "").toString().toUpperCase().includes("B"));
+    }
 
-  } catch (e) {
-    console.error("ASK ERROR:", e);
-    return res.status(500).json({ ok: false, error: String(e) });
+    const rows = metricKeys.map(k => {
+      const vAlumno = toNumberOrNull(alumno[k]);
+      const meanA = mean(dataA.map(r => toNumberOrNull(r[k])));
+      const meanB = mean(dataB.map(r => toNumberOrNull(r[k])));
+      const meanT = mean(dataTotal.map(r => toNumberOrNull(r[k])));
+      return {
+        campo: k,
+        alumno: vAlumno,
+        grupo_A: meanA,
+        grupo_B: meanB,
+        grupo_total: meanT
+      };
+    });
+
+    const payload = {
+      ok: true,
+      alumno: alumno[nameKey],
+      fuente,
+      nameKey,
+      groupKey: groupKey || null,
+      n_A: groupKey ? dataA.length : null,
+      n_B: groupKey ? dataB.length : null,
+      n_total: dataTotal.length,
+      rows
+    };
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.statusCode = 200;
+    res.end(JSON.stringify(payload));
+  } catch (err) {
+    console.error(err);
+    res.statusCode = 500;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify({ ok:false, error: "Error interno", details: String(err && err.message || err) }));
   }
-}
+};
