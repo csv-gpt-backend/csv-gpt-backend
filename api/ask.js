@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 // ===== Build/version =====
-const VERSION = "gpt5-csv-direct-main-13";
+const VERSION = "gpt5-csv-direct-main-14";
 
 // ===== Modelo (forzado a GPT-5; override opcional por OPENAI_MODEL) =====
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
@@ -28,6 +28,11 @@ function sendJSON(res, code, obj) {
 function safeJSON(x, fallback = {}) {
   try { return typeof x === "string" ? JSON.parse(x) : (x || fallback); }
   catch { return fallback; }
+}
+function ensureObject(x) {
+  if (!x || typeof x !== "object" || Array.isArray(x)) return { respuesta: String(x || "").trim() || "" };
+  if (typeof x.respuesta !== "string") x.respuesta = x.respuesta ? String(x.respuesta) : "";
+  return x;
 }
 
 // ---------- CSV ----------
@@ -59,7 +64,7 @@ function loadCSVFromFS() {
 }
 
 // ---------- OpenAI ----------
-async function askOpenAI({ system, user, maxTokens = 300, timeoutMs = 35000 }) {
+async function askOpenAI({ system, user, maxTokens = 500, timeoutMs = 40000 }) {
   if (!OPENAI_API_KEY) throw new Error("Falta OPENAI_API_KEY en Vercel (Production).");
 
   const ac = new AbortController();
@@ -67,6 +72,7 @@ async function askOpenAI({ system, user, maxTokens = 300, timeoutMs = 35000 }) {
 
   const payload = {
     model: MODEL, // GPT-5
+    // No enviar 'temperature' con GPT-5
     response_format: { type: "json_object" },
     max_completion_tokens: Math.max(64, Math.min(maxTokens, 1200)),
     messages: [
@@ -93,13 +99,26 @@ async function askOpenAI({ system, user, maxTokens = 300, timeoutMs = 35000 }) {
     }
 
     const data = await r.json();
-    const text = data?.choices?.[0]?.message?.content || "{}";
-    try { return JSON.parse(text); }
-    catch { return { respuesta: text }; }
+    const text = data?.choices?.[0]?.message?.content || "";
+    // Normalizamos SIEMPRE a objeto con respuesta
+    if (!text || !text.trim()) {
+      return { respuesta: "El modelo no devolvió contenido. Prueba de nuevo o ajusta el límite con &max=600." };
+    }
+    let obj;
+    try { obj = JSON.parse(text); }
+    catch { obj = { respuesta: text.trim() }; }
+    obj = ensureObject(obj);
+
+    // Si vino totalmente vacío, devolvemos un mensaje útil
+    if (!obj.respuesta && !obj.tabla) {
+      obj.respuesta = "No se pudo generar una respuesta con la instrucción dada. Intenta simplificar la pregunta o aumentar &max=600.";
+    }
+    return obj;
+
   } catch (e) {
     clearTimeout(timer);
     if (e.name === "AbortError")
-      throw new Error(`Timeout: OpenAI tardó demasiado en responder (~${timeoutMs/1000}s).`);
+      throw new Error(`Timeout: OpenAI tardó demasiado en responder (~${Math.round(timeoutMs/1000)}s).`);
     throw e;
   }
 }
@@ -113,7 +132,6 @@ module.exports = async (req, res) => {
       return res.end();
     }
 
-    // leer query/body
     const url = new URL(req.url, `http://${req.headers.host}`);
     let q = url.searchParams.get("q") || "";
     if (!q && req.method !== "GET") {
@@ -125,9 +143,9 @@ module.exports = async (req, res) => {
 
     // parámetros opcionales
     const maxParam = parseInt(url.searchParams.get("max") || "", 10);
-    const tParam = parseInt(url.searchParams.get("t") || "", 10);
-    const maxTokens = Number.isFinite(maxParam) ? maxParam : 300;
-    const timeoutMs = Number.isFinite(tParam) ? tParam : 35000;
+    const tParam   = parseInt(url.searchParams.get("t")   || "", 10);
+    const maxTokens = Number.isFinite(maxParam) ? maxParam : 500;
+    const timeoutMs = Number.isFinite(tParam)   ? tParam   : 40000;
 
     // health
     if (!q || ql === "ping")   return sendJSON(res, 200, { ok: true });
@@ -156,21 +174,22 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Prompt estricto y breve
+    // Prompt reforzado (tablas, ranking, grupos de 5)
     const system = `
-Eres un analista de datos. Devuelve SIEMPRE JSON válido, conciso, con esta forma:
+Eres un analista de datos. Devuelve SIEMPRE JSON válido y conciso con esta forma:
 {
   "respuesta": "texto breve en español",
   "tabla": { "headers": [..], "rows": [[..], ..] }
 }
-- El CSV viene entre <CSV>...</CSV>; la primera fila son encabezados.
-- Acepta sinónimos (acentos/mayúsculas).
-- "por separado"/"por paralelo" => agrupa por la columna de paralelo (A,B,...).
-- "ranking" => máximo 10 filas (mayor a menor) y añade "posición".
-- Si preguntan por una persona vs promedio, incluye SOLO una frase clara y, si aplica, 2-3 filas de contexto.
-- Si no hay datos para la consulta, responde con {"respuesta":"No encontrado"}.
-- No devuelvas Markdown ni texto fuera del JSON.
-`;
+Reglas:
+- El CSV viene entre <CSV>...</CSV>. La primera fila son encabezados.
+- Acepta sinónimos (acentos/mayúsculas, "por separado" = agrupar por "PARALELO").
+- "ranking" => máximo 10 filas (mayor→menor) e incluye una columna "posición".
+- "grupos" o "equipos" => devuelve tabla con headers ["Grupo","NOMBRE"].
+  * Forma grupos homogéneos de 5 personas (último grupo puede tener menos).
+  * Si piden usar dos variables (p.ej., AGRESION y EMPATIA), intenta equilibrar/parear.
+- Si la consulta es inválida o no hay datos, responde {"respuesta":"No encontrado"}.
+- Nada de Markdown ni texto fuera del JSON.`;
 
     const user = `<CSV>
 ${csvInfo.csv}
