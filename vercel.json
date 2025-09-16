@@ -1,5 +1,6 @@
 {
   "routes": [
-    { "src": "/api/ask", "dest": "/api/ask.js" }
+    { "src": "/api/ask", "dest": "/api/ask.js" },
+    { "src": "/ask",     "dest": "/api/ask.js" }
   ]
 }
