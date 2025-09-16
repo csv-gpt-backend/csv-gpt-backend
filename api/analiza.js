@@ -1,199 +1,261 @@
-// api/analiza2.js
-import fs from 'fs';
+// api/analiza.js  (Vercel Serverless Function - ESM)
+
+import fs from 'fs/promises';
 import path from 'path';
-import Papa from 'papaparse';
+import OpenAI from 'openai';
 
-const MODEL = process.env.MODEL || 'gpt-5';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// ======== CONFIG ========
+// Modelo por defecto (puedes cambiarlo por el que prefieras)
+const DEFAULT_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // o 'gpt-5' cuando esté disponible
+// Ruta(s) posibles del CSV dentro del bundle
+const CSV_CANDIDATES = [
+  path.join(process.cwd(), 'public', 'datos.csv'),
+  path.join(process.cwd(), 'datos.csv'),
+];
 
-const isNumber = (v) => v !== null && v !== '' && !isNaN(Number(v));
-const toNum = (v) => (isNumber(v) ? Number(v) : null);
+// ======== CARGA CSV (cacheada) ========
+let __csvCache = { rows: null, headers: null };
 
-function quantile(sortedArray, q) {
-  if (!sortedArray.length) return null;
-  const pos = (sortedArray.length - 1) * q;
-  const base = Math.floor(pos);
-  const rest = pos - base;
-  if (sortedArray[base] === undefined) return null;
-  if (sortedArray[base + 1] === undefined) return sortedArray[base];
-  return sortedArray[base] + rest * (sortedArray[base + 1] - sortedArray[base]);
-}
-
-function stats(values) {
-  const nums = values.map(toNum).filter((x) => x !== null).sort((a, b) => a - b);
-  const n = nums.length;
-  if (!n) {
-    return { n: 0, min: null, max: null, mean: null, p25: null, p50: null, p75: null, p90: null };
+async function readCsvFile() {
+  // prueba cada ruta candidata
+  for (const p of CSV_CANDIDATES) {
+    try {
+      const txt = await fs.readFile(p, 'utf8');
+      return txt;
+    } catch { /* probar siguiente */ }
   }
-  const sum = nums.reduce((a, b) => a + b, 0);
-  const mean = sum / n;
-  return {
-    n,
-    min: nums[0],
-    max: nums[n - 1],
-    mean: Number(mean.toFixed(2)),
-    p25: Number(quantile(nums, 0.25)?.toFixed(2)),
-    p50: Number(quantile(nums, 0.50)?.toFixed(2)),
-    p75: Number(quantile(nums, 0.75)?.toFixed(2)),
-    p90: Number(quantile(nums, 0.90)?.toFixed(2)),
-  };
+  throw new Error('No encontré public/datos.csv ni ./datos.csv en el deployment.');
 }
 
-async function loadCsvOnce() {
-  if (globalThis.__CSV_CACHE) return globalThis.__CSV_CACHE;
-  const filePath = path.join(process.cwd(), 'public', 'datos.csv');
-  const csvText = fs.readFileSync(filePath, 'utf8');
-  const parsed = Papa.parse(csvText, { header: true, dynamicTyping: false, skipEmptyLines: true });
-  if (parsed.errors?.length) console.error('CSV parse errors:', parsed.errors.slice(0, 3));
-  const rows = parsed.data.map((r) => {
-    const out = {};
-    for (const k of Object.keys(r)) out[k.trim()] = (r[k] ?? '').toString().trim();
-    return out;
-  });
-  globalThis.__CSV_CACHE = rows;
+// Parser CSV básico que respeta comillas
+function parseCsv(text) {
+  const rows = [];
+  let cur = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (inQuotes) {
+      if (ch === '"' && next === '"') { // comilla escapada
+        cell += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        cell += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        cur.push(cell);
+        cell = '';
+      } else if (ch === '\n') {
+        cur.push(cell);
+        rows.push(cur);
+        cur = [];
+        cell = '';
+      } else if (ch === '\r') {
+        // ignorar \r (windows)
+      } else {
+        cell += ch;
+      }
+    }
+  }
+  // última celda/fila
+  if (cell.length > 0 || cur.length) {
+    cur.push(cell);
+    rows.push(cur);
+  }
   return rows;
 }
 
-function detectNumericCols(rows) {
-  if (!rows.length) return [];
-  const cols = Object.keys(rows[0] || {});
-  return cols.filter((c) => {
-    const vals = rows.map((r) => r[c]).filter((v) => v !== undefined);
-    const ok = vals.filter((v) => isNumber(v)).length;
-    return ok / Math.max(vals.length, 1) >= 0.6;
+async function loadCsvOnce() {
+  if (__csvCache.rows) return __csvCache;
+
+  const raw = await readCsvFile();
+  const rows = parseCsv(raw).filter(r => r.length && r.some(x => String(x).trim() !== ''));
+  if (rows.length < 2) throw new Error('CSV vacío o sin datos suficientes.');
+
+  const headers = rows[0].map(h => String(h).trim());
+  const dataRows = rows.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = r[i] ?? ''; });
+    return obj;
   });
+
+  __csvCache = { rows: dataRows, headers };
+  return __csvCache;
 }
 
-function groupBy(rows, col) {
-  const map = new Map();
-  for (const r of rows) {
-    const key = (r[col] ?? '').toString();
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(r);
+// ======== UTILIDADES ========
+function detectNameColumn(headers) {
+  // prioriza columnas comunes
+  const lower = headers.map(h => h.toLowerCase());
+  const candidates = ['alumno', 'alumna', 'nombre', 'nombres', 'estudiante'];
+  for (const c of candidates) {
+    const idx = lower.findIndex(h => h.includes(c));
+    if (idx !== -1) return headers[idx];
   }
-  return map;
+  // si no encuentra, intenta la primera que no sea claramente numérica
+  return headers[0];
 }
 
-function computeGroupMetrics(rows, groupCol, numericCols) {
-  const groups = groupBy(rows, groupCol);
-  const result = [];
-  for (const [g, arr] of groups.entries()) {
-    const obj = { grupo: g || '(sin grupo)' };
-    for (const c of numericCols) obj[c] = stats(arr.map((r) => r[c]));
-    result.push(obj);
+function isNumeric(v) {
+  const x = typeof v === 'string' ? v.replace(',', '.').trim() : v;
+  return x !== '' && Number.isFinite(Number(x));
+}
+
+function toNumber(v) {
+  if (typeof v === 'number') return v;
+  const s = String(v ?? '').replace(',', '.').trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function quantile(sorted, q) {
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sorted[base + 1] !== undefined) {
+    return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
   }
-  return result;
+  return sorted[base];
 }
 
-function pickStudentRows(rows, alumnoQuery, alumnoCol = 'ALUMNO') {
-  if (!alumnoQuery) return [];
-  const q = alumnoQuery.toLowerCase();
-  return rows.filter((r) => (r[alumnoCol] || '').toLowerCase().includes(q));
+function computeMetrics(rows, numericCols) {
+  const metrics = {};
+  for (const col of numericCols) {
+    const arr = rows
+      .map(r => toNumber(r[col]))
+      .filter(v => v !== null)
+      .sort((a, b) => a - b);
+
+    if (!arr.length) continue;
+
+    const sum = arr.reduce((a, b) => a + b, 0);
+    metrics[col] = {
+      n: arr.length,
+      min: arr[0],
+      max: arr[arr.length - 1],
+      mean: sum / arr.length,
+      p25: quantile(arr, 0.25),
+      p50: quantile(arr, 0.50),
+      p75: quantile(arr, 0.75),
+      p90: quantile(arr, 0.90),
+    };
+  }
+  return metrics;
 }
 
-function extractPossibleAlumno(q) {
-  if (!q) return null;
-  const mQuoted = q.match(/"([^"]+)"/);
-  if (mQuoted) return mQuoted[1];
-  const mName = q.match(/\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b/);
-  return mName ? mName[1] : null;
+function extractNameFromQuestion(q) {
+  // busca texto entre comillas "Julia"
+  const quoted = q.match(/"([^"]+)"/);
+  if (quoted?.[1]) return quoted[1].trim();
+
+  // si no hay comillas, intenta coger una palabra tipo nombre
+  // (esto es heurístico; puedes cambiarlo por tu input "alumno=...")
+  const m = q.match(/\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b/);
+  if (m?.[1]) return m[1].trim();
+  return null;
 }
 
-function buildSystemPrompt(groupCol, numericCols, detectedGroups) {
-  return `
-Eres un analista que responde en ESPAÑOL. Reglas:
-- Usa SOLO los datos del contexto.
-- Incluye TODOS los grupos detectados (${detectedGroups.join(', ')}) en comparaciones.
-- Cuando compares grupos, usa "Formato: Tabla" y "Fuente: Ambos".
-- Reporta métricas exactas calculadas (n, min, max, media, p25, p50, p75, p90).
-- No inventes alumnos ni variables. Si faltan datos, dilo.
+// ======== OPENAI ========
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-Variables numéricas detectadas: ${numericCols.join(', ')}
-Columna de grupo: ${groupCol}
-`;
-}
-
-function buildUserPrompt(question, studentRows, groupMetrics, alumnoCol = 'ALUMNO') {
-  return `
-[PREGUNTA DEL USUARIO]
-${question}
-
-[SELECCIÓN: FILAS DE ALUMNO]
-${JSON.stringify(studentRows.slice(0, 24), null, 2)}
-
-[MÉTRICAS POR GRUPO]
-${JSON.stringify(groupMetrics, null, 2)}
-
-Instrucción final: Responde en español, conciso y centrado en la pregunta. Si hay un alumno, compáralo con su grupo y con el total de grupos. Si la pregunta es por AUTOESTIMA o EMPATÍA, enfócate en esas; si pide "PH interpersonales", incluye todas las columnas relevantes detectadas. Si procede, usa una tabla con grupos en columnas y métricas en filas.
-`;
-}
-
-async function callOpenAI({ system, user }) {
-  if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY no está configurado.');
-  const res = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      input: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
+async function askOpenAI({ model, system, input }) {
+  const resp = await client.responses.create({
+    model: model || DEFAULT_MODEL,
+    // IMPORTANTE: no mandar temperature para evitar el error de modelos que no lo soportan
+    input,
+    system,
   });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`OpenAI error ${res.status}: ${txt}`);
-  }
-  const data = await res.json();
-  const text =
-    data.output_text ||
-    data?.output?.[0]?.content?.[0]?.text ||
-    data?.choices?.[0]?.message?.content ||
-    JSON.stringify(data);
-  return text;
+  return resp.output_text || '';
 }
 
+// ======== HANDLER ========
 export default async function handler(req, res) {
+  // --- CORS ---
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') { res.status(200).end(); return; }
+  // ------------------------
+
   try {
-    const rows = await loadCsvOnce();
-    if (!rows.length) return res.status(500).json({ ok: false, error: 'CSV vacío o no legible' });
+    const q = (req.query?.q || req.body?.q || '').toString().trim();
+    if (!q) {
+      res.status(400).json({ ok: false, error: 'Falta el parámetro q.' });
+      return;
+    }
 
-    const q = (req.query.q || req.body?.q || '').toString();
-    const alumnoParam = (req.query.alumno || req.body?.alumno || '').toString().trim();
-    const groupCol = (req.query.groupCol || req.body?.groupCol || 'GRUPO').toString();
-    const alumnoCol = (req.query.alumnoCol || req.body?.alumnoCol || 'ALUMNO').toString();
+    // 1) Cargar CSV
+    const { rows, headers } = await loadCsvOnce();
+    const nameCol = detectNameColumn(headers);
 
-    const numericCols = detectNumericCols(rows).filter((c) => c !== groupCol && c !== alumnoCol);
-    const groupsMap = groupBy(rows, groupCol);
-    const detectedGroups = Array.from(groupsMap.keys()).filter((g) => g !== '');
+    // 2) Columnas numéricas
+    const numericCols = headers.filter(h => rows.some(r => isNumeric(r[h])));
 
-    const alumnoFromQ = alumnoParam || extractPossibleAlumno(q || '');
-    const studentRows = pickStudentRows(rows, alumnoFromQ, alumnoCol);
-    const groupMetrics = computeGroupMetrics(rows, groupCol, numericCols);
+    // 3) Detectar alumno (si viene ?alumno= usarlo; si no, extraer del texto)
+    const alumnoQ = (req.query?.alumno || '').toString().trim();
+    const alumnoName = alumnoQ || extractNameFromQuestion(q) || '';
 
-    const system = buildSystemPrompt(groupCol, numericCols, detectedGroups);
-    const userPrompt = buildUserPrompt(
-      q || `Analiza diferencias entre grupos para ${numericCols.join(', ')}`,
-      studentRows,
-      groupMetrics,
-      alumnoCol
-    );
+    let alumnoRow = null;
+    if (alumnoName) {
+      const needle = alumnoName.toLowerCase();
+      alumnoRow = rows.find(r => String(r[nameCol] || '').toLowerCase().includes(needle)) || null;
+    }
 
-    const answerText = await callOpenAI({ system, user: userPrompt });
+    // 4) Métricas de grupo
+    const groupMetrics = computeMetrics(rows, numericCols);
 
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-    return res.status(200).json({
-      ok: true,
-      answer: answerText,
-      selection: { alumno: alumnoFromQ || null, groups: detectedGroups },
-      metrics: { numericCols, groupMetrics },
+    // 5) Construir contexto para el modelo
+    const payload = {
+      alumno: alumnoRow ? String(alumnoRow[nameCol]) : '(no encontrado)',
+      nameColumn: nameCol,
+      question: q,
+      columns_numeric: numericCols,
+      student_values: alumnoRow
+        ? Object.fromEntries(
+            numericCols.map(c => [c, toNumber(alumnoRow[c])])
+          )
+        : null,
+      groupMetrics, // medias y percentiles del grupo
+    };
+
+    const system = `
+Eres un analista educativo. SOLO puedes responder usando el JSON que te doy.
+No inventes datos que no estén en el JSON. Si falta información, dilo.
+Responde en español claro, breve, y cita números (medias/percentiles) cuando aplique.
+`;
+
+    const prompt = `
+JSON con datos:
+${JSON.stringify(payload, null, 2)}
+
+Instrucción:
+- Contesta estrictamente a la pregunta del usuario usando únicamente los datos del JSON anterior.
+- Si el alumno no se encontró, dilo y sugiere verificar el nombre.
+- Si se pide "¿Cómo está <alumno> en AUTOESTIMA?" compara su valor con la media y percentiles del grupo.
+- Formato: párrafo breve (máx 6-8 líneas).`;
+
+    const respuesta = await askOpenAI({
+      system,
+      input: prompt,
+      model: DEFAULT_MODEL,
     });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ ok: false, error: err.message || 'Error inesperado' });
+
+    res.status(200).json({
+      ok: true,
+      respuesta,
+      alumno: payload.alumno,
+      metrics: groupMetrics,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || 'Error interno' });
   }
 }
