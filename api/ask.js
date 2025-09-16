@@ -1,10 +1,14 @@
 // api/ask.js — Vercel Serverless (Node 18+)
-// v18: fallback local para "grupos de 5" con AGRESION y EMPATIA
+// v19: Detección dinámica de columnas según la PREGUNTA (sin predefinir nombres)
+// - Si la pregunta pide "grupos/equipos de N usando X y Y", forma grupos localmente
+//   detectando las dos columnas numéricas que mejor emparejen con X e Y.
+// - Mantiene pipeline GPT-5 (Responses -> Chat) y fallback robusto.
+
 const fs = require("fs");
 const path = require("path");
 
 // ===== Build/version =====
-const VERSION = "gpt5-csv-direct-main-18";
+const VERSION = "gpt5-csv-direct-main-19";
 const MODEL   = process.env.OPENAI_MODEL || "gpt-5";
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
@@ -38,7 +42,8 @@ function extractFirstJSONBlock(text){
   }
   return null;
 }
-const norm = s => (s||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().trim();
+const deburr = (s="") => s.normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+const norm   = (s="") => deburr(String(s)).toLowerCase().trim();
 
 // ---------- CSV I/O ----------
 function detectDelimiter(sample){
@@ -56,16 +61,132 @@ function loadCSVFromFS(){
       const lines = csv.split(/\r?\n/).filter(l => l.length>0);
       if (lines.length===0) throw new Error("CSV vacío.");
       const headers = lines[0].split(d).map(s=>s.trim());
-      const rowsNum = lines.slice(1).map(l => l.split(d));
-      const rows = rowsNum.map(arr => {
+      const rowsArr = lines.slice(1).map(l => l.split(d));
+      const rows = rowsArr.map(arr => {
         const o = {};
         headers.forEach((h, i) => o[h] = (arr[i] ?? "").trim());
         return o;
       });
-      return { csv, filePath, rowsCount: rows.length, headers, rows, source:"fs", delimiter:d };
+      return { csv, filePath, headers, rows, rowsCount: rows.length, delimiter:d, source:"fs" };
     }
   }
   throw new Error("CSV no encontrado. Sube api/data.csv o data.csv al repo.");
+}
+
+// ---------- Similaridad sencilla (sin librerías externas) ----------
+const STOP = new Set([
+  "de","del","la","las","los","el","en","por","para","con","y","o","u","a","al",
+  "un","una","unos","unas","que","como","segun","según","sobre","se","si","sí"
+]);
+function tokenize(s){
+  return norm(s).split(/[^a-z0-9]+/).filter(t => t && t.length>2 && !STOP.has(t));
+}
+function lcp(a,b){ // longest common prefix len (rápido)
+  let i=0; const L=Math.min(a.length,b.length);
+  while(i<L && a[i]===b[i]) i++; return i;
+}
+function tokenOverlapScore(a,b){
+  const A=new Set(tokenize(a)), B=new Set(tokenize(b));
+  if (!A.size || !B.size) return 0;
+  let inter=0; for(const t of A) if(B.has(t)) inter++;
+  return inter / Math.max(A.size,B.size);
+}
+function fuzzyScore(needle, hay){ // combina includes + prefijo + solapamiento
+  const n = norm(needle), h = norm(hay);
+  let s = 0;
+  if (!n || !h) return 0;
+  if (h.includes(n)) s += 1.2;
+  if (n.includes(h)) s += 0.8;
+  s += Math.min(lcp(n,h)/10, 1);
+  s += tokenOverlapScore(n,h) * 2;
+  // bonus por compartir raíz (4 chars) cuando hay pocas letras
+  if (n.length>=4 && h.includes(n.slice(0,4))) s += 0.5;
+  return s;
+}
+
+// ¿Columna “nombre/persona”? sin predefinir exactos: detecta por semántica
+function isNameLike(header){
+  const h = norm(header);
+  return /(nombre|nombres|alumn|estudiant|person|apellid|full|name)/.test(h);
+}
+function isNumericColumn(rows, key){
+  let ok=0, total=0;
+  for (let i=0; i<rows.length && i<50; i++){
+    const v = rows[i][key];
+    if (v!==undefined && v!==""){
+      total++;
+      const n = Number(String(v).replace(",","."));
+      if (Number.isFinite(n)) ok++;
+    }
+  }
+  return total>0 && ok/total>=0.6; // mayormente numérica
+}
+
+// Empareja un texto de la pregunta con el header que más se le parezca (numérica opcional)
+function bestHeaderMatch(queryText, headers, rows, requireNumeric=false, denySet = new Set()){
+  let bestKey=null, best=0;
+  for (const h of headers){
+    if (denySet.has(h)) continue;
+    if (requireNumeric && !isNumericColumn(rows,h)) continue;
+    const sc = fuzzyScore(queryText, h);
+    if (sc>best){ best=sc; bestKey=h; }
+  }
+  return bestKey;
+}
+
+// Extrae “grupos/equipos de N usando X y Y” (muy tolerante)
+function parseGroupingIntent(q){
+  const s = norm(q);
+  if (!/(grup|equip)/.test(s)) return null;
+  // tamaño de grupo (opcional; por defecto 5)
+  let size = 5;
+  const mSize = s.match(/de\s+(\d{1,2})/);
+  if (mSize) size = Math.max(2, Math.min(20, parseInt(mSize[1],10)));
+  // variables X y Y (buscar segmento después de 'usando|utilizando|con|basado en|en base a')
+  const mVars = s.match(/(?:usando|utilizando|con|basado\s+en|en\s+base\s+a)\s+(.+?)$/);
+  if (!mVars) return { size, vars: [] };
+  const tail = mVars[1].replace(/[.,;:]+/g," ").trim();
+  // intentar separar por ' y ' (última conjunción)
+  let X="", Y="";
+  const idxY = tail.lastIndexOf(" y ");
+  if (idxY>0){ X=tail.slice(0,idxY).trim(); Y=tail.slice(idxY+3).trim(); }
+  else{
+    // fallback: separar por coma
+    const parts = tail.split(/\s*,\s*/).filter(Boolean);
+    if (parts.length>=2){ X=parts[0]; Y=parts[1]; }
+    else if (parts.length===1){ X=parts[0]; }
+  }
+  // limpia artículos sueltos
+  X = X.replace(/\b(de|la|el|los|las)\b/gi,"").trim();
+  Y = Y.replace(/\b(de|la|el|los|las)\b/gi,"").trim();
+  const vars = [X,Y].filter(Boolean);
+  return { size, vars };
+}
+
+// z-score y grupos
+function toNumber(x){ const n = Number(String(x).replace(",",".").trim()); return Number.isFinite(n)? n: NaN; }
+function zscore(arr){
+  const valid = arr.filter(v => Number.isFinite(v));
+  const mean = valid.reduce((a,b)=>a+b,0) / (valid.length || 1);
+  const sd = Math.sqrt(valid.reduce((a,b)=>a+(b-mean)*(b-mean),0) / (valid.length || 1)) || 1;
+  return arr.map(v => Number.isFinite(v)? (v-mean)/sd : 0);
+}
+function gruposHomogeneos(rows, nameKey, k1, k2, groupSize){
+  const v1 = rows.map(r => toNumber(r[k1]));
+  const v2 = rows.map(r => toNumber(r[k2]));
+  const z1 = zscore(v1), z2 = zscore(v2);
+  const scores = z1.map((z,i) => (z + z2[i]) / 2);
+  const idx = scores.map((s,i)=>({i,s})).sort((a,b)=>a.s-b.s).map(o=>o.i);
+  const ordered = idx.map(i => ({ nombre: rows[i][nameKey] || "", score: scores[i] }));
+  const headers = ["Grupo","NOMBRE"];
+  const out = [];
+  let g=1;
+  for (let i=0; i<ordered.length; i+=groupSize){
+    const chunk = ordered.slice(i, i+groupSize);
+    for (const it of chunk) out.push([`Grupo ${g}`, it.nombre]);
+    g++;
+  }
+  return { headers, rows: out };
 }
 
 // ---------- OpenAI (Responses API) ----------
@@ -151,71 +272,6 @@ async function askStable({ system, user, maxTokens=600, timeoutMs=45000 }){
   }
 }
 
-// ---------- Local engine: grupos de 5 con AGRESION y EMPATIA ----------
-function findHeader(headers, candidates){
-  const H = headers.map(h => ({ raw: h, n: norm(h) }));
-  for (const cand of candidates){
-    const nc = norm(cand);
-    const hit = H.find(h => h.n === nc);
-    if (hit) return hit.raw;
-  }
-  // búsqueda “contiene”
-  for (const cand of candidates){
-    const nc = norm(cand);
-    const hit = H.find(h => h.n.includes(nc));
-    if (hit) return hit.raw;
-  }
-  return null;
-}
-function toNumber(x){ const n = Number(String(x).replace(",",".").trim()); return Number.isFinite(n)? n: NaN; }
-function zscore(arr){
-  const valid = arr.filter(v => Number.isFinite(v));
-  const mean = valid.reduce((a,b)=>a+b,0) / (valid.length || 1);
-  const sd = Math.sqrt(valid.reduce((a,b)=>a+(b-mean)*(b-mean),0) / (valid.length || 1)) || 1;
-  return arr.map(v => Number.isFinite(v)? (v-mean)/sd : 0);
-}
-function gruposHomogeneos5(rows, nameKey, v1Key, v2Key){
-  // extrae números
-  const v1 = rows.map(r => toNumber(r[v1Key]));
-  const v2 = rows.map(r => toNumber(r[v2Key]));
-  const z1 = zscore(v1);
-  const z2 = zscore(v2);
-  // score combinado
-  const scores = z1.map((z,i) => (z + z2[i]) / 2);
-  // ordenar por score ascendente para grupos "homogéneos"
-  const idx = scores.map((s,i)=>({i,s})).sort((a,b)=>a.s-b.s).map(o=>o.i);
-  const ordered = idx.map(i => ({ nombre: rows[i][nameKey], score: scores[i] }));
-  // armar grupos consecutivos de 5
-  const groups = [];
-  let g = 1;
-  for (let i=0; i<ordered.length; i+=5){
-    const chunk = ordered.slice(i, i+5);
-    for (const it of chunk){
-      groups.push([`Grupo ${g}`, it.nombre || ""]);
-    }
-    g++;
-  }
-  return { headers: ["Grupo","NOMBRE"], rows: groups };
-}
-function maybeLocalGroups(query, dataset){
-  const q = norm(query);
-  if (!/GRUP|EQUIP/.test(q)) return null;
-  // debe mencionar ambas variables
-  if (!/AGRESION/.test(q) || !/EMPATIA/.test(q)) return null;
-
-  const headers = dataset.headers;
-  const nameKey = findHeader(headers, ["NOMBRE","NOMBRES","ALUMNO","ESTUDIANTE"]);
-  const v1Key   = findHeader(headers, ["AGRESION"]);
-  const v2Key   = findHeader(headers, ["EMPATIA","EMPATÍA"]);
-  if (!nameKey || !v1Key || !v2Key) return { respuesta: "No se encontraron columnas NOMBRE / AGRESION / EMPATIA." };
-
-  const tabla = gruposHomogeneos5(dataset.rows, nameKey, v1Key, v2Key);
-  return {
-    respuesta: `Grupos homogéneos de 5 formados con ${v1Key} y ${v2Key}.`,
-    tabla
-  };
-}
-
 // ---------- handler ----------
 module.exports = async (req,res)=>{
   try{
@@ -236,18 +292,59 @@ module.exports = async (req,res)=>{
     if (ql==="version")   return sendJSON(res,200,{version: VERSION});
     if (ql==="model")     return sendJSON(res,200,{model: MODEL});
 
-    // CSV
-    const dataset = loadCSVFromFS(); // { headers, rows, ... }
+    // CSV (desde FS; si quisieras aceptar CSV inline por POST, puedes reactivar el bloque)
+    const dataset = loadCSVFromFS(); // {headers, rows, rowsCount...}
 
     if (ql==="diag"){
       return sendJSON(res,200,{ source: dataset.source, filePath: dataset.filePath, rows: dataset.rowsCount, headers: dataset.headers });
     }
 
-    // ----- 1) Intento local si la pregunta es de "grupos ..." -----
-    const local = maybeLocalGroups(q, dataset);
-    if (local) return sendJSON(res,200, local);
+    // ===== Motor LOCAL si la pregunta pide grupos/equipos de N usando X y Y =====
+    const intent = parseGroupingIntent(q);
+    if (intent){
+      const { size, vars } = intent; // vars puede ser [X,Y] o [X] o []
+      // 1) detecta columna de "nombre" (para mostrar en tabla)
+      let nameKey = null;
+      // mejor candidato por heurística
+      let bestName=null, bestN=0;
+      for (const h of dataset.headers){
+        const nLike = isNameLike(h) ? 1.0 : 0.0;
+        const sc = nLike + tokenOverlapScore(h, "nombre estudiante alumno persona apellidos name");
+        if (sc>bestN){ bestN=sc; bestName=h; }
+      }
+      nameKey = bestName || dataset.headers[0]; // fallback: primera columna
 
-    // ----- 2) Si no es caso local, usamos GPT-5 estable -----
+      // 2) detecta las dos columnas numéricas que mejor emparejen con X y Y
+      let k1=null, k2=null;
+      const deny = new Set();
+      if (vars.length>=1){
+        k1 = bestHeaderMatch(vars[0], dataset.headers, dataset.rows, true, deny);
+        if (k1) deny.add(k1);
+      }
+      if (vars.length>=2){
+        k2 = bestHeaderMatch(vars[1], dataset.headers, dataset.rows, true, deny);
+        if (k2) deny.add(k2);
+      }
+      // Si no extrajo dos, completa con las mejores numéricas restantes
+      const numericKeys = dataset.headers.filter(h => !deny.has(h) && isNumericColumn(dataset.rows,h));
+      if (!k1 && numericKeys.length) { k1 = numericKeys[0]; deny.add(k1); }
+      if (!k2 && numericKeys.length>1){ k2 = numericKeys.find(h => h!==k1); }
+      // Si aún falta alguna, no podemos agrupar
+      if (!k1 || !k2){
+        return sendJSON(res,200,{
+          respuesta: "No pude identificar dos columnas numéricas a partir de la pregunta y los encabezados del CSV.",
+          debug: { varsDetectadas: vars, numericCandidatas: numericKeys?.slice(0,5) }
+        });
+      }
+
+      const tabla = gruposHomogeneos(dataset.rows, nameKey, k1, k2, size || 5);
+      return sendJSON(res,200,{
+        respuesta: `Grupos homogéneos de ${size||5} formados con columnas "${k1}" y "${k2}".`,
+        tabla
+      });
+    }
+
+    // ===== Si NO es caso de agrupamiento, usa el pipeline GPT-5 =====
     const system = `
 Eres un analista de datos. Devuelve JSON válido y conciso:
 {
@@ -261,21 +358,24 @@ Reglas:
 - Si la consulta es inválida o no hay datos: {"respuesta":"No encontrado"}.
 - No devuelvas Markdown ni texto fuera del JSON.`;
 
+    // Para compactar: formateamos CSV de vuelta a texto simple (no enviamos todo si es enorme)
+    const csvText = [
+      dataset.headers.join(","),
+      ...dataset.rows.map(r => dataset.headers.map(h => (r[h] ?? "")).join(","))
+    ].join("\n");
+
     const user = `<CSV>
-${dataset.headers.join(",")}
-${dataset.rows.map(r => dataset.headers.map(h => (r[h] ?? "")).join(",")).join("\n")}
+${csvText}
 </CSV>
 
 Pregunta:
 ${q}`;
 
     const out = await askStable({ system, user, maxTokens, timeoutMs });
-
-    // ----- 3) Si GPT-5 quedó mudo, devolvemos un mensaje útil en vez de "{}" -----
-    if (out && out._empty) {
-      return sendJSON(res,200,{ respuesta:"Respuesta generada por respaldo local no disponible para esta consulta y el modelo no respondió. Prueba con &max=700&t=50000 o formula una consulta más corta." });
+    if (out && out._empty){
+      return sendJSON(res,200,{ respuesta:"El modelo no respondió y la consulta no coincide con el caso local. Ajusta &max/&t o simplifica la instrucción." });
     }
-    return sendJSON(res,200, out);
+    return sendJSON(res,200,out);
 
   }catch(err){
     return sendJSON(res,500,{error:String(err.message||err)});
