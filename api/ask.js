@@ -1,11 +1,11 @@
-// api/ask.js — SOLO GPT-5 (sin lógica local)
-// v20: pipeline robusto Responses -> Chat -> Responses(JSON) -> Chat(JSON)
+// api/ask.js — SOLO GPT-5 con reintentos (Chat Completions)
+// v21: sin Responses API; 3 intentos: libre → JSON → libre (mensaje compacto)
 
 const fs = require("fs");
 const path = require("path");
 
 // ===== Build/version =====
-const VERSION = "gpt5-csv-direct-main-20";
+const VERSION = "gpt5-csv-direct-main-21";
 const MODEL   = process.env.OPENAI_MODEL || "gpt-5";
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
@@ -31,11 +31,11 @@ function ensureObject(x){
 }
 function extractFirstJSONBlock(text){
   const start = text.indexOf("{"); if (start<0) return null;
-  let depth=0;
+  let d=0;
   for (let i=start;i<text.length;i++){
-    const ch = text[i];
-    if (ch==="{") depth++;
-    if (ch==="}") { depth--; if (depth===0){ const cand=text.slice(start,i+1); try{ return JSON.parse(cand);}catch{} break; } }
+    const ch=text[i];
+    if (ch==="{") d++;
+    if (ch==="}") { d--; if (d===0){ const cand=text.slice(start,i+1); try{ return JSON.parse(cand);}catch{} break; } }
   }
   return null;
 }
@@ -53,100 +53,72 @@ function loadCSV(){
     if (fs.existsSync(filePath)){
       const csv=fs.readFileSync(filePath,"utf8");
       const d=detectDelimiter(csv);
-      const lines = csv.split(/\r?\n/).filter(l => l.length>0);
+      const lines = csv.split(/\r?\n/).filter(Boolean);
       if (!lines.length) throw new Error("CSV vacío.");
       const headers = lines[0].split(d).map(s=>s.trim());
       const rowsCount = Math.max(0, lines.length-1);
-      return { csv, filePath, headers, rowsCount, delimiter: d, source:"fs" };
+      return { csv, filePath, headers, rowsCount, delimiter:d, source:"fs" };
     }
   }
   throw new Error("CSV no encontrado. Sube api/data.csv o data.csv al repo.");
 }
 
-// ---------- OpenAI helpers ----------
-function getTextFromResponses(data){
-  if (typeof data?.output_text === "string" && data.output_text.trim()) return data.output_text.trim();
-  if (Array.isArray(data?.output)){
-    const parts=[];
-    for (const item of data.output){
-      if (Array.isArray(item?.content)){
-        for (const c of item.content){
-          const txt = (c?.text || c?.content || "").toString();
-          if (txt) parts.push(txt);
-        }
-      }
-    }
-    const joined = parts.join("").trim();
-    if (joined) return joined;
-  }
-  if (Array.isArray(data?.content)){
-    const t = data.content.map(c => c?.text || "").join("").trim();
-    if (t) return t;
-  }
-  return "";
-}
-
-async function callResponses({ system, user, maxTokens, timeoutMs, json=false }){
-  const ac=new AbortController(); const timer=setTimeout(()=>ac.abort(), timeoutMs);
-  const payload={
-    model: MODEL,
-    input: [
-      { role: "system", content: [{ type:"input_text", text: system }] },
-      { role: "user",   content: [{ type:"input_text", text: user   }] }
-    ],
-    max_output_tokens: Math.max(64, Math.min(maxTokens, 2000))
-  };
-  if (json) payload.response_format = { type: "json_object" };
-
-  try{
-    const r = await fetch("https://api.openai.com/v1/responses",{
-      method:"POST", signal:ac.signal,
-      headers:{ "Content-Type":"application/json","Authorization":`Bearer ${OPENAI_API_KEY}` },
-      body: JSON.stringify(payload)
-    });
-    clearTimeout(timer);
-    if (!r.ok){ const t=await r.text().catch(()=> ""); throw new Error(`OpenAI(responses) ${r.status}: ${t}`); }
-    const data = await r.json();
-    return getTextFromResponses(data);
-  }catch(e){ clearTimeout(timer); if (e.name==="AbortError") throw new Error(`Timeout (~${Math.round(timeoutMs/1000)}s)`); throw e; }
-}
-
+// ---------- OpenAI (chat/completions) ----------
 async function callChat({ system, user, maxTokens, timeoutMs, json=false }){
-  const ac=new AbortController(); const timer=setTimeout(()=>ac.abort(), timeoutMs);
-  const payload={
+  const ac = new AbortController();
+  const timer = setTimeout(()=>ac.abort(), timeoutMs);
+
+  const payload = {
     model: MODEL,
     max_completion_tokens: Math.max(64, Math.min(maxTokens, 1200)),
-    messages:[ {role:"system", content: system},{role:"user", content: user} ]
+    messages: [
+      { role: "system", content: system },
+      { role: "user",   content: user   }
+    ]
   };
   if (json) payload.response_format = { type: "json_object" };
 
   try{
     const r = await fetch("https://api.openai.com/v1/chat/completions",{
-      method:"POST", signal:ac.signal,
-      headers:{ "Content-Type":"application/json","Authorization":`Bearer ${OPENAI_API_KEY}` },
+      method:"POST",
+      signal: ac.signal,
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":`Bearer ${OPENAI_API_KEY}`
+      },
       body: JSON.stringify(payload)
     });
     clearTimeout(timer);
-    if (!r.ok){ const t=await r.text().catch(()=> ""); throw new Error(`OpenAI(chat) ${r.status}: ${t}`); }
+    if (!r.ok){
+      const t = await r.text().catch(()=> "");
+      throw new Error(`OpenAI(chat) ${r.status}: ${t}`);
+    }
     const data = await r.json();
     return (data?.choices?.[0]?.message?.content || "").trim();
-  }catch(e){ clearTimeout(timer); if (e.name==="AbortError") throw new Error(`Timeout (~${Math.round(timeoutMs/1000)}s)`); throw e; }
+  }catch(e){
+    clearTimeout(timer);
+    if (e.name==="AbortError") throw new Error(`Timeout (~${Math.round(timeoutMs/1000)}s)`);
+    throw e;
+  }
 }
 
-async function askGPT5Only({ system, user, maxTokens=600, timeoutMs=45000 }){
-  // 1) Responses libre
+async function askGPT5({ system, user, maxTokens=600, timeoutMs=45000 }){
+  // Intento 1: libre
   let txt = "";
-  try{ txt = await callResponses({ system, user, maxTokens, timeoutMs, json:false }); }catch{}
-  // 2) Chat libre
-  if (!txt){ try{ txt = await callChat({ system, user, maxTokens, timeoutMs, json:false }); }catch{} }
-  // 3) Responses JSON
-  if (!txt){ try{ txt = await callResponses({ system, user, maxTokens, timeoutMs, json:true  }); }catch{} }
-  // 4) Chat JSON
+  try{ txt = await callChat({ system, user, maxTokens, timeoutMs, json:false }); }catch{}
+  // Intento 2: JSON estricto
   if (!txt){ try{ txt = await callChat({ system, user, maxTokens, timeoutMs, json:true  }); }catch{} }
+  // Intento 3: libre con prompt más corto (reduce fricción)
+  if (!txt){
+    try{
+      const miniSystem = "Responde brevemente. Si incluyes tabla, devuélvela como JSON con campos 'headers' y 'rows'.";
+      txt = await callChat({ system: miniSystem, user, maxTokens, timeoutMs, json:false });
+    }catch{}
+  }
 
-  if (!txt) return { _empty: true, respuesta: "El modelo no devolvió contenido (Responses+Chat). Prueba con &max=700&t=50000 o simplifica la solicitud." };
+  if (!txt) return { _empty: true, respuesta: "El modelo no respondió (3 intentos)." };
 
-  // Parseo robusto: JSON directo → JSON embebido → texto
+  // Parse robusto
   try{
     const obj = ensureObject(JSON.parse(txt));
     if (!obj.respuesta && !obj.tabla) obj.respuesta = "Resultado generado.";
@@ -181,26 +153,24 @@ module.exports = async (req,res)=>{
     if (ql==="version")   return sendJSON(res,200,{version: VERSION});
     if (ql==="model")     return sendJSON(res,200,{model: MODEL});
 
-    // Carga CSV y deja consultar "diag"
+    // CSV + diag
     const data = loadCSV();
     if (ql==="diag"){
       return sendJSON(res,200,{ source:data.source, filePath:data.filePath, rows:data.rowsCount, headers:data.headers });
     }
 
-    // Prompt SOLO GPT-5
+    // System message sencillo (sin obligaciones agresivas)
     const system = `
-Eres un analista que responde SOLO en JSON válido con el siguiente formato:
+Eres un analista de datos. Responde en JSON válido con:
 {
   "respuesta": "texto breve en español",
   "tabla": { "headers": [..], "rows": [[..], ..] }
 }
-Reglas:
-- El CSV está entre <CSV>...</CSV>. La 1ª fila son encabezados reales; usa solo esos nombres.
-- Si piden "tabla", devuélvela en "tabla"; si no, puedes responder solo en "respuesta".
-- Si no puedes realizar algo (p.ej., no encuentras columnas), explica con claridad en "respuesta".
-- No envíes nada fuera del JSON.`;
+- El CSV va entre <CSV>...</CSV> (primera fila = encabezados).
+- Usa exactamente los encabezados del CSV cuando cites columnas.
+- Si no puedes cumplir algo, explica por qué en "respuesta".`;
 
-    // Le pasamos el CSV tal cual
+    // Paso el CSV completo tal cual
     const user = `<CSV>
 ${data.csv}
 </CSV>
@@ -208,10 +178,10 @@ ${data.csv}
 Pregunta:
 ${q}`;
 
-    const out = await askGPT5Only({ system, user, maxTokens, timeoutMs });
+    const out = await askGPT5({ system, user, maxTokens, timeoutMs });
 
     if (out && out._empty){
-      return sendJSON(res,200,{ respuesta:"El modelo no respondió. Sube &max=700&t=50000 o intenta una pregunta más concreta." });
+      return sendJSON(res,200,{ respuesta:"El modelo no respondió (3 intentos). Prueba con &max=700&t=50000 o reformula la consulta con el nombre exacto de la columna." });
     }
     return sendJSON(res,200,out);
 
