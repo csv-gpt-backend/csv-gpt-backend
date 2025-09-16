@@ -1,10 +1,21 @@
-// api/ask.js — Serverless Node (CommonJS) + CORS + GPT-5 sobre tu CSV
-// Requiere en Vercel: OPENAI_API_KEY (Settings → Environment Variables)
-
+// api/ask.js — Serverless Node + CORS + GPT-5 sobre tu CSV
 const fs = require('fs');
 const path = require('path');
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+// Acepta varios nombres de variable de entorno
+const ENV_KEYS = [
+  'OPENAI_API_KEY', 'OPENAI_KEY', 'OPENAI', 'API_KEY',
+  'CLAVE_API_DE_OPENAI', 'CLAVE_API_OPENAI', 'OPENAI_API'
+];
+let USED_ENV = null;
+function pickOpenAIKey() {
+  for (const k of ENV_KEYS) {
+    const v = process.env[k];
+    if (v && String(v).trim()) { USED_ENV = k; return String(v).trim(); }
+  }
+  return '';
+}
+const OPENAI_API_KEY = pickOpenAIKey();
 
 let CACHE = null; // { rows, headersRaw, headersNorm, filePath }
 
@@ -48,14 +59,14 @@ function loadOnce(){
 }
 
 function setCORS(res, origin='*'){
-  res.setHeader('Access-Control-Allow-Origin', origin); // pon tu dominio de Wix cuando quede estable
+  res.setHeader('Access-Control-Allow-Origin', origin); // cuando quede estable, pon tu dominio de Wix
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Cache-Control', 'no-store');
 }
 
-// Convierte cada fila a objeto con claves "humanas" y castea números
+// Convierte filas a objeto con claves "humanas" y castea números
 function buildRowsForLLM(rows, headersRaw, headersNorm){
   const out = [];
   for (const r of rows){
@@ -71,7 +82,7 @@ function buildRowsForLLM(rows, headersRaw, headersNorm){
 }
 
 async function askOpenAI(question, table){
-  if (!OPENAI_API_KEY) return { error: 'OPENAI_API_KEY no configurada en Vercel.' };
+  if (!OPENAI_API_KEY) return { error: `No encuentro tu API key. Define una variable de entorno llamada ${ENV_KEYS.join(' / ')} en Vercel.` };
 
   const dataForLLM = buildRowsForLLM(table.rows, table.headersRaw, table.headersNorm);
 
@@ -79,8 +90,7 @@ async function askOpenAI(question, table){
     'Eres un analista de datos experto y respondes SIEMPRE en español.',
     'Usa únicamente la tabla proporcionada; si faltan datos, dilo.',
     'Aplica razonamiento lógico y matemático: promedios, conteos, porcentajes, rankings, comparaciones.',
-    'Muestra los cálculos clave de forma breve y cita el tamaño de muestra (n).',
-    'Redondea a 2 decimales cuando sea útil.'
+    'Muestra los cálculos clave (con n) y redondea a 2 decimales cuando ayude.'
   ].join(' ');
 
   const user = [
@@ -92,7 +102,7 @@ async function askOpenAI(question, table){
   ].join('\n');
 
   const payload = {
-    model: 'gpt-5-mini',          // si prefieres más capacidad, usa 'gpt-5'
+    model: 'gpt-5-mini', // usa 'gpt-5' si quieres más capacidad
     input: [
       { role: 'system', content: system },
       { role: 'user',   content: user   }
@@ -126,16 +136,24 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const q = String(req.query.q || '').trim();
-  if (!q) return res.status(200).json({ respuesta: 'Escribe tu pregunta. Pruebas: ping, diag' });
+  if (!q) return res.status(200).json({ respuesta: 'Escribe tu pregunta. Pruebas: ping, diag, env' });
   if (q.toLowerCase() === 'ping') return res.status(200).json({ ok: true });
 
   const data = loadOnce();
 
+  // Diagnósticos
   if (q.toLowerCase() === 'diag') {
     return res.status(200).json({
       file: data.filePath,
       rows: data.rows.length,
       headers: data.headersRaw.length ? data.headersRaw : data.headersNorm
+    });
+  }
+  if (q.toLowerCase() === 'env') {
+    return res.status(200).json({
+      openai_key_present: Boolean(OPENAI_API_KEY),
+      using_env_name: USED_ENV || null,
+      note: OPENAI_API_KEY ? 'OK' : `Define una de: ${ENV_KEYS.join(' / ')}`
     });
   }
 
