@@ -2,17 +2,17 @@
 const fs = require("fs");
 const path = require("path");
 
-// === Build/version ===
-const VERSION = "gpt5-csv-direct-main-9";
+// ===== Build/version =====
+const VERSION = "gpt5-csv-direct-main-10";
 
-// === Modelo (forzado a GPT-5; puedes sobreescribir con OPENAI_MODEL) ===
+// ===== Modelo (forzado a GPT-5; override opcional por OPENAI_MODEL) =====
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
 
-// === API Key ===
+// ===== API Key =====
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
 
-// ---------- helpers ----------
+// ---------- util ----------
 function setCORS(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -62,34 +62,48 @@ function loadCSVFromFS() {
 async function askOpenAI({ system, user }) {
   if (!OPENAI_API_KEY) throw new Error("Falta OPENAI_API_KEY en Vercel (Production).");
 
+  // Timeout de ~28s para evitar colgar la función
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 28_000);
+
   const payload = {
-    model: MODEL,                            // GPT-5
-    // ❗ NO ENVIAR 'temperature' con GPT-5 (usa el valor por defecto)
+    model: MODEL,                         // GPT-5 (no enviar temperature con este modelo)
     response_format: { type: "json_object" },
+    max_tokens: 900,                      // tope prudente para respuestas
     messages: [
       { role: "system", content: system },
-      { role: "user",   content: user }
-    ]
+      { role: "user",   content: user   },
+    ],
   };
 
-  const r = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      signal: ac.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    clearTimeout(timer);
 
-  if (!r.ok) {
-    const t = await r.text().catch(() => "");
-    throw new Error(`OpenAI ${r.status}: ${t}`);
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      throw new Error(`OpenAI ${r.status}: ${t}`);
+    }
+
+    const data = await r.json();
+    const text = data?.choices?.[0]?.message?.content || "{}";
+    try { return JSON.parse(text); }
+    catch { return { respuesta: text }; }
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === "AbortError") {
+      throw new Error("Timeout: OpenAI tardó demasiado en responder (~28s).");
+    }
+    throw e;
   }
-
-  const data = await r.json();
-  const text = data?.choices?.[0]?.message?.content || "{}";
-  try { return JSON.parse(text); }
-  catch { return { respuesta: text }; }
 }
 
 // ---------- handler ----------
@@ -101,7 +115,7 @@ module.exports = async (req, res) => {
       return res.end();
     }
 
-    // obtener q
+    // leer q de query o body
     let q = "";
     try { q = new URL(req.url, `http://${req.headers.host}`).searchParams.get("q") || ""; } catch {}
     if (!q && req.method !== "GET") {
@@ -111,12 +125,12 @@ module.exports = async (req, res) => {
     q = (q || "").toString().trim();
     const ql = q.toLowerCase();
 
-    // health
+    // health / utilidades
     if (!q || ql === "ping")   return sendJSON(res, 200, { ok: true });
     if (ql === "version")      return sendJSON(res, 200, { version: VERSION });
     if (ql === "model")        return sendJSON(res, 200, { model: MODEL });
 
-    // CSV inline o archivo
+    // CSV inline (POST.csv) o desde archivo
     let csvInfo;
     if (req.method !== "GET") {
       const body = typeof req.body === "string" ? safeJSON(req.body) : (req.body || {});
@@ -138,6 +152,7 @@ module.exports = async (req, res) => {
       });
     }
 
+    // Prompt
     const system = `
 Eres un analista de datos. Devuelve SIEMPRE JSON válido con esta forma:
 {
@@ -145,10 +160,10 @@ Eres un analista de datos. Devuelve SIEMPRE JSON válido con esta forma:
   "tabla": { "headers": [..], "rows": [[..], ..] },
   "stats": { "n": <int>, "mean": <number> }
 }
-- Recibirás el CSV entre <CSV>...</CSV>.
-- Acepta sinónimos y variaciones (acentos/mayúsculas).
+- Te paso el CSV entre <CSV>...</CSV>. La primera fila son encabezados.
+- Acepta sinónimos/variantes (acentos, mayúsculas).
 - "por separado"/"por paralelo" => agrupa por la columna de paralelo (A,B,...).
-- "ranking" => ordena de mayor a menor (incluye posición).
+- "ranking" => ordena de mayor a menor e incluye la posición.
 - Si preguntan por una persona vs promedio, calcula ambos y muéstralos.
 - Nada de Markdown; solo JSON.`;
 
