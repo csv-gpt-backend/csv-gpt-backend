@@ -1,4 +1,4 @@
-// api/ask.js  — Vercel Serverless (Node 18+)
+// api/ask.js — Vercel Serverless (Node 18+)
 // Reemplaza el endpoint antiguo. Ahora SIEMPRE manda el CSV completo a GPT.
 // GET  /api/ask?q=...   (usa el CSV del deploy)
 // POST /api/ask         (opcional: { q, csv } para enviar CSV en el body)
@@ -34,7 +34,7 @@ function loadCSVFromDisk() {
 
 async function callOpenAI(system, user) {
   const payload = {
-    model: "gpt-5", // si tu cuenta no lo tiene, cambia a "gpt-4o"
+    model: "gpt-5", // si no está habilitado, usa "gpt-4o"
     temperature: 0,
     response_format: { type: "json_object" },
     messages: [
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     const q = (isGET ? req.query.q : req.body?.q)?.toString().trim() || "";
     const csvInline = isGET ? null : (req.body?.csv ?? null);
 
-    // Endpoints de prueba
+    // Endpoints de prueba (DEVUELVEN JSON)
     if (!q || q.toLowerCase() === "ping")   return send(res, 200, { ok: true });
     if (q.toLowerCase() === "version")      return send(res, 200, { version: VERSION });
 
@@ -96,10 +96,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // ===== Prompt (CSV → GPT, solo JSON) =====
+    // ===== Prompt (CSV → GPT, SOLO JSON) =====
     const system = `
 Eres un analista de datos. Recibirás el CSV completo entre <CSV>...</CSV> y una pregunta.
-Responde **solo JSON válido** con esta forma como mínimo:
+Responde **solo JSON válido** con esta forma mínima:
 {
   "respuesta": "texto claro en español",
   "tabla": { "headers": [...], "rows": [[...], ...] },   // si aplica
