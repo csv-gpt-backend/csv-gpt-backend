@@ -1,9 +1,10 @@
 // api/ask.js — Vercel Serverless (Node 18+)
+// v18: fallback local para "grupos de 5" con AGRESION y EMPATIA
 const fs = require("fs");
 const path = require("path");
 
 // ===== Build/version =====
-const VERSION = "gpt5-csv-direct-main-17";
+const VERSION = "gpt5-csv-direct-main-18";
 const MODEL   = process.env.OPENAI_MODEL || "gpt-5";
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
@@ -37,8 +38,9 @@ function extractFirstJSONBlock(text){
   }
   return null;
 }
+const norm = s => (s||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().trim();
 
-// ---------- CSV ----------
+// ---------- CSV I/O ----------
 function detectDelimiter(sample){
   const head = sample.split(/\r?\n/).slice(0,3).join("\n");
   const counts = [[",",(head.match(/,/g)||[]).length],[";",(head.match(/;/g)||[]).length],["\t",(head.match(/\t/g)||[]).length]]
@@ -51,10 +53,16 @@ function loadCSVFromFS(){
     if (fs.existsSync(filePath)){
       const csv=fs.readFileSync(filePath,"utf8");
       const d=detectDelimiter(csv);
-      const headerLine=(csv.split(/\r?\n/).find(Boolean)||"");
-      const headers=headerLine.split(d).map(s=>s.trim());
-      const rows=Math.max(0, csv.split(/\r?\n/).filter(Boolean).length-1);
-      return { csv, filePath, rows, headers, source:"fs" };
+      const lines = csv.split(/\r?\n/).filter(l => l.length>0);
+      if (lines.length===0) throw new Error("CSV vacío.");
+      const headers = lines[0].split(d).map(s=>s.trim());
+      const rowsNum = lines.slice(1).map(l => l.split(d));
+      const rows = rowsNum.map(arr => {
+        const o = {};
+        headers.forEach((h, i) => o[h] = (arr[i] ?? "").trim());
+        return o;
+      });
+      return { csv, filePath, rowsCount: rows.length, headers, rows, source:"fs", delimiter:d };
     }
   }
   throw new Error("CSV no encontrado. Sube api/data.csv o data.csv al repo.");
@@ -76,25 +84,21 @@ function getTextFromResponses(data){
     const joined = parts.join("").trim();
     if (joined) return joined;
   }
-  // fallback extra: algunos modelos devuelven data.content
   if (Array.isArray(data?.content)){
     const t = data.content.map(c => c?.text || "").join("").trim();
     if (t) return t;
   }
   return "";
 }
-
 async function callResponses({ system, user, maxTokens, timeoutMs }){
   const ac=new AbortController(); const timer=setTimeout(()=>ac.abort(), timeoutMs);
   const payload={
     model: MODEL,
-    // Formato correcto: arreglo de mensajes con input_text
     input: [
       { role: "system", content: [{ type:"input_text", text: system }] },
       { role: "user",   content: [{ type:"input_text", text: user   }] }
     ],
     max_output_tokens: Math.max(64, Math.min(maxTokens, 2000))
-    // OJO: no forzamos response_format para evitar vacíos; ya extraemos JSON luego.
   };
   try{
     const r = await fetch("https://api.openai.com/v1/responses",{
@@ -116,7 +120,6 @@ async function callChat({ system, user, maxTokens, timeoutMs }){
     model: MODEL,
     max_completion_tokens: Math.max(64, Math.min(maxTokens, 1200)),
     messages:[ {role:"system", content: system},{role:"user", content: user} ]
-    // sin response_format para evitar respuestas vacías
   };
   try{
     const r = await fetch("https://api.openai.com/v1/chat/completions",{
@@ -135,9 +138,8 @@ async function askStable({ system, user, maxTokens=600, timeoutMs=45000 }){
   let txt="";
   try{ txt = await callResponses({ system, user, maxTokens, timeoutMs }); }catch{}
   if (!txt){ try{ txt = await callChat({ system, user, maxTokens: Math.max(maxTokens,700), timeoutMs }); }catch{} }
-  if (!txt) return { respuesta: "Sin contenido del modelo incluso con fallback. Sube &max=700 o &t=50000." };
+  if (!txt) return { _empty: true, respuesta: "Sin contenido del modelo (Responses+Chat)." };
 
-  // Parse robusto
   try{
     const obj = ensureObject(JSON.parse(txt));
     if (!obj.respuesta && !obj.tabla) obj.respuesta = "Resultado generado.";
@@ -147,6 +149,71 @@ async function askStable({ system, user, maxTokens=600, timeoutMs=45000 }){
     if (block){ const obj=ensureObject(block); if (!obj.respuesta && !obj.tabla) obj.respuesta="Resultado recuperado."; return obj; }
     return { respuesta: txt };
   }
+}
+
+// ---------- Local engine: grupos de 5 con AGRESION y EMPATIA ----------
+function findHeader(headers, candidates){
+  const H = headers.map(h => ({ raw: h, n: norm(h) }));
+  for (const cand of candidates){
+    const nc = norm(cand);
+    const hit = H.find(h => h.n === nc);
+    if (hit) return hit.raw;
+  }
+  // búsqueda “contiene”
+  for (const cand of candidates){
+    const nc = norm(cand);
+    const hit = H.find(h => h.n.includes(nc));
+    if (hit) return hit.raw;
+  }
+  return null;
+}
+function toNumber(x){ const n = Number(String(x).replace(",",".").trim()); return Number.isFinite(n)? n: NaN; }
+function zscore(arr){
+  const valid = arr.filter(v => Number.isFinite(v));
+  const mean = valid.reduce((a,b)=>a+b,0) / (valid.length || 1);
+  const sd = Math.sqrt(valid.reduce((a,b)=>a+(b-mean)*(b-mean),0) / (valid.length || 1)) || 1;
+  return arr.map(v => Number.isFinite(v)? (v-mean)/sd : 0);
+}
+function gruposHomogeneos5(rows, nameKey, v1Key, v2Key){
+  // extrae números
+  const v1 = rows.map(r => toNumber(r[v1Key]));
+  const v2 = rows.map(r => toNumber(r[v2Key]));
+  const z1 = zscore(v1);
+  const z2 = zscore(v2);
+  // score combinado
+  const scores = z1.map((z,i) => (z + z2[i]) / 2);
+  // ordenar por score ascendente para grupos "homogéneos"
+  const idx = scores.map((s,i)=>({i,s})).sort((a,b)=>a.s-b.s).map(o=>o.i);
+  const ordered = idx.map(i => ({ nombre: rows[i][nameKey], score: scores[i] }));
+  // armar grupos consecutivos de 5
+  const groups = [];
+  let g = 1;
+  for (let i=0; i<ordered.length; i+=5){
+    const chunk = ordered.slice(i, i+5);
+    for (const it of chunk){
+      groups.push([`Grupo ${g}`, it.nombre || ""]);
+    }
+    g++;
+  }
+  return { headers: ["Grupo","NOMBRE"], rows: groups };
+}
+function maybeLocalGroups(query, dataset){
+  const q = norm(query);
+  if (!/GRUP|EQUIP/.test(q)) return null;
+  // debe mencionar ambas variables
+  if (!/AGRESION/.test(q) || !/EMPATIA/.test(q)) return null;
+
+  const headers = dataset.headers;
+  const nameKey = findHeader(headers, ["NOMBRE","NOMBRES","ALUMNO","ESTUDIANTE"]);
+  const v1Key   = findHeader(headers, ["AGRESION"]);
+  const v2Key   = findHeader(headers, ["EMPATIA","EMPATÍA"]);
+  if (!nameKey || !v1Key || !v2Key) return { respuesta: "No se encontraron columnas NOMBRE / AGRESION / EMPATIA." };
+
+  const tabla = gruposHomogeneos5(dataset.rows, nameKey, v1Key, v2Key);
+  return {
+    respuesta: `Grupos homogéneos de 5 formados con ${v1Key} y ${v2Key}.`,
+    tabla
+  };
 }
 
 // ---------- handler ----------
@@ -170,23 +237,17 @@ module.exports = async (req,res)=>{
     if (ql==="model")     return sendJSON(res,200,{model: MODEL});
 
     // CSV
-    let csvInfo;
-    if (req.method!=="GET"){
-      const b = typeof req.body==="string"? safeJSON(req.body): (req.body||{});
-      if (typeof b.csv==="string" && b.csv.trim()){
-        const csv=b.csv; const d=detectDelimiter(csv);
-        const headerLine=(csv.split(/\r?\n/).find(Boolean)||"");
-        const headers=headerLine.split(d).map(s=>s.trim());
-        const rows=Math.max(0, csv.split(/\r?\n/).filter(Boolean).length-1);
-        csvInfo = { csv, filePath:"(inline)", rows, headers, source:"inline" };
-      }
-    }
-    if (!csvInfo) csvInfo = loadCSVFromFS();
+    const dataset = loadCSVFromFS(); // { headers, rows, ... }
 
     if (ql==="diag"){
-      return sendJSON(res,200,{ source: csvInfo.source, filePath: csvInfo.filePath, url:null, rows: csvInfo.rows, headers: csvInfo.headers });
+      return sendJSON(res,200,{ source: dataset.source, filePath: dataset.filePath, rows: dataset.rowsCount, headers: dataset.headers });
     }
 
+    // ----- 1) Intento local si la pregunta es de "grupos ..." -----
+    const local = maybeLocalGroups(q, dataset);
+    if (local) return sendJSON(res,200, local);
+
+    // ----- 2) Si no es caso local, usamos GPT-5 estable -----
     const system = `
 Eres un analista de datos. Devuelve JSON válido y conciso:
 {
@@ -197,19 +258,24 @@ Reglas:
 - El CSV viene entre <CSV>...</CSV>. La primera fila son encabezados.
 - Acepta sinónimos (acentos/mayúsculas); "por separado" = agrupar por "PARALELO".
 - "ranking" => máx 10 filas (mayor→menor) + columna "posición".
-- "grupos"/"equipos" => tabla ["Grupo","NOMBRE"]; grupos homogéneos de 5 (último puede tener menos); si piden dos variables (p.ej. AGRESION y EMPATIA), equilibra ambas.
 - Si la consulta es inválida o no hay datos: {"respuesta":"No encontrado"}.
 - No devuelvas Markdown ni texto fuera del JSON.`;
 
     const user = `<CSV>
-${csvInfo.csv}
+${dataset.headers.join(",")}
+${dataset.rows.map(r => dataset.headers.map(h => (r[h] ?? "")).join(",")).join("\n")}
 </CSV>
 
 Pregunta:
 ${q}`;
 
     const out = await askStable({ system, user, maxTokens, timeoutMs });
-    return sendJSON(res,200,out);
+
+    // ----- 3) Si GPT-5 quedó mudo, devolvemos un mensaje útil en vez de "{}" -----
+    if (out && out._empty) {
+      return sendJSON(res,200,{ respuesta:"Respuesta generada por respaldo local no disponible para esta consulta y el modelo no respondió. Prueba con &max=700&t=50000 o formula una consulta más corta." });
+    }
+    return sendJSON(res,200, out);
 
   }catch(err){
     return sendJSON(res,500,{error:String(err.message||err)});
