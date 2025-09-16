@@ -1,45 +1,57 @@
-// api/ask.js — Serverless Node (CommonJS) + CORS + promedios (incluye "solo el nombre de la columna")
+// api/ask.js — Serverless Node + CORS + GPT-5 razonando sobre tu CSV
+// Requisitos en Vercel (Settings → Environment Variables):
+//   OPENAI_API_KEY = tu_api_key
+
 const fs = require('fs');
 const path = require('path');
 
-let CACHE = null; // { rows, headers, filePath }
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+
+let CACHE = null; // { rows, headersRaw, headersNorm, filePath }
 
 const norm = s => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
 const toNumber = v => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
-const detectDelimiter = first => ((first.match(/;/g)||[]).length > (first.match(/,/g)||[]).length) ? ';' : ',';
+const detectDelimiter = first =>
+  ((first.match(/;/g)||[]).length > (first.match(/,/g)||[]).length) ? ';' : ',';
 
+// Lee CSV y guarda dos juegos de headers: crudos (para humanos) y normalizados (para lookup)
 function parseCSV(text){
   const lines = text.replace(/\r/g,'').trim().split('\n');
-  if (!lines.length) return { rows: [], headers: [] };
+  if (!lines.length) return { rows: [], headersRaw: [], headersNorm: [] };
+
   const delim = detectDelimiter(lines[0] || '');
-  const headers = (lines[0] || '').split(delim).map(norm);
+  const headersRaw = (lines[0] || '').split(delim).map(h => h.trim());
+  const headersNorm = headersRaw.map(norm);
+
   const rows = [];
-  for (let i=1;i<lines.length;i++){
+  for (let i = 1; i < lines.length; i++){
     const line = lines[i];
     if (!line?.trim()) continue;
     const cols = line.split(delim);
     const row = {};
-    for (let j=0;j<headers.length;j++) row[headers[j]] = (cols[j] ?? '').trim();
+    for (let j = 0; j < headersNorm.length; j++){
+      row[headersNorm[j]] = (cols[j] ?? '').trim();
+    }
     rows.push(row);
   }
-  return { rows, headers };
+  return { rows, headersRaw, headersNorm };
 }
 
 function loadOnce(){
   if (CACHE) return CACHE;
   const candidates = [
     path.join(__dirname, 'data.csv'),      // /api/data.csv
-    path.join(__dirname, '..', 'data.csv') // /data.csv
+    path.join(__dirname, '..', 'data.csv') // /data.csv (raíz)
   ];
   for (const fp of candidates){
     if (fs.existsSync(fp)){
       const txt = fs.readFileSync(fp, 'utf8');
-      const { rows, headers } = parseCSV(txt);
-      CACHE = { rows, headers, filePath: fp };
+      const parsed = parseCSV(txt);
+      CACHE = { ...parsed, filePath: fp };
       return CACHE;
     }
   }
-  CACHE = { rows: [], headers: [], filePath: null };
+  CACHE = { rows: [], headersRaw: [], headersNorm: [], filePath: null };
   return CACHE;
 }
 
@@ -51,29 +63,74 @@ function setCORS(res, origin='*'){
   res.setHeader('Cache-Control', 'no-store');
 }
 
-function promedioDe(rows, campo){
-  const KEY = norm(campo);
-  const nums = rows.map(r => toNumber(r[KEY] ?? r[campo] ?? r[KEY.toLowerCase()]))
-                   .filter(Number.isFinite);
-  if (!nums.length) return { n: 0, mean: null };
-  const mean = nums.reduce((a,b)=>a+b,0)/nums.length;
-  return { n: nums.length, mean: Number(mean.toFixed(2)) };
-}
-
-function promediosDeTodas(rows, headers){
+// Convierte cada fila a objeto con claves "humanas" (headersRaw) y castea números
+function buildRowsForLLM(rows, headersRaw, headersNorm){
   const out = [];
-  for (const h of headers){
-    const st = promedioDe(rows, h);
-    if (st.n > 0 && st.mean != null) out.push({ columna: h, n: st.n, mean: st.mean });
+  for (const r of rows){
+    const obj = {};
+    for (let i = 0; i < headersRaw.length; i++){
+      const keyRaw  = headersRaw[i];
+      const keyNorm = headersNorm[i];
+      const val = r[keyNorm];
+      const n = toNumber(val);
+      obj[keyRaw] = Number.isFinite(n) ? n : val;
+    }
+    out.push(obj);
   }
-  out.sort((a,b)=> a.columna.localeCompare(b.columna));
   return out;
 }
 
-// Busca si q exactamente coincide con alguna columna (tolerante a mayúsculas/acentos)
-function matchHeader(q, headers){
-  const Q = norm(q);
-  return headers.find(h => norm(h) === Q) || null;
+// Llama a OpenAI Responses API con GPT-5 para razonar sobre los datos
+async function askGPT5(question, table){
+  if (!OPENAI_API_KEY) {
+    return { error: 'Falta OPENAI_API_KEY en Vercel > Settings > Environment Variables.' };
+  }
+
+  // Compactamos los datos (50 filas está perfecto para enviar tal cual)
+  const dataForLLM = buildRowsForLLM(table.rows, table.headersRaw, table.headersNorm);
+
+  const system = [
+    'Eres un analista de datos experto. Responde SIEMPRE en español.',
+    'Usa únicamente la tabla proporcionada; si algo no está en los datos, dilo claramente.',
+    'Razona con rigor lógico y matemático; muestra cálculos clave resumidos (promedios, conteos, %).',
+    'Redondea a 2 decimales cuando ayude; indica el tamaño de muestra (n).',
+  ].join(' ');
+
+  const user = [
+    `Pregunta: ${question}`,
+    `Columnas: ${JSON.stringify(table.headersRaw)}`,
+    `Filas: ${dataForLLM.length}`,
+    `Datos (JSON por fila):`,
+    JSON.stringify(dataForLLM)
+  ].join('\n');
+
+  const payload = {
+    model: 'gpt-5-mini',   // puedes subir a 'gpt-5' si quieres más capacidad
+    input: [
+      { role: 'system', content: system },
+      { role: 'user',   content: user   }
+    ],
+    max_output_tokens: 800,
+    temperature: 0.1
+  };
+
+  const r = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const body = await r.json();
+  const text = body.output_text
+            || body.content?.map?.(p => p?.text)?.filter(Boolean)?.join('\n')
+            || body.choices?.[0]?.message?.content
+            || JSON.stringify(body);
+
+  if (!r.ok) return { error: `OpenAI HTTP ${r.status}: ${text}` };
+  return { text };
 }
 
 module.exports = async (req, res) => {
@@ -81,35 +138,25 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const q = String(req.query.q || '').trim();
-  if (!q) return res.status(200).json({ respuesta: 'Usa: "Promedio de TIMIDEZ" · Pruebas: ping, diag, promedios' });
+  if (!q) return res.status(200).json({ respuesta: 'Escribe tu pregunta. Pruebas: ping, diag' });
   if (q.toLowerCase() === 'ping') return res.status(200).json({ ok: true });
 
   const data = loadOnce();
-  if (!data.filePath) return res.status(404).json({ error: 'No encontré data.csv (colócalo en /api/data.csv o /data.csv).' });
+  if (q.toLowerCase() === 'diag') {
+    return res.status(200).json({
+      file: data.filePath,
+      rows: data.rows.length,
+      headers: data.headersRaw.length ? data.headersRaw : data.headersNorm
+    });
+  }
+  if (!data.filePath)   return res.status(404).json({ error: 'No encontré data.csv (ponlo en /api/data.csv o /data.csv).' });
   if (!data.rows.length) return res.status(404).json({ error: 'data.csv está vacío o sin filas válidas.' });
 
-  if (q.toLowerCase() === 'diag') return res.status(200).json({ file: data.filePath, rows: data.rows.length, headers: data.headers });
-  if (/^promedios?$/i.test(q)) {
-    const lista = promediosDeTodas(data.rows, data.headers);
-    if (!lista.length) return res.status(404).json({ error: 'No hay columnas numéricas.' });
-    return res.status(200).json({ respuesta: 'Promedios por columna', promedios: lista });
+  try {
+    const out = await askGPT5(q, data);
+    if (out.error) return res.status(502).json({ error: out.error });
+    return res.status(200).json({ respuesta: out.text });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
   }
-
-  // "Promedio de X" o "Promedio X"
-  const m = q.match(/promedio(?:\s+de)?\s+(.+)/i);
-  if (m) {
-    const campo = m[1].trim();
-    const st = promedioDe(data.rows, campo);
-    if (st.n > 0 && st.mean != null) return res.status(200).json({ respuesta: `Promedio de ${campo}: ${st.mean} (n=${st.n})`, stats: st });
-    return res.status(404).json({ error: `No encontré valores numéricos para "${campo}". Usa uno de: ${JSON.stringify(data.headers)}.` });
-  }
-
-  // NUEVO: si el usuario escribe solo el nombre de una columna ("TIMIDEZ"), calcula el promedio
-  const header = matchHeader(q, data.headers);
-  if (header) {
-    const st = promedioDe(data.rows, header);
-    return res.status(200).json({ respuesta: `Promedio de ${header}: ${st.mean} (n=${st.n})`, stats: st });
-  }
-
-  return res.status(200).json({ respuesta: 'Solo acepto: "Promedio de <COLUMNA>", "promedios" o directamente el nombre de la columna.' });
 };
