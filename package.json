@@ -2,9 +2,11 @@
   "name": "csv-gpt-backend",
   "version": "1.0.0",
   "private": true,
-  "main": "api/ask.js",
   "license": "MIT",
   "dependencies": {
     "csv-parse": "^5.5.6"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
