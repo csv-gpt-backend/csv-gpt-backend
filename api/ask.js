@@ -1,6 +1,5 @@
-// api/ask.js — Assistants v2 con Code Interpreter (dos pasos: start / poll)
-// Compatible con Vercel Hobby (timeout 10s). Incluye CORS, ping, diag.
-// Si tienes el CSV local en public/datos.csv lo sube; o usa OPENAI_FILE_ID si lo defines.
+// api/ask.js — Assistants v2 con Code Interpreter (start & poll) + creación automática de Assistant.
+// Requiere: openai@latest y OPENAI_API_KEY en Vercel.
 
 import fs from "fs";
 import fsp from "fs/promises";
@@ -45,28 +44,39 @@ async function getOrUploadFileId() {
   return { fileId: up.id, source: "uploaded" };
 }
 
-async function createThreadRun({ question, fileId }) {
-  const system =
-`Eres un analista educativo. Usa EXCLUSIVAMENTE el CSV adjunto.
-Carga el CSV con Python (pandas) y realiza los cálculos necesarios.
-Responde en español, claro y conciso (6–8 líneas). No inventes columnas ni datos.`;
+// Obtiene un assistant_id desde env o crea uno nuevo (con Code Interpreter)
+async function getAssistantId() {
+  if (process.env.OPENAI_ASSISTANT_ID) {
+    return { assistantId: process.env.OPENAI_ASSISTANT_ID, source: "env" };
+  }
+  const created = await client.beta.assistants.create({
+    model: MODEL,
+    name: "CSV Analyst (auto)",
+    instructions:
+      "Eres un analista educativo. Usa exclusivamente el CSV adjunto. " +
+      "Carga el CSV con pandas y realiza cálculos/estadísticas solicitadas. " +
+      "Responde en español, claro y conciso (6–8 líneas). No inventes columnas ni datos.",
+    tools: [{ type: "code_interpreter" }],
+  });
+  return { assistantId: created.id, source: "created" };
+}
 
-  const user =
+async function createThreadRun({ question, fileId, assistantId }) {
+  const userMessage =
 `Pregunta: ${question}
 
 Instrucciones:
 - Carga el CSV adjunto con pandas.
-- Calcula medias, percentiles y comparaciones por alumno/dimensión cuando aplique.
+- Calcula medias, percentiles, comparaciones por alumno/dimensión (si aplica).
 - Redacta en lenguaje natural citando algunos valores clave.`;
 
   const thread = await client.beta.threads.create({
-    messages: [{ role: "user", content: `SYSTEM:\n${system}\n\nUSER:\n${user}` }],
+    messages: [{ role: "user", content: userMessage }],
   });
 
+  // En v2 debes pasar assistant_id (NO 'model')
   const run = await client.beta.threads.runs.create(thread.id, {
-    model: MODEL,
-    instructions: "Analiza el CSV usando Code Interpreter.",
-    tools: [{ type: "code_interpreter" }],
+    assistant_id: assistantId,
     tool_resources: { code_interpreter: { file_ids: [fileId] } },
   });
 
@@ -87,7 +97,7 @@ async function pollRun(threadId, runId, maxWaitMs = 8000, stepMs = 1200) {
     }
     await new Promise(r => setTimeout(r, stepMs));
   }
-  return { done: false }; // sigue procesando
+  return { done: false };
 }
 
 function extractAssistantText(messagesList) {
@@ -130,6 +140,7 @@ export default async function handler(req, res) {
         model: MODEL,
         hasKey: !!process.env.OPENAI_API_KEY,
         fileIdFromEnv: !!process.env.OPENAI_FILE_ID,
+        assistantIdFromEnv: !!process.env.OPENAI_ASSISTANT_ID,
         csvCandidates: CSV_CANDIDATES,
         csvFound: !!csvPath,
         csvPath,
@@ -139,17 +150,16 @@ export default async function handler(req, res) {
       return;
     }
 
-    const { fileId } = await getOrUploadFileId();
+    const { assistantId } = await getAssistantId();          // <-- aquí resolvemos assistant_id
+    const { fileId }      = await getOrUploadFileId();
 
-    // ---------- start: crea y devuelve thread/run en < 2s ----------
     if (mode === "start") {
       if (!qParam) { res.status(400).json({ ok:false, error:"Falta el parámetro q" }); return; }
-      const { threadId, runId } = await createThreadRun({ question: qParam, fileId });
+      const { threadId, runId } = await createThreadRun({ question: qParam, fileId, assistantId });
       res.status(200).json({ ok:true, processing:true, threadId, runId });
       return;
     }
 
-    // ---------- poll: espera hasta ~8s y devuelve si está listo ----------
     if (mode === "poll") {
       const threadId = (req.query?.threadId || req.body?.threadId || "").toString();
       const runId    = (req.query?.runId    || req.body?.runId    || "").toString();
@@ -161,7 +171,6 @@ export default async function handler(req, res) {
       return;
     }
 
-    // fallback
     res.status(400).json({ ok:false, error:"Modo inválido. Usa mode=start o mode=poll" });
 
   } catch (e) {
