@@ -1,10 +1,10 @@
-// api/ask.js — SOLO GPT-5, mínimo viable y estable
-// v22: chat/completions sin parámetros opcionales que puedan romper la salida
+// api/ask.js — SOLO GPT-5, mínimo y obediente a pedidos simples
+// v23: si la solicitud NO requiere el CSV (p.ej., “Escribe OK”), ignora el CSV y cumple tal cual.
 
 const fs = require("fs");
 const path = require("path");
 
-const VERSION = "gpt5-csv-direct-main-22";
+const VERSION = "gpt5-csv-direct-main-23";
 const MODEL   = process.env.OPENAI_MODEL || "gpt-5";
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
@@ -72,7 +72,7 @@ async function chatOnce({ system, user, timeoutMs, wantJSON=false }){
       { role: "system", content: system },
       { role: "user",   content: user   }
     ]
-    // Sin temperature, sin max_tokens, sin top_p, etc.
+    // Sin temperature, sin max_tokens, sin top_p => más estable
   };
   if (wantJSON) payload.response_format = { type: "json_object" };
 
@@ -134,7 +134,7 @@ module.exports = async (req,res)=>{
     q = q.toString().trim();
     const ql = q.toLowerCase();
 
-    // timeout: por defecto 60s, sobreescribible con &t=
+    // timeout por defecto 60s (puedes subir con &t=90000)
     const tParam = parseInt(url.searchParams.get("t")||"",10);
     const timeoutMs = Number.isFinite(tParam)? tParam : 60000;
 
@@ -147,13 +147,17 @@ module.exports = async (req,res)=>{
       return sendJSON(res,200,{ source:data.source, filePath:data.filePath, rows:data.rowsCount, headers:data.headers });
     }
 
-    // Prompt mínimo
+    // System NUEVO: si la solicitud NO requiere CSV (p.ej., "Escribe OK"), ignora el CSV y cumple.
     const system = `Responde SIEMPRE en JSON válido con:
 {
   "respuesta": "texto breve en español",
   "tabla": { "headers": [..], "rows": [[..], ..] }
 }
-No incluyas nada fuera del JSON. Usa exactamente los encabezados del CSV si los mencionas.`;
+Reglas:
+- Si la solicitud del usuario NO requiere leer el CSV (por ejemplo: "Escribe OK en respuesta", "devuelve Hola"),
+  IGNORA el CSV y cumple EXACTAMENTE lo pedido en "respuesta".
+- Si la solicitud sí requiere el CSV, úsalo tal cual (la primera fila son los encabezados).
+- No incluyas nada fuera del JSON.`;
 
     const user = `<CSV>
 ${data.csv}
@@ -165,7 +169,7 @@ ${q}`;
     const out = await ask({ system, user, timeoutMs });
 
     if (out && out._empty){
-      return sendJSON(res,200,{ respuesta:"El modelo no respondió. Prueba otra vez o añade &t=90000 para más tiempo." });
+      return sendJSON(res,200,{ respuesta:"El modelo no respondió. Reintenta o añade &t=90000 para más tiempo." });
     }
     return sendJSON(res,200,out);
 
