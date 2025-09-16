@@ -3,9 +3,9 @@ const fs = require("fs");
 const path = require("path");
 
 // ===== Build/version =====
-const VERSION = "gpt5-csv-direct-main-11";
+const VERSION = "gpt5-csv-direct-main-12";
 
-// ===== Modelo (forzado a GPT-5; override opcional por OPENAI_MODEL) =====
+// ===== Modelo (forzado a GPT-5; puedes sobrescribir con OPENAI_MODEL) =====
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
 
 // ===== API Key =====
@@ -62,14 +62,15 @@ function loadCSVFromFS() {
 async function askOpenAI({ system, user }) {
   if (!OPENAI_API_KEY) throw new Error("Falta OPENAI_API_KEY en Vercel (Production).");
 
-  // Timeout de ~55s (máximo prudente en Serverless Pro)
+  // Timeout ~55s para evitar colgar la función
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 55_000);
 
   const payload = {
-    model: MODEL,                         // GPT-5 (no enviar temperature con este modelo)
+    model: MODEL, // GPT-5
+    // No enviar 'temperature' con GPT-5
     response_format: { type: "json_object" },
-    max_tokens: 900,                      // tope prudente para respuestas
+    max_completion_tokens: 900, // <-- correcto para GPT-5
     messages: [
       { role: "system", content: system },
       { role: "user",   content: user   },
@@ -99,9 +100,7 @@ async function askOpenAI({ system, user }) {
     catch { return { respuesta: text }; }
   } catch (e) {
     clearTimeout(timer);
-    if (e.name === "AbortError") {
-      throw new Error("Timeout: OpenAI tardó demasiado en responder (~55s).");
-    }
+    if (e.name === "AbortError") throw new Error("Timeout: OpenAI tardó demasiado en responder (~55s).");
     throw e;
   }
 }
