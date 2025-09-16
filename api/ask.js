@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 // ===== Build/version =====
-const VERSION = "gpt5-csv-direct-main-14";
+const VERSION = "gpt5-csv-direct-main-15";
 
 // ===== Modelo (forzado a GPT-5; override opcional por OPENAI_MODEL) =====
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
@@ -30,9 +30,20 @@ function safeJSON(x, fallback = {}) {
   catch { return fallback; }
 }
 function ensureObject(x) {
-  if (!x || typeof x !== "object" || Array.isArray(x)) return { respuesta: String(x || "").trim() || "" };
+  if (!x || typeof x !== "object" || Array.isArray(x))
+    return { respuesta: String(x || "").trim() || "" };
   if (typeof x.respuesta !== "string") x.respuesta = x.respuesta ? String(x.respuesta) : "";
   return x;
+}
+function extractFirstJSONBlock(text) {
+  // intenta encontrar el primer bloque {...} balanceado
+  const i = text.indexOf("{");
+  const j = text.lastIndexOf("}");
+  if (i >= 0 && j > i) {
+    const cand = text.slice(i, j + 1);
+    try { return JSON.parse(cand); } catch {}
+  }
+  return null;
 }
 
 // ---------- CSV ----------
@@ -64,22 +75,21 @@ function loadCSVFromFS() {
 }
 
 // ---------- OpenAI ----------
-async function askOpenAI({ system, user, maxTokens = 500, timeoutMs = 40000 }) {
+async function askOnce({ system, user, maxTokens, timeoutMs, forceJSON }) {
   if (!OPENAI_API_KEY) throw new Error("Falta OPENAI_API_KEY en Vercel (Production).");
 
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
 
   const payload = {
-    model: MODEL, // GPT-5
-    // No enviar 'temperature' con GPT-5
-    response_format: { type: "json_object" },
+    model: MODEL,
     max_completion_tokens: Math.max(64, Math.min(maxTokens, 1200)),
     messages: [
       { role: "system", content: system },
       { role: "user",   content: user   },
     ],
   };
+  if (forceJSON) payload.response_format = { type: "json_object" };
 
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -100,26 +110,42 @@ async function askOpenAI({ system, user, maxTokens = 500, timeoutMs = 40000 }) {
 
     const data = await r.json();
     const text = data?.choices?.[0]?.message?.content || "";
-    // Normalizamos SIEMPRE a objeto con respuesta
-    if (!text || !text.trim()) {
-      return { respuesta: "El modelo no devolvió contenido. Prueba de nuevo o ajusta el límite con &max=600." };
-    }
-    let obj;
-    try { obj = JSON.parse(text); }
-    catch { obj = { respuesta: text.trim() }; }
-    obj = ensureObject(obj);
-
-    // Si vino totalmente vacío, devolvemos un mensaje útil
-    if (!obj.respuesta && !obj.tabla) {
-      obj.respuesta = "No se pudo generar una respuesta con la instrucción dada. Intenta simplificar la pregunta o aumentar &max=600.";
-    }
-    return obj;
-
+    return text.trim();
   } catch (e) {
     clearTimeout(timer);
     if (e.name === "AbortError")
       throw new Error(`Timeout: OpenAI tardó demasiado en responder (~${Math.round(timeoutMs/1000)}s).`);
     throw e;
+  }
+}
+
+async function askOpenAIWithFallback({ system, user, maxTokens = 600, timeoutMs = 45000 }) {
+  // 1) intento: JSON estricto
+  let txt = await askOnce({ system, user, maxTokens, timeoutMs, forceJSON: true });
+  if (!txt) {
+    // 2) fallback: formato libre y extracción de JSON
+    txt = await askOnce({ system, user, maxTokens: Math.max(maxTokens, 700), timeoutMs, forceJSON: false });
+  }
+
+  if (!txt) {
+    return { respuesta: "El modelo no devolvió contenido. Intenta de nuevo con &max=700." };
+  }
+
+  // intentar parseo directo
+  try {
+    const obj = ensureObject(JSON.parse(txt));
+    if (!obj.respuesta && !obj.tabla) obj.respuesta = "Resultado generado sin detalles adicionales.";
+    return obj;
+  } catch {
+    // si no es JSON puro, intenta extraer el primer bloque JSON
+    const block = extractFirstJSONBlock(txt);
+    if (block) {
+      const obj = ensureObject(block);
+      if (!obj.respuesta && !obj.tabla) obj.respuesta = "Resultado generado (recuperado).";
+      return obj;
+    }
+    // último recurso: envolver el texto en respuesta
+    return { respuesta: txt };
   }
 }
 
@@ -144,8 +170,8 @@ module.exports = async (req, res) => {
     // parámetros opcionales
     const maxParam = parseInt(url.searchParams.get("max") || "", 10);
     const tParam   = parseInt(url.searchParams.get("t")   || "", 10);
-    const maxTokens = Number.isFinite(maxParam) ? maxParam : 500;
-    const timeoutMs = Number.isFinite(tParam)   ? tParam   : 40000;
+    const maxTokens = Number.isFinite(maxParam) ? maxParam : 600;
+    const timeoutMs = Number.isFinite(tParam)   ? tParam   : 45000;
 
     // health
     if (!q || ql === "ping")   return sendJSON(res, 200, { ok: true });
@@ -174,22 +200,20 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Prompt reforzado (tablas, ranking, grupos de 5)
+    // Prompt reforzado
     const system = `
-Eres un analista de datos. Devuelve SIEMPRE JSON válido y conciso con esta forma:
+Eres un analista de datos. Devuelve SIEMPRE JSON válido y conciso:
 {
   "respuesta": "texto breve en español",
   "tabla": { "headers": [..], "rows": [[..], ..] }
 }
 Reglas:
 - El CSV viene entre <CSV>...</CSV>. La primera fila son encabezados.
-- Acepta sinónimos (acentos/mayúsculas, "por separado" = agrupar por "PARALELO").
-- "ranking" => máximo 10 filas (mayor→menor) e incluye una columna "posición".
-- "grupos" o "equipos" => devuelve tabla con headers ["Grupo","NOMBRE"].
-  * Forma grupos homogéneos de 5 personas (último grupo puede tener menos).
-  * Si piden usar dos variables (p.ej., AGRESION y EMPATIA), intenta equilibrar/parear.
+- Acepta sinónimos (acentos/mayúsculas); "por separado" = agrupar por "PARALELO".
+- "ranking" => como máximo 10 filas (mayor→menor) e incluye una columna "posición".
+- "grupos" o "equipos" => devuelve tabla con headers ["Grupo","NOMBRE"]; crea grupos homogéneos de 5 (el último puede tener menos). Si mencionan dos variables (p.ej. AGRESION y EMPATIA), equilibra ambas.
 - Si la consulta es inválida o no hay datos, responde {"respuesta":"No encontrado"}.
-- Nada de Markdown ni texto fuera del JSON.`;
+- No devuelvas Markdown ni texto fuera del JSON.`;
 
     const user = `<CSV>
 ${csvInfo.csv}
@@ -198,7 +222,7 @@ ${csvInfo.csv}
 Pregunta:
 ${q}`;
 
-    const out = await askOpenAI({ system, user, maxTokens, timeoutMs });
+    const out = await askOpenAIWithFallback({ system, user, maxTokens, timeoutMs });
     return sendJSON(res, 200, out);
 
   } catch (err) {
