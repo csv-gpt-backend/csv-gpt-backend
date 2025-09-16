@@ -1,9 +1,7 @@
-// api/ask.js — Vercel Edge Function
-export const config = { runtime: 'edge' };
+// api/ask.js — Serverless Node (compatible sin Edge)
+let CACHE_ROWS = null;
 
-let CACHE_ROWS = null; // cache por región Edge
-
-// ===== utilidades =====
+// ---- utilidades ----
 const norm = s => String(s || '')
   .normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
 
@@ -32,31 +30,22 @@ const parseCSV = text => {
   return out;
 };
 
-async function loadRows(origin) {
+async function loadRows(baseUrl) {
   if (CACHE_ROWS) return CACHE_ROWS;
-  const r = await fetch(origin + '/data.csv', { redirect: 'follow' });
+  const r = await fetch(baseUrl + '/data.csv', { redirect: 'follow' });
   if (!r.ok) throw new Error(`No pude leer data.csv (HTTP ${r.status})`);
   const text = await r.text();
   CACHE_ROWS = parseCSV(text);
   return CACHE_ROWS;
 }
 
-function withCORS(res, originHeader) {
-  res.headers.set('Access-Control-Allow-Origin', originHeader || '*'); // pon tu dominio Wix si quieres
-  res.headers.set('Vary', 'Origin');
-  res.headers.set('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-  // Para evitar caché mientras depuras:
-  res.headers.set('Cache-Control', 'no-store');
-  return res;
+function setCORS(res, origin = '*') {
+  res.setHeader('Access-Control-Allow-Origin', origin); // cámbialo por tu dominio Wix al final
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
-const json = (obj, status, originHeader) =>
-  withCORS(new Response(JSON.stringify(obj), {
-    status, headers: { 'content-type':'application/json; charset=utf-8' }
-  }), originHeader);
-
-// intenta localizar la columna de nombre
 function findNameKey(rows) {
   if (!rows.length) return 'NOMBRE';
   const keys = Object.keys(rows[0] || {});
@@ -85,8 +74,7 @@ function ranking(rows, campo, nameKey) {
 }
 
 function alumnoVsGrupo(rows, nombreBuscado, campo, nameKey) {
-  const KEY = norm(campo);
-  const NB = norm(nombreBuscado);
+  const KEY = norm(campo), NB = norm(nombreBuscado);
   const fila = rows.find(r => norm(r[nameKey]) === NB);
   if (!fila) return { error: `No encontré a "${nombreBuscado}".` };
 
@@ -114,18 +102,22 @@ function alumnoVsGrupo(rows, nombreBuscado, campo, nameKey) {
   };
 }
 
-// ===== handler =====
-export default async function handler(req) {
-  const originHdr = req.headers.get('origin') || '*';
-  if (req.method === 'OPTIONS') return withCORS(new Response(null, { status: 204 }), originHdr);
+// ===== handler serverless =====
+export default async function handler(req, res) {
+  setCORS(res, req.headers.origin || '*');
+  if (req.method === 'OPTIONS') return res.status(204).end();
 
   try {
-    const url = new URL(req.url);
-    const q = (url.searchParams.get('q') || '').trim();
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const host  = req.headers['x-forwarded-host'] || req.headers.host;
+    const base  = `${proto}://${host}`;
 
-    if (q.toLowerCase() === 'ping') return json({ ok: true }, 200, originHdr);
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.status(200).json({ respuesta: 'Prueba: "Promedio de TIMIDEZ" o "ping"' });
 
-    const rows = await loadRows(url.origin);
+    if (q.toLowerCase() === 'ping') return res.status(200).json({ ok: true });
+
+    const rows = await loadRows(base);
     const nameKey = findNameKey(rows);
 
     // 1) Promedio de X
@@ -134,9 +126,9 @@ export default async function handler(req) {
       const campo = m1[1].trim();
       const st = promedioCol(rows, campo);
       if (st.n > 0 && st.mean != null) {
-        return json({ respuesta: `Promedio de ${campo}: ${st.mean} (n=${st.n})`, stats: st }, 200, originHdr);
+        return res.status(200).json({ respuesta: `Promedio de ${campo}: ${st.mean} (n=${st.n})`, stats: st });
       }
-      return json({ error: `No encontré valores numéricos para "${campo}".` }, 404, originHdr);
+      return res.status(404).json({ error: `No encontré valores numéricos para "${campo}".` });
     }
 
     // 2) Ranking de X
@@ -144,8 +136,8 @@ export default async function handler(req) {
     if (m2) {
       const campo = m2[1].trim();
       const tabla = ranking(rows, campo, nameKey);
-      if (!tabla.length) return json({ error: `No encontré valores numéricos para "${campo}".` }, 404, originHdr);
-      return json(tabla, 200, originHdr);
+      if (!tabla.length) return res.status(404).json({ error: `No encontré valores numéricos para "${campo}".` });
+      return res.status(200).json(tabla);
     }
 
     // 3) ¿Cómo está NOMBRE en CAMPO frente al grupo?
@@ -153,21 +145,19 @@ export default async function handler(req) {
       q.match(/como\s+esta\s+(.+?)\s+en\s+(.+?)\s+(?:frente\s+al\s+grupo|vs\s+grupo|comparad[oa]\s+con\s+el\s+grupo)\??/i) ||
       q.match(/(.+?)\s+vs\s+grupo\s*\((.+?)\)/i);
     if (m3) {
-      const nombre = m3[1].trim();
-      const campo = m3[2].trim();
+      const nombre = m3[1].trim(), campo = m3[2].trim();
       const info = alumnoVsGrupo(rows, nombre, campo, nameKey);
-      if (info.error) return json({ error: info.error }, 404, originHdr);
-
+      if (info.error) return res.status(404).json({ error: info.error });
       const difTxt = (info.diferencia >= 0 ? '+' : '') + info.diferencia.toFixed(2);
-      return json({
+      return res.status(200).json({
         respuesta: `${info.nombre} en ${info.campo}: ${info.valor}. Promedio del grupo: ${info.grupo.media} (n=${info.grupo.n}). ` +
                    `Diferencia: ${difTxt}. Posición: ${info.posicion}/${info.grupo.n} · Percentil: ${info.percentil}%`,
         detalle: info
-      }, 200, originHdr);
+      });
     }
 
-    return json({ respuesta: 'Prueba: "Promedio de TIMIDEZ", "Ranking de AUTOESTIMA" o "¿Cómo está Julia en EMPATÍA frente al grupo?"' }, 200, originHdr);
+    return res.status(200).json({ respuesta: 'Prueba: "Promedio de TIMIDEZ", "Ranking de AUTOESTIMA" o "¿Cómo está Julia en EMPATÍA frente al grupo?"' });
   } catch (e) {
-    return json({ error: String(e?.message || e) }, 500, originHdr);
+    return res.status(500).json({ error: String(e?.message || e) });
   }
 }
