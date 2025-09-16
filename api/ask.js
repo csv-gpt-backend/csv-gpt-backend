@@ -3,9 +3,9 @@ const fs = require("fs");
 const path = require("path");
 
 // ===== Build/version =====
-const VERSION = "gpt5-csv-direct-main-15";
+const VERSION = "gpt5-csv-direct-main-16";
 
-// ===== Modelo (forzado a GPT-5; override opcional por OPENAI_MODEL) =====
+// ===== Modelo (GPT-5; override opcional por OPENAI_MODEL) =====
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
 
 // ===== API Key =====
@@ -36,12 +36,19 @@ function ensureObject(x) {
   return x;
 }
 function extractFirstJSONBlock(text) {
-  // intenta encontrar el primer bloque {...} balanceado
   const i = text.indexOf("{");
-  const j = text.lastIndexOf("}");
-  if (i >= 0 && j > i) {
-    const cand = text.slice(i, j + 1);
-    try { return JSON.parse(cand); } catch {}
+  let depth = 0;
+  for (let j = i; j >= 0 && j < text.length; j++) {
+    const ch = text[j];
+    if (ch === "{") depth++;
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        const cand = text.slice(i, j + 1);
+        try { return JSON.parse(cand); } catch {}
+        break;
+      }
+    }
   }
   return null;
 }
@@ -74,10 +81,60 @@ function loadCSVFromFS() {
   throw new Error("CSV no encontrado. Sube api/data.csv o data.csv al repo.");
 }
 
-// ---------- OpenAI ----------
-async function askOnce({ system, user, maxTokens, timeoutMs, forceJSON }) {
-  if (!OPENAI_API_KEY) throw new Error("Falta OPENAI_API_KEY en Vercel (Production).");
+// ---------- OpenAI: Responses API ----------
+async function callResponsesAPI({ system, user, maxTokens, timeoutMs, forceJSON }) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
 
+  const payload = {
+    model: MODEL,
+    input: `SYSTEM:\n${system}\n\nUSER:\n${user}`,
+    max_output_tokens: Math.max(64, Math.min(maxTokens, 2000)),
+  };
+  if (forceJSON) payload.response_format = { type: "json_object" };
+
+  try {
+    const r = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      signal: ac.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    clearTimeout(timer);
+
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      throw new Error(`OpenAI(responses) ${r.status}: ${t}`);
+    }
+
+    const data = await r.json();
+    // API moderna expone output_text; si no, arma desde content
+    const text =
+      data?.output_text ||
+      (Array.isArray(data?.output)
+        ? data.output.map(o =>
+            Array.isArray(o?.content)
+              ? o.content.map(c => c?.text || "").join("")
+              : ""
+          ).join("")
+        : "") ||
+      "";
+
+    return text.trim();
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === "AbortError") {
+      throw new Error(`Timeout: OpenAI tardó demasiado (~${Math.round(timeoutMs/1000)}s)`);
+    }
+    throw e;
+  }
+}
+
+// ---------- OpenAI: Chat Completions (fallback) ----------
+async function callChatAPI({ system, user, maxTokens, timeoutMs, forceJSON }) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
 
@@ -105,7 +162,7 @@ async function askOnce({ system, user, maxTokens, timeoutMs, forceJSON }) {
 
     if (!r.ok) {
       const t = await r.text().catch(() => "");
-      throw new Error(`OpenAI ${r.status}: ${t}`);
+      throw new Error(`OpenAI(chat) ${r.status}: ${t}`);
     }
 
     const data = await r.json();
@@ -113,38 +170,47 @@ async function askOnce({ system, user, maxTokens, timeoutMs, forceJSON }) {
     return text.trim();
   } catch (e) {
     clearTimeout(timer);
-    if (e.name === "AbortError")
-      throw new Error(`Timeout: OpenAI tardó demasiado en responder (~${Math.round(timeoutMs/1000)}s).`);
+    if (e.name === "AbortError") {
+      throw new Error(`Timeout: OpenAI tardó demasiado (~${Math.round(timeoutMs/1000)}s)`);
+    }
     throw e;
   }
 }
 
-async function askOpenAIWithFallback({ system, user, maxTokens = 600, timeoutMs = 45000 }) {
-  // 1) intento: JSON estricto
-  let txt = await askOnce({ system, user, maxTokens, timeoutMs, forceJSON: true });
+async function askOpenAIStable({ system, user, maxTokens = 600, timeoutMs = 45000 }) {
+  // 1) Responses API + JSON estricto
+  let txt = "";
+  try { txt = await callResponsesAPI({ system, user, maxTokens, timeoutMs, forceJSON: true }); } catch {}
+
+  // 2) Si vino vacío, Responses API libre
   if (!txt) {
-    // 2) fallback: formato libre y extracción de JSON
-    txt = await askOnce({ system, user, maxTokens: Math.max(maxTokens, 700), timeoutMs, forceJSON: false });
+    try { txt = await callResponsesAPI({ system, user, maxTokens: Math.max(maxTokens, 700), timeoutMs, forceJSON: false }); } catch {}
   }
 
+  // 3) Si sigue vacío, Chat API JSON estricto
   if (!txt) {
-    return { respuesta: "El modelo no devolvió contenido. Intenta de nuevo con &max=700." };
+    try { txt = await callChatAPI({ system, user, maxTokens, timeoutMs, forceJSON: true }); } catch {}
   }
 
-  // intentar parseo directo
+  // 4) Si aún vacío, Chat API libre
+  if (!txt) {
+    try { txt = await callChatAPI({ system, user, maxTokens: Math.max(maxTokens, 700), timeoutMs, forceJSON: false }); } catch {}
+  }
+
+  if (!txt) return { respuesta: "Sin contenido del modelo. Intenta con &max=700&t=50000." };
+
+  // parseo robusto
   try {
     const obj = ensureObject(JSON.parse(txt));
     if (!obj.respuesta && !obj.tabla) obj.respuesta = "Resultado generado sin detalles adicionales.";
     return obj;
   } catch {
-    // si no es JSON puro, intenta extraer el primer bloque JSON
     const block = extractFirstJSONBlock(txt);
     if (block) {
       const obj = ensureObject(block);
       if (!obj.respuesta && !obj.tabla) obj.respuesta = "Resultado generado (recuperado).";
       return obj;
     }
-    // último recurso: envolver el texto en respuesta
     return { respuesta: txt };
   }
 }
@@ -178,7 +244,7 @@ module.exports = async (req, res) => {
     if (ql === "version")      return sendJSON(res, 200, { version: VERSION });
     if (ql === "model")        return sendJSON(res, 200, { model: MODEL });
 
-    // CSV inline o archivo
+    // CSV
     let csvInfo;
     if (req.method !== "GET") {
       const body = typeof req.body === "string" ? safeJSON(req.body) : (req.body || {});
@@ -200,7 +266,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Prompt reforzado
+    // Prompt
     const system = `
 Eres un analista de datos. Devuelve SIEMPRE JSON válido y conciso:
 {
@@ -222,7 +288,7 @@ ${csvInfo.csv}
 Pregunta:
 ${q}`;
 
-    const out = await askOpenAIWithFallback({ system, user, maxTokens, timeoutMs });
+    const out = await askOpenAIStable({ system, user, maxTokens, timeoutMs });
     return sendJSON(res, 200, out);
 
   } catch (err) {
