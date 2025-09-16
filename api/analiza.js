@@ -1,4 +1,4 @@
-// api/analiza.js  (Vercel – ESM, con CORS + DIAGNÓSTICO)
+// api/analiza.js  (Vercel – ESM, CORS + DIAGNÓSTICO + consultas de GRUPO)
 
 import fs from "fs/promises";
 import path from "path";
@@ -109,23 +109,50 @@ function detectNameColumn(headers) {
   }
   return headers[0];
 }
+
+// Normaliza texto (sin acentos, minúsculas)
+function norm(s){
+  return String(s ?? "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().trim();
+}
+
+// Busca nombres tipo Julia, “Julia”, etc.
 function extractNameFromQuestion(q) {
   const quoted = q.match(/"([^"]+)"/);
   if (quoted?.[1]) return quoted[1].trim();
+  // patrón "como está Julia", "Julia en autoestima" (una sola palabra capitalizada)
   const m = q.match(/\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b/);
   if (m?.[1]) return m[1].trim();
   return null;
 }
 
+// Detecta dimensiones mencionadas comparando con nombres de columnas
+function dimsFromQuestion(q, cols){
+  const qn = norm(q);
+  const found = [];
+  for (const c of cols) {
+    const cn = norm(c);
+    if (cn && qn.includes(cn)) found.push(c);
+  }
+  // quitar duplicados
+  return Array.from(new Set(found));
+}
+
+// Detecta intención “general”
+function wantsGeneralSummary(q){
+  const qn = norm(q);
+  return /\b(promedio|promedios|media|medias|general|resumen|grupo)\b/.test(qn);
+}
+
 // ========= OpenAI =========
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// FIX: NO usar 'system' como parámetro de nivel superior.
-// En Responses API lo pasamos dentro de 'input' con role: "system".
+// Responses API: pasar system como mensaje dentro de input (no en raíz)
 async function askOpenAI({ model, system, input }) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Falta OPENAI_API_KEY en variables de entorno.");
-  }
+    }
   const messages = [
     ...(system ? [{ role: "system", content: system }] : []),
     { role: "user", content: input },
@@ -192,41 +219,60 @@ export default async function handler(req, res) {
     const nameCol = detectNameColumn(headers);
     const numericCols = headers.filter(h => rows.some(r => isNumeric(r[h])));
 
-    // 2) alumno
-    const alumnoQ = (req.query?.alumno || "").toString().trim();
-    const alumnoName = alumnoQ || extractNameFromQuestion(q) || "";
+    // 2) intención por alumno / grupo
+    const askedName = extractNameFromQuestion(q); // lo que el usuario escribió
+    const askedForStudent = Boolean(askedName || req.query?.alumno);
     let alumnoRow = null;
-    if (alumnoName) {
-      const needle = alumnoName.toLowerCase();
-      alumnoRow = rows.find(r => String(r[nameCol]||"").toLowerCase().includes(needle)) || null;
+    let alumnoLabel = null;
+
+    if (askedForStudent) {
+      const alumnoQ = (req.query?.alumno || askedName || "").toString().trim();
+      if (alumnoQ) {
+        const needle = norm(alumnoQ);
+        alumnoRow = rows.find(r => norm(r[nameCol]).includes(needle)) || null;
+        alumnoLabel = alumnoRow ? String(alumnoRow[nameCol]) : "(no encontrado)";
+      }
     }
 
-    // 3) métricas
+    // 3) dimensiones & resumen general
+    const dimsMatched = dimsFromQuestion(q, numericCols);
+    const wantGeneral = wantsGeneralSummary(q);
+
+    // 4) métricas del grupo
     const groupMetrics = computeMetrics(rows, numericCols);
 
-    // 4) payload para el modelo
+    // 5) payload para el modelo
     const payload = {
-      alumno: alumnoRow ? String(alumnoRow[nameCol]) : "(no encontrado)",
+      // Si NO pidieron alumno, no pongas “(no encontrado)”
+      alumno: askedForStudent ? (alumnoLabel ?? "(no encontrado)") : null,
+      askedForStudent,
       nameColumn: nameCol,
       question: q,
+      dimsMatched,        // dimensiones detectadas en el texto
+      wantGeneral,        // si pidió promedios/resumen de grupo
       columns_numeric: numericCols,
-      student_values: alumnoRow ? Object.fromEntries(numericCols.map(c => [c, toNumber(alumnoRow[c])])) : null,
-      groupMetrics,
+      student_values: alumnoRow
+        ? Object.fromEntries(numericCols.map(c => [c, toNumber(alumnoRow[c])]))
+        : null,
+      groupMetrics
     };
 
     const system = `
-Eres un analista educativo. SOLO puedes usar el JSON que te doy.
-No inventes datos; si falta, dilo. Responde en español, breve y claro.`;
+Eres un analista educativo y SOLO puedes usar el JSON proporcionado.
+Reglas:
+- Si askedForStudent=false, NO digas "alumno no encontrado".
+- Si askedForStudent=true y alumno="(no encontrado)", dilo y sugiere escribir el nombre entre comillas.
+- Si hay dimsMatched (una o varias), concéntrate en esas dimensiones: reporta promedio (mean) y percentiles del grupo.
+- Si wantGeneral=true y no hay dimsMatched, da un resumen corto con los promedios de 3–8 dimensiones relevantes.
+- Si existe student_values, puedes comparar con el grupo en esas dimensiones.
+- Responde en español, claro y breve (6–8 líneas). No inventes datos.`;
 
     const prompt = `
 JSON:
 ${JSON.stringify(payload, null, 2)}
 
 Instrucción:
-- Contesta estrictamente usando solo el JSON.
-- Si el alumno no se encontró, dilo.
-- Si preguntan por una dimensión (p.ej. AUTOESTIMA), compara con media y percentiles.
-- Respuesta breve (6–8 líneas).`;
+- Responde siguiendo las reglas del sistema.`;
 
     let respuesta;
     try {
@@ -236,7 +282,7 @@ Instrucción:
       throw e;
     }
 
-    res.status(200).json({ ok:true, respuesta, alumno: payload.alumno, metrics: groupMetrics });
+    res.status(200).json({ ok:true, respuesta, dimsMatched, alumno: payload.alumno });
   } catch (e) {
     res.status(500).json({ ok:false, error: e.message || "Error interno" });
   }
