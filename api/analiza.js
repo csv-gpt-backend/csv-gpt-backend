@@ -6,7 +6,6 @@ import Papa from 'papaparse';
 const MODEL = process.env.MODEL || 'gpt-5';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ---------- Utilidades numéricas ----------
 const isNumber = (v) => v !== null && v !== '' && !isNaN(Number(v));
 const toNum = (v) => (isNumber(v) ? Number(v) : null);
 
@@ -40,15 +39,12 @@ function stats(values) {
   };
 }
 
-// ---------- Cacheo del CSV ----------
 async function loadCsvOnce() {
   if (globalThis.__CSV_CACHE) return globalThis.__CSV_CACHE;
   const filePath = path.join(process.cwd(), 'public', 'datos.csv');
   const csvText = fs.readFileSync(filePath, 'utf8');
   const parsed = Papa.parse(csvText, { header: true, dynamicTyping: false, skipEmptyLines: true });
-  if (parsed.errors?.length) {
-    console.error('CSV parse errors:', parsed.errors.slice(0, 3));
-  }
+  if (parsed.errors?.length) console.error('CSV parse errors:', parsed.errors.slice(0, 3));
   const rows = parsed.data.map((r) => {
     const out = {};
     for (const k of Object.keys(r)) out[k.trim()] = (r[k] ?? '').toString().trim();
@@ -58,7 +54,6 @@ async function loadCsvOnce() {
   return rows;
 }
 
-// ---------- Detecciones y helpers ----------
 function detectNumericCols(rows) {
   if (!rows.length) return [];
   const cols = Object.keys(rows[0] || {});
@@ -84,10 +79,7 @@ function computeGroupMetrics(rows, groupCol, numericCols) {
   const result = [];
   for (const [g, arr] of groups.entries()) {
     const obj = { grupo: g || '(sin grupo)' };
-    for (const c of numericCols) {
-      const s = stats(arr.map((r) => r[c]));
-      obj[c] = s;
-    }
+    for (const c of numericCols) obj[c] = stats(arr.map((r) => r[c]));
     result.push(obj);
   }
   return result;
@@ -107,7 +99,6 @@ function extractPossibleAlumno(q) {
   return mName ? mName[1] : null;
 }
 
-// ---------- Prompts ----------
 function buildSystemPrompt(groupCol, numericCols, detectedGroups) {
   return `
 Eres un analista que responde en ESPAÑOL. Reglas:
@@ -137,7 +128,6 @@ Instrucción final: Responde en español, conciso y centrado en la pregunta. Si 
 `;
 }
 
-// ---------- Llamada a OpenAI (Responses API; sin temperature) ----------
 async function callOpenAI({ system, user }) {
   if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY no está configurado.');
   const res = await fetch('https://api.openai.com/v1/responses', {
@@ -167,13 +157,10 @@ async function callOpenAI({ system, user }) {
   return text;
 }
 
-// ---------- Handler ----------
 export default async function handler(req, res) {
   try {
     const rows = await loadCsvOnce();
-    if (!rows.length) {
-      return res.status(500).json({ ok: false, error: 'CSV vacío o no legible' });
-    }
+    if (!rows.length) return res.status(500).json({ ok: false, error: 'CSV vacío o no legible' });
 
     const q = (req.query.q || req.body?.q || '').toString();
     const alumnoParam = (req.query.alumno || req.body?.alumno || '').toString().trim();
@@ -189,13 +176,12 @@ export default async function handler(req, res) {
     const groupMetrics = computeGroupMetrics(rows, groupCol, numericCols);
 
     const system = buildSystemPrompt(groupCol, numericCols, detectedGroups);
-    const userPrompt =
-      buildUserPrompt(
-        q || `Analiza diferencias entre grupos para ${numericCols.join(', ')}`,
-        studentRows,
-        groupMetrics,
-        alumnoCol
-      );
+    const userPrompt = buildUserPrompt(
+      q || `Analiza diferencias entre grupos para ${numericCols.join(', ')}`,
+      studentRows,
+      groupMetrics,
+      alumnoCol
+    );
 
     const answerText = await callOpenAI({ system, user: userPrompt });
 
