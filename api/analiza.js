@@ -120,15 +120,19 @@ function extractNameFromQuestion(q) {
 // ========= OpenAI =========
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// FIX: NO usar 'system' como parámetro de nivel superior.
+// En Responses API lo pasamos dentro de 'input' con role: "system".
 async function askOpenAI({ model, system, input }) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Falta OPENAI_API_KEY en variables de entorno.");
   }
+  const messages = [
+    ...(system ? [{ role: "system", content: system }] : []),
+    { role: "user", content: input },
+  ];
   const r = await client.responses.create({
     model: model || DEFAULT_MODEL,
-    // Nota: sin 'temperature' para evitar "Unsupported parameter"
-    system,
-    input,
+    input: messages
   });
   return r.output_text || "";
 }
