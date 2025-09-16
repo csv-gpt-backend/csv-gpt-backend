@@ -1,10 +1,11 @@
-// api/ask.js — SOLO GPT-5, mínimo y obediente a pedidos simples
-// v23: si la solicitud NO requiere el CSV (p.ej., “Escribe OK”), ignora el CSV y cumple tal cual.
+// api/ask.js — SOLO GPT-5, NL → columnas reales (sin nada predefinido)
+// v24: el modelo mapea sinónimos a headers reales, explica cuál usó, y
+//      ignora el CSV si la petición no lo requiere (p.ej. "Escribe OK").
 
 const fs = require("fs");
 const path = require("path");
 
-const VERSION = "gpt5-csv-direct-main-23";
+const VERSION = "gpt5-csv-direct-main-24";
 const MODEL   = process.env.OPENAI_MODEL || "gpt-5";
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
@@ -72,7 +73,7 @@ async function chatOnce({ system, user, timeoutMs, wantJSON=false }){
       { role: "system", content: system },
       { role: "user",   content: user   }
     ]
-    // Sin temperature, sin max_tokens, sin top_p => más estable
+    // Sin temperature, sin max_tokens → más estable
   };
   if (wantJSON) payload.response_format = { type: "json_object" };
 
@@ -134,7 +135,7 @@ module.exports = async (req,res)=>{
     q = q.toString().trim();
     const ql = q.toLowerCase();
 
-    // timeout por defecto 60s (puedes subir con &t=90000)
+    // timeout por defecto 60s (subible con &t=90000)
     const tParam = parseInt(url.searchParams.get("t")||"",10);
     const timeoutMs = Number.isFinite(tParam)? tParam : 60000;
 
@@ -147,19 +148,29 @@ module.exports = async (req,res)=>{
       return sendJSON(res,200,{ source:data.source, filePath:data.filePath, rows:data.rowsCount, headers:data.headers });
     }
 
-    // System NUEVO: si la solicitud NO requiere CSV (p.ej., "Escribe OK"), ignora el CSV y cumple.
+    // ---- SYSTEM: NL libre → mapear a headers reales; ignorar CSV si no se necesita
     const system = `Responde SIEMPRE en JSON válido con:
 {
   "respuesta": "texto breve en español",
   "tabla": { "headers": [..], "rows": [[..], ..] }
 }
 Reglas:
-- Si la solicitud del usuario NO requiere leer el CSV (por ejemplo: "Escribe OK en respuesta", "devuelve Hola"),
+- Si la solicitud del usuario NO requiere leer el CSV (p.ej., "Escribe OK en respuesta"),
   IGNORA el CSV y cumple EXACTAMENTE lo pedido en "respuesta".
-- Si la solicitud sí requiere el CSV, úsalo tal cual (la primera fila son los encabezados).
-- No incluyas nada fuera del JSON.`;
+- Si la solicitud SÍ requiere el CSV, usa SOLO los encabezados reales. Interpreta sinónimos y lenguaje natural
+  (p.ej., "autoconfianza"→"AUTOESTIMA", "cursos"→"CURSO"). Mapea términos de la pregunta al encabezado más cercano
+  de <HEADERS> por similitud semántica. Indica en "respuesta" qué columnas reales usaste.
+- Si hay ambigüedad fuerte o ninguna columna encaja, dilo claramente en "respuesta" y sugiere opciones.
+- No inventes columnas ni valores. No incluyas nada fuera del JSON.`;
 
-    const user = `<CSV>
+    // listamos headers para que el modelo pueda mapear sinónimos
+    const headersList = data.headers.map(h => `- ${h}`).join("\n");
+
+    const user = `<HEADERS>
+${headersList}
+</HEADERS>
+
+<CSV>
 ${data.csv}
 </CSV>
 
