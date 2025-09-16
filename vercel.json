@@ -1,3 +1,5 @@
 {
-  "routes": [{ "src": "/api/ask", "dest": "/api/ask.js" }]
+  "routes": [
+    { "src": "/api/ask", "dest": "/api/ask.js" }
+  ]
 }
