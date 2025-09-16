@@ -1,6 +1,6 @@
-// api/ask.js — GPT-5 con Code Interpreter y archivo CSV usando Assistants v2.
-// Corrige el 400 "Unknown parameter: tool_resources" de Responses.
-// Incluye CORS siempre, y endpoints ping/diag/dryrun para depurar.
+// api/ask.js — Assistants v2 con Code Interpreter (dos pasos: start / poll)
+// Compatible con Vercel Hobby (timeout 10s). Incluye CORS, ping, diag.
+// Si tienes el CSV local en public/datos.csv lo sube; o usa OPENAI_FILE_ID si lo defines.
 
 import fs from "fs";
 import fsp from "fs/promises";
@@ -38,28 +38,58 @@ async function getOrUploadFileId() {
   if (!csvPath) {
     throw new Error("No encontré public/datos.csv ni ./datos.csv y no hay OPENAI_FILE_ID.");
   }
-  const uploaded = await client.files.create({
+  const up = await client.files.create({
     file: fs.createReadStream(csvPath),
     purpose: "assistants",
   });
-  return { fileId: uploaded.id, source: "uploaded" };
+  return { fileId: up.id, source: "uploaded" };
 }
 
-// Esperar a que el run termine
-async function waitForRunCompletion(threadId, runId, timeoutMs = 120000, intervalMs = 1500) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
+async function createThreadRun({ question, fileId }) {
+  const system =
+`Eres un analista educativo. Usa EXCLUSIVAMENTE el CSV adjunto.
+Carga el CSV con Python (pandas) y realiza los cálculos necesarios.
+Responde en español, claro y conciso (6–8 líneas). No inventes columnas ni datos.`;
+
+  const user =
+`Pregunta: ${question}
+
+Instrucciones:
+- Carga el CSV adjunto con pandas.
+- Calcula medias, percentiles y comparaciones por alumno/dimensión cuando aplique.
+- Redacta en lenguaje natural citando algunos valores clave.`;
+
+  const thread = await client.beta.threads.create({
+    messages: [{ role: "user", content: `SYSTEM:\n${system}\n\nUSER:\n${user}` }],
+  });
+
+  const run = await client.beta.threads.runs.create(thread.id, {
+    model: MODEL,
+    instructions: "Analiza el CSV usando Code Interpreter.",
+    tools: [{ type: "code_interpreter" }],
+    tool_resources: { code_interpreter: { file_ids: [fileId] } },
+  });
+
+  return { threadId: thread.id, runId: run.id };
+}
+
+async function pollRun(threadId, runId, maxWaitMs = 8000, stepMs = 1200) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
     const run = await client.beta.threads.runs.retrieve(threadId, runId);
-    if (run.status === "completed") return run;
-    if (run.status === "failed" || run.status === "expired" || run.status === "cancelled") {
+    if (run.status === "completed") {
+      const msgs = await client.beta.threads.messages.list(threadId, { limit: 20 });
+      const text = extractAssistantText(msgs) || "(sin texto)";
+      return { done: true, text };
+    }
+    if (["failed", "expired", "cancelled"].includes(run.status)) {
       throw new Error(`Run ${run.status}: ${run.last_error?.message || "sin detalles"}`);
     }
-    await new Promise(r => setTimeout(r, intervalMs));
+    await new Promise(r => setTimeout(r, stepMs));
   }
-  throw new Error("Timeout esperando a que el run complete.");
+  return { done: false }; // sigue procesando
 }
 
-// Extraer texto de los mensajes del thread (último del asistente)
 function extractAssistantText(messagesList) {
   for (const m of messagesList.data) {
     if (m.role === "assistant") {
@@ -70,33 +100,30 @@ function extractAssistantText(messagesList) {
       if (out.trim()) return out.trim();
     }
   }
-  return "(sin texto)";
+  return "";
 }
 
 export default async function handler(req, res) {
   try { setCors(res); } catch {}
-
   if (req.method === "OPTIONS" || req.method === "HEAD") {
-    res.status(200).end();
-    return;
+    res.status(200).end(); return;
   }
 
   try {
     if (!process.env.OPENAI_API_KEY) {
-      res.status(400).json({ ok:false, error:"Falta OPENAI_API_KEY" });
-      return;
+      res.status(400).json({ ok:false, error:"Falta OPENAI_API_KEY" }); return;
     }
 
-    const qRaw = (req.query?.q || req.body?.q || "").toString().trim();
+    const qParam = (req.query?.q || req.body?.q || "").toString().trim();
+    const mode  = (req.query?.mode || req.body?.mode || "start").toString();
 
     // Salud
-    if (qRaw.toLowerCase() === "ping") {
-      res.status(200).json({ ok:true, respuesta:"pong" });
-      return;
+    if (qParam.toLowerCase() === "ping") {
+      res.status(200).json({ ok:true, respuesta:"pong" }); return;
     }
 
     // Diagnóstico
-    if (qRaw.toLowerCase() === "diag") {
+    if (qParam.toLowerCase() === "diag") {
       const csvPath = await findCsvPath();
       res.status(200).json({
         ok: true,
@@ -114,36 +141,31 @@ export default async function handler(req, res) {
 
     const { fileId } = await getOrUploadFileId();
 
-    // Dryrun: contar filas con pandas y responder "filas = N"
-    if (qRaw.toLowerCase() === "dryrun") {
-      const thread = await client.beta.threads.create({
-        messages: [{
-          role: "user",
-          content:
-`Carga el CSV adjunto con pandas y responde EXACTAMENTE "filas = N" (sin más texto).`,
-        }],
-      });
-
-      const run = await client.beta.threads.runs.create(thread.id, {
-        model: MODEL,
-        instructions: "Eres un analista. Usa Code Interpreter.",
-        tools: [{ type: "code_interpreter" }],
-        tool_resources: { code_interpreter: { file_ids: [fileId] } },
-      });
-
-      await waitForRunCompletion(thread.id, run.id);
-      const messages = await client.beta.threads.messages.list(thread.id, { limit: 10 });
-      const text = extractAssistantText(messages);
-      res.status(200).json({ ok:true, respuesta: text });
+    // ---------- start: crea y devuelve thread/run en < 2s ----------
+    if (mode === "start") {
+      if (!qParam) { res.status(400).json({ ok:false, error:"Falta el parámetro q" }); return; }
+      const { threadId, runId } = await createThreadRun({ question: qParam, fileId });
+      res.status(200).json({ ok:true, processing:true, threadId, runId });
       return;
     }
 
-    // Pregunta real
-    if (!qRaw) {
-      res.status(400).json({ ok:false, error:"Falta el parámetro q" });
+    // ---------- poll: espera hasta ~8s y devuelve si está listo ----------
+    if (mode === "poll") {
+      const threadId = (req.query?.threadId || req.body?.threadId || "").toString();
+      const runId    = (req.query?.runId    || req.body?.runId    || "").toString();
+      if (!threadId || !runId) { res.status(400).json({ ok:false, error:"Falta threadId o runId" }); return; }
+
+      const r = await pollRun(threadId, runId, 8000, 1200);
+      if (r.done) res.status(200).json({ ok:true, processing:false, respuesta: r.text });
+      else        res.status(200).json({ ok:true, processing:true });
       return;
     }
 
-    const system =
-`Eres un analista educativo. Usa EXCLUSIVAMENTE el CSV adjunto.
-Car
+    // fallback
+    res.status(400).json({ ok:false, error:"Modo inválido. Usa mode=start o mode=poll" });
+
+  } catch (e) {
+    try { setCors(res); } catch {}
+    res.status(500).json({ ok:false, error: e?.message || "Error interno" });
+  }
+}
