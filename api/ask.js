@@ -1,17 +1,18 @@
-// api/ask.js — Vercel Serverless (Node 18+)
-// Reemplaza el endpoint antiguo. Ahora SIEMPRE manda el CSV completo a GPT.
-// GET  /api/ask?q=...   (usa el CSV del deploy)
-// POST /api/ask         (opcional: { q, csv } para enviar CSV en el body)
+// api/ask.js — Vercel Serverless (Node 18+, CommonJS)
+// Reemplaza el endpoint antiguo. Siempre manda el CSV completo a GPT.
+// GET  /api/ask?q=...      (usa el CSV del deploy)
+// POST /api/ask            (opcional: { q, csv } para enviar CSV en el body)
 
-import fs from "fs";
-import path from "path";
+const fs = require("fs");
+const path = require("path");
 
 const VERSION = "gpt5-csv-direct-main";
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
 
 function send(res, code, obj) {
-  res.status(code).setHeader("Content-Type", "application/json");
+  res.statusCode = code;
+  res.setHeader("Content-Type", "application/json");
   // CORS SIEMPRE
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -34,7 +35,7 @@ function loadCSVFromDisk() {
 
 async function callOpenAI(system, user) {
   const payload = {
-    model: "gpt-5", // si no está habilitado, usa "gpt-4o"
+    model: "gpt-5", // si tu cuenta no lo tiene, cambia a "gpt-4o"
     temperature: 0,
     response_format: { type: "json_object" },
     messages: [
@@ -56,14 +57,13 @@ async function callOpenAI(system, user) {
   try { return JSON.parse(text); } catch { return { respuesta: text }; }
 }
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   try {
-    // Preflight CORS
     if (req.method === "OPTIONS") {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return res.status(204).end();
+      res.statusCode = 204; return res.end();
     }
 
     if (!OPENAI_API_KEY) return send(res, 500, { error: "Falta OPENAI_API_KEY" });
@@ -72,11 +72,11 @@ export default async function handler(req, res) {
     const q = (isGET ? req.query.q : req.body?.q)?.toString().trim() || "";
     const csvInline = isGET ? null : (req.body?.csv ?? null);
 
-    // Endpoints de prueba (DEVUELVEN JSON)
+    // Endpoints de prueba (siempre JSON)
     if (!q || q.toLowerCase() === "ping")   return send(res, 200, { ok: true });
     if (q.toLowerCase() === "version")      return send(res, 200, { version: VERSION });
 
-    // CSV final (inline si viene por POST; si no, leer del deploy)
+    // CSV origen (inline si viene por POST; si no, desde el deploy)
     let csv, file, source;
     if (typeof csvInline === "string" && csvInline.trim()) {
       csv = csvInline; source = "inline";
@@ -99,7 +99,7 @@ export default async function handler(req, res) {
     // ===== Prompt (CSV → GPT, SOLO JSON) =====
     const system = `
 Eres un analista de datos. Recibirás el CSV completo entre <CSV>...</CSV> y una pregunta.
-Responde **solo JSON válido** con esta forma mínima:
+Responde SOLO JSON válido con esta forma mínima:
 {
   "respuesta": "texto claro en español",
   "tabla": { "headers": [...], "rows": [[...], ...] },   // si aplica
@@ -129,6 +129,4 @@ ${q}
   } catch (err) {
     return send(res, 500, { error: String(err.message || err) });
   }
-}
-
-export const config = { runtime: "nodejs" };
+};
