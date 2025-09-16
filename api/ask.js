@@ -1,7 +1,7 @@
 // api/ask.js — Vercel Serverless (Node 18+, CommonJS)
-// Reemplaza el endpoint antiguo. Siempre manda el CSV completo a GPT.
-// GET  /api/ask?q=...      (usa el CSV del deploy)
-// POST /api/ask            (opcional: { q, csv } para enviar CSV en el body)
+// Reemplaza el endpoint antiguo. SIEMPRE manda el CSV completo a GPT.
+// GET  /api/ask?q=...      (lee CSV del deploy)
+// POST /api/ask            (opcional: { q, csv } )
 
 const fs = require("fs");
 const path = require("path");
@@ -38,17 +38,11 @@ async function callOpenAI(system, user) {
     model: "gpt-5", // si tu cuenta no lo tiene, cambia a "gpt-4o"
     temperature: 0,
     response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
+    messages: [{ role: "system", content: system }, { role: "user", content: user }],
   };
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify(payload),
   });
   if (!r.ok) throw new Error(`OpenAI HTTP ${r.status}: ${await r.text()}`);
@@ -59,6 +53,7 @@ async function callOpenAI(system, user) {
 
 module.exports = async (req, res) => {
   try {
+    // Preflight CORS
     if (req.method === "OPTIONS") {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -72,11 +67,11 @@ module.exports = async (req, res) => {
     const q = (isGET ? req.query.q : req.body?.q)?.toString().trim() || "";
     const csvInline = isGET ? null : (req.body?.csv ?? null);
 
-    // Endpoints de prueba (siempre JSON)
+    // Health checks — SIEMPRE JSON
     if (!q || q.toLowerCase() === "ping")   return send(res, 200, { ok: true });
     if (q.toLowerCase() === "version")      return send(res, 200, { version: VERSION });
 
-    // CSV origen (inline si viene por POST; si no, desde el deploy)
+    // CSV origen (inline o del deploy)
     let csv, file, source;
     if (typeof csvInline === "string" && csvInline.trim()) {
       csv = csvInline; source = "inline";
@@ -87,9 +82,7 @@ module.exports = async (req, res) => {
 
     if (q.toLowerCase() === "diag") {
       return send(res, 200, {
-        version: VERSION,
-        source,
-        file: file || "(inline)",
+        version: VERSION, source, file: file || "(inline)",
         lines: csv.split(/\r?\n/).filter(Boolean).length,
         bytes: Buffer.byteLength(csv, "utf8"),
         note: "Este endpoint envía el CSV completo al modelo en cada consulta.",
@@ -106,7 +99,7 @@ Responde SOLO JSON válido con esta forma mínima:
   "stats": { "n": <int>, "mean": <num>, "extra": {...} } // si aplica
 }
 Reglas:
-- Normaliza mayúsculas/tildes y acepta sinónimos de columnas.
+- Normaliza mayúsculas/tildes; acepta sinónimos de columnas.
 - "por separado"/"por paralelo" => agrupa por la columna de paralelo/sección (A y B).
 - Ranking = orden descendente (mayor→menor) con n y promedio.
 - "PROMEDIO HABILIDADES INTERPERSONALES": acepta alias como PHINTERPERSONALES.
