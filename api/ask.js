@@ -41,7 +41,7 @@ function loadCSV() {
       const first = (csv.split(/\r?\n/).find(Boolean) || "");
       const headers = first.split(delim).map(h => h.trim());
       const rows = Math.max(0, csv.split(/\r?\n/).filter(Boolean).length - 1);
-      return { csv, file: f, headers, rows, delim };
+      return { csv, file: f, headers, rows };
     }
   }
   throw new Error("CSV no encontrado (api/data.csv o data.csv).");
@@ -49,7 +49,7 @@ function loadCSV() {
 
 async function callOpenAI(system, user) {
   const payload = {
-    model: "gpt-5", // si no está habilitado en tu cuenta, usa "gpt-4o"
+    model: "gpt-5",             // Si no está habilitado, usa "gpt-4o"
     temperature: 0,
     response_format: { type: "json_object" },
     messages: [{ role: "system", content: system }, { role: "user", content: user }],
@@ -67,18 +67,17 @@ async function callOpenAI(system, user) {
 
 module.exports = async (req, res) => {
   try {
-    // CORS preflight
     if (req.method === "OPTIONS") { cors(res); res.statusCode = 204; return res.end(); }
 
     const isGET = req.method === "GET";
     const q = (isGET ? req.query.q : req.body?.q)?.toString().trim() || "";
     const csvInline = isGET ? null : (req.body?.csv ?? null);
 
-    // ==== Health checks (SIEMPRE JSON) ====
+    // Health checks (SIEMPRE JSON)
     if (!q || q.toLowerCase() === "ping")    return send(res, 200, { ok: true });
     if (q.toLowerCase() === "version")       return send(res, 200, { version: VERSION });
 
-    // ==== Cargar CSV (inline o del deploy) ====
+    // Cargar CSV (inline o del deploy)
     let csv, file, headers, rows;
     if (typeof csvInline === "string" && csvInline.trim()) {
       csv = csvInline; file = "(inline)";
@@ -94,10 +93,9 @@ module.exports = async (req, res) => {
 
     if (!OPENAI_API_KEY) return send(res, 500, { error: "Falta OPENAI_API_KEY en Vercel" });
 
-    // ==== Prompt (CSV COMPLETO -> GPT, SOLO JSON) ====
     const system = `
 Eres un analista de datos. Recibirás el CSV COMPLETO entre <CSV>...</CSV> y una pregunta.
-Responde SOLO JSON válido con al menos:
+Responde SOLO JSON válido:
 {
   "respuesta": "texto claro en español",
   "tabla": { "headers": [...], "rows": [[...], ...] },   // si aplica
@@ -105,10 +103,10 @@ Responde SOLO JSON válido con al menos:
 }
 Reglas:
 - Normaliza mayúsculas/acentos; acepta sinónimos (ASERTIVIDAD, PHINTERPERSONALES, etc.).
-- "por separado"/"por paralelo" => agrupa por la columna de paralelo/sección (p.ej. PARALLELO/CURSO/SECCIÓN/GRUPO).
+- "por separado"/"por paralelo" => agrupa por la columna de paralelo/sección (A y B).
 - Ranking = orden descendente (mayor→menor) con n y promedio.
-- Incluye TODOS los grupos detectados (A y B). Si la columna exacta no existe, indica el equivalente usado.
-- Nada de Markdown/HTML: SOLO JSON válido.
+- Incluye TODOS los grupos detectados. Si la columna exacta no existe, indica el equivalente usado.
+- Nada de Markdown/HTML. SOLO JSON válido.
 `.trim();
 
     const user = `
@@ -122,6 +120,7 @@ ${q}
 
     const out = await callOpenAI(system, user);
     return send(res, 200, out);
+
   } catch (err) {
     return send(res, 500, { error: String(err.message || err) });
   }
