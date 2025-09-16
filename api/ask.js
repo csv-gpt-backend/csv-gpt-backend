@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 // ===== Build/version =====
-const VERSION = "gpt5-csv-direct-main-10";
+const VERSION = "gpt5-csv-direct-main-11";
 
 // ===== Modelo (forzado a GPT-5; override opcional por OPENAI_MODEL) =====
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
@@ -62,9 +62,9 @@ function loadCSVFromFS() {
 async function askOpenAI({ system, user }) {
   if (!OPENAI_API_KEY) throw new Error("Falta OPENAI_API_KEY en Vercel (Production).");
 
-  // Timeout de ~28s para evitar colgar la función
+  // Timeout de ~55s (máximo prudente en Serverless Pro)
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 28_000);
+  const timer = setTimeout(() => ac.abort(), 55_000);
 
   const payload = {
     model: MODEL,                         // GPT-5 (no enviar temperature con este modelo)
@@ -100,7 +100,7 @@ async function askOpenAI({ system, user }) {
   } catch (e) {
     clearTimeout(timer);
     if (e.name === "AbortError") {
-      throw new Error("Timeout: OpenAI tardó demasiado en responder (~28s).");
+      throw new Error("Timeout: OpenAI tardó demasiado en responder (~55s).");
     }
     throw e;
   }
