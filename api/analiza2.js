@@ -1,5 +1,4 @@
 // api/analiza2.js  (Wrapper + CORS + ping)
-// Reutiliza la lógica de analiza.js
 
 import handler from "./analiza.js";
 
