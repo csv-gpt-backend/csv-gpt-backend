@@ -1,5 +1,5 @@
-// api/analiza2.js  (Vercel – ESM)
-// Reexporta el handler de analiza.js y añade un "ping" para diagnóstico.
+// api/analiza2.js  (Wrapper + CORS + ping)
+// Reutiliza la lógica de analiza.js
 
 import handler from "./analiza.js";
 
