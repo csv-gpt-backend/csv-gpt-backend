@@ -1,171 +1,155 @@
-// api/ask_gpt.js — Serverless Node + CORS + GPT-5 sobre tu CSV
-// Acepta cualquiera de estas env vars en Vercel para la clave:
-// OPENAI_API_KEY / OPENAI_KEY / OPENAI_API / CLAVE_API_DE_OPENAI / API_KEY
+// /api/ask_gpt.js  — Vercel Serverless (Node)
+// Requiere: OPENAI_API_KEY en Vercel
+import fs from "fs";
+import path from "path";
 
-const fs = require('fs');
-const path = require('path');
+const VERSION = "gpt5-csv-direct-v1";
+const OPENAI_API_KEY =
+  process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
 
-const BUILD_TAG = 'gpt5-only-2025-09-16';
-
-// === detectar API key (varios nombres admitidos) ===
-const ENV_KEYS = ['OPENAI_API_KEY','OPENAI_KEY','OPENAI_API','CLAVE_API_DE_OPENAI','API_KEY'];
-let USED_ENV = null;
-function pickKey() {
-  for (const k of ENV_KEYS) {
-    const v = process.env[k];
-    if (v && String(v).trim()) { USED_ENV = k; return String(v).trim(); }
-  }
-  return '';
-}
-const OPENAI_API_KEY = pickKey();
-
-// === utilidades CSV ===
-const norm = s => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
-const toNum = v => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
-const detectDelimiter = first =>
-  ((first.match(/;/g)||[]).length > (first.match(/,/g)||[]).length) ? ';' : ',';
-
-function parseCSV(text){
-  const lines = text.replace(/\r/g,'').trim().split('\n');
-  if (!lines.length) return { rows: [], headersRaw: [], headersNorm: [] };
-  const delim = detectDelimiter(lines[0] || '');
-  const headersRaw = (lines[0] || '').split(delim).map(h => h.trim());
-  const headersNorm = headersRaw.map(norm);
-  const rows = [];
-  for (let i=1;i<lines.length;i++){
-    const line = lines[i]; if (!line?.trim()) continue;
-    const cols = line.split(delim); // suficiente para ~50 filas; evita comillas anidadas
-    const r = {};
-    for (let j=0;j<headersNorm.length;j++) r[headersNorm[j]] = (cols[j] ?? '').trim();
-    rows.push(r);
-  }
-  return { rows, headersRaw, headersNorm };
+function send(res, code, obj) {
+  res.status(code).setHeader("Content-Type", "application/json");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.end(JSON.stringify(obj));
 }
 
-let CACHE = null; // { rows, headersRaw, headersNorm, filePath }
-function loadOnce(){
-  if (CACHE) return CACHE;
-  const candidates = [
-    path.join(__dirname, 'data.csv'),      // /api/data.csv
-    path.join(__dirname, '..', 'data.csv') // /data.csv (raíz)
-  ];
-  for (const fp of candidates){
-    if (fs.existsSync(fp)){
-      const txt = fs.readFileSync(fp, 'utf8');
-      CACHE = { ...parseCSV(txt), filePath: fp };
-      return CACHE;
-    }
-  }
-  CACHE = { rows: [], headersRaw: [], headersNorm: [], filePath: null };
-  return CACHE;
+function detectDelimiter(sample) {
+  const first = sample.split(/\r?\n/).slice(0, 3).join("\n");
+  const counts = [
+    [",", (first.match(/,/g) || []).length],
+    [";", (first.match(/;/g) || []).length],
+    ["\t", (first.match(/\t/g) || []).length],
+  ].sort((a, b) => b[1] - a[1]);
+  return counts[0][1] ? counts[0][0] : ",";
 }
 
-function setCORS(res, origin='*'){
-  res.setHeader('Access-Control-Allow-Origin', origin); // luego cámbialo por tu dominio Wix
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Cache-Control', 'no-store');
-}
-
-function buildRowsForLLM(rows, headersRaw, headersNorm){
-  const out = [];
-  for (const r of rows){
-    const obj = {};
-    for (let i=0;i<headersRaw.length;i++){
-      const keyRaw = headersRaw[i], keyNorm = headersNorm[i];
-      const n = toNum(r[keyNorm]);
-      obj[keyRaw] = Number.isFinite(n) ? n : r[keyNorm];
-    }
-    out.push(obj);
-  }
-  return out;
-}
-
-// ===== llamada a GPT-5 (Responses API) =====
-async function askOpenAI(question, table, formatPref){
-  if (!OPENAI_API_KEY) {
-    return { error: `No encuentro tu API key. Define una env var: ${ENV_KEYS.join(' / ')}` };
-  }
-
-  const dataForLLM = buildRowsForLLM(table.rows, table.headersRaw, table.headersNorm);
-
-  const system = [
-    'Eres un analista de datos experto y SIEMPRE respondes en español.',
-    'Usa exclusivamente la tabla suministrada; si algo no está en los datos, dilo.',
-    'Razona con rigor lógico y matemático (promedios, conteos, %, rankings, comparaciones).',
-    'Indica el tamaño de muestra (n) y redondea a 2 decimales cuando ayude.'
-  ].join(' ');
-
-  const user = [
-    `Pregunta: ${question}`,
-    `Columnas: ${JSON.stringify(table.headersRaw.length ? table.headersRaw : table.headersNorm)}`,
-    `Filas: ${dataForLLM.length}`,
-    (formatPref === 'tabla'
-      ? 'Devuelve una tabla Markdown cuando aplique y un breve comentario.'
-      : 'Responde en texto claro; usa viñetas si ayuda.'
-    ),
-    'Datos (JSON por fila):',
-    JSON.stringify(dataForLLM)
-  ].join('\n');
-
-  const payload = {
-    model: 'gpt-5-mini', // sube a 'gpt-5' si prefieres más capacidad
-    input: [
-      { role: 'system', content: system },
-      { role: 'user',   content: user }
-    ],
-    max_output_tokens: 900,
-    temperature: 0.1
-  };
-
-  const r = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  const body = await r.json().catch(()=> ({}));
-  const text = body?.output_text
-            || body?.content?.map?.(p => p?.text)?.filter(Boolean)?.join('\n')
-            || body?.choices?.[0]?.message?.content
-            || (body?.error ? `${body.error.type || ''}: ${body.error.message || ''}` : '');
-
-  if (!r.ok) return { error: `OpenAI HTTP ${r.status} ${r.statusText} — ${text || JSON.stringify(body)}` };
-  if (!text)   return { error: `OpenAI respondió sin texto utilizable: ${JSON.stringify(body)}` };
-  return { text };
-}
-
-// ===== handler =====
-module.exports = async (req, res) => {
-  setCORS(res, req.headers.origin || '*');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-
-  const q = String(req.query.q || '').trim();
-  const format = String(req.query.format || '').trim().toLowerCase(); // ?format=tabla
-
-  if (!q)                      return res.status(200).json({ respuesta: 'Escribe tu pregunta. Pruebas: ping, diag, env, version' });
-  if (q.toLowerCase() === 'ping')    return res.status(200).json({ ok: true });
-  if (q.toLowerCase() === 'version') return res.status(200).json({ build: BUILD_TAG });
-  if (q.toLowerCase() === 'env')     return res.status(200).json({ openai_key_present: Boolean(OPENAI_API_KEY), using_env_name: USED_ENV || null });
-
-  const data = loadOnce();
-  if (q.toLowerCase() === 'diag') {
-    return res.status(200).json({
-      file: data.filePath,
-      rows: data.rows.length,
-      headers: data.headersRaw.length ? data.headersRaw : data.headersNorm
-    });
-  }
-
-  if (!data.filePath)    return res.status(404).json({ error: 'No encontré data.csv (colócalo en /api/data.csv o /data.csv).' });
-  if (!data.rows.length) return res.status(404).json({ error: 'data.csv está vacío o sin filas válidas.' });
-
-  try {
-    const out = await askOpenAI(q, data, format);
-    if (out.error) return res.status(502).json({ error: out.error });
-    return res.status(200).json({ respuesta: out.text });
-  } catch (e) {
-    return res.status(500).json({ error: String(e?.message || e) });
-  }
+let cached = {
+  csv: null,
+  file: null,
+  headers: null,
+  rows: 0,
+  delim: ",",
 };
+
+function loadCSV() {
+  const candidates = [
+    path.join(process.cwd(), "api", "data.csv"),
+    path.join(process.cwd(), "data.csv"),
+  ];
+  for (const f of candidates) {
+    if (fs.existsSync(f)) {
+      const csv = fs.readFileSync(f, "utf8");
+      const delim = detectDelimiter(csv);
+      const firstLine = (csv.split(/\r?\n/).find(Boolean) || "");
+      const headers = firstLine.split(delim).map((h) => h.trim());
+      const rows = csv.split(/\r?\n/).filter((l) => l.trim()).length - 1;
+      cached = { csv, file: f, headers, rows: Math.max(0, rows), delim };
+      return;
+    }
+  }
+  throw new Error("CSV no encontrado (buscado en api/data.csv y data.csv).");
+}
+
+async function chatJSON({ system, user }) {
+  const payload = {
+    model: "gpt-5", // usa tu modelo; si no está, reemplaza por 'gpt-4o'
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  };
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(`OpenAI HTTP ${r.status}: ${t}`);
+  }
+  const data = await r.json();
+  const text = data?.choices?.[0]?.message?.content || "{}";
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { respuesta: text };
+  }
+}
+
+export default async function handler(req, res) {
+  try {
+    if (req.method === "OPTIONS") {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      return res.status(204).end();
+    }
+
+    if (!OPENAI_API_KEY) {
+      return send(res, 500, { error: "Falta OPENAI_API_KEY en Vercel" });
+    }
+
+    if (!cached.csv) loadCSV();
+
+    const q =
+      (req.method === "GET" ? req.query.q : req.body?.q)?.toString().trim() || "";
+
+    // Rutas rápidas sin GPT
+    if (!q || q.toLowerCase() === "ping") return send(res, 200, { ok: true });
+    if (q.toLowerCase() === "version")
+      return send(res, 200, { version: VERSION });
+    if (q.toLowerCase() === "diag")
+      return send(res, 200, {
+        file: cached.file,
+        rows: cached.rows,
+        headers: cached.headers,
+        delimiter: cached.delim === "\t" ? "TAB" : cached.delim,
+      });
+
+    // --- Prompt que ENVÍA EL CSV COMPLETO EN CADA CONSULTA ---
+    const system = `
+Eres un analista de datos. Recibirás un CSV completo (encerrado entre <CSV>...</CSV>) y una
+pregunta del usuario. Debes calcular con precisión y responder en **JSON válido** con esta forma:
+
+{
+  "respuesta": "texto corto y claro en español",
+  "tabla": { "headers": [..], "rows": [ [..], [..] ] },   // opcional si aplica
+  "stats": { "n": <int>, "mean": <num>, "extra": {...} }  // opcional si aplica
+}
+
+Reglas:
+- No inventes columnas; normaliza MAYÚSCULAS/acentos y acepta sinónimos comunes.
+- "por separado" o "por paralelo" => agrupa por columna de paralelo/sección (ej.: "PARALELO", "CURSO", "SECCIÓN").
+- Si piden ranking, ordena **descendente** y muestra n y promedio.
+- Si la métrica es "PROMEDIO HABILIDADES INTERPERSONALES", acepta aliases como:
+  "PHINTERPERSONALES", "PROMEDIO_INTERPERSONALES", etc.
+- Incluye **todos** los grupos detectados (p.ej., Décimo A y Décimo B). Nunca omitas uno.
+- Cuando pidan "muestra el cálculo", añade en "respuesta" el detalle (fórmula y números).
+- Si la columna exacta no existe, indica cuál encontraste como equivalente.
+- Nada de Markdown ni tablas HTML. **Solo JSON** exacto.
+`.trim();
+
+    const user = `
+<CSV>
+${cached.csv}
+</CSV>
+
+Pregunta:
+${q}
+`.trim();
+
+    const out = await chatJSON({ system, user });
+    return send(res, 200, out);
+  } catch (err) {
+    return send(res, 500, { error: String(err.message || err) });
+  }
+}
+
+export const config = { runtime: "nodejs" };
