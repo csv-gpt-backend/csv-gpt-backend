@@ -1,79 +1,61 @@
-// api/ask.js  — Vercel Edge Function
+// api/ask.js — Vercel Edge Function (ultra-rápida)
 export const config = { runtime: 'edge' };
 
 let CACHE_ROWS = null;
 
-// ===== Utilidades =====
-function normKey(s) {
-  return String(s || '')
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toUpperCase()
-    .trim();
-}
-function toNumber(v) {
-  if (v == null) return NaN;
-  const n = Number(String(v).replace(/\s/g, '').replace(',', '.').replace(/[^0-9.+-]/g, ''));
+// ----- utilidades -----
+const norm = s => String(s || '')
+  .normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
+const toNumber = v => {
+  const n = Number(String(v ?? '').replace(',', '.'));
   return Number.isFinite(n) ? n : NaN;
-}
-function promedio(rows, campo) {
-  const KEY = normKey(campo);
-  const vals = [];
-  for (const r of rows) {
-    const v = r[KEY] ?? r[campo] ?? r[KEY.toLowerCase()];
-    const n = toNumber(v);
-    if (Number.isFinite(n)) vals.push(n);
-  }
-  const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : NaN;
+};
+const promedio = (rows, campo) => {
+  const KEY = norm(campo);
+  const vals = rows.map(r => toNumber(r[KEY] ?? r[campo] ?? r[KEY.toLowerCase()]))
+                   .filter(Number.isFinite);
+  const mean = vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : NaN;
   return { n: vals.length, mean: Number.isFinite(mean) ? Number(mean.toFixed(2)) : null };
-}
-function detectDelimiter(firstLine) {
-  const c = (firstLine.match(/,/g) || []).length;
-  const s = (firstLine.match(/;/g) || []).length;
-  return s > c ? ';' : ',';
-}
-function parseCSV(text) {
-  const lines = text.replace(/\r/g, '').trim().split('\n');
+};
+const detectDelimiter = first =>
+  ((first.match(/;/g)||[]).length > (first.match(/,/g)||[]).length) ? ';' : ',';
+const parseCSV = text => {
+  const lines = text.replace(/\r/g,'').trim().split('\n');
   if (!lines.length) return [];
   const delim = detectDelimiter(lines[0] || '');
-  const headers = (lines[0] || '').split(delim).map(normKey);
+  const headers = (lines[0] || '').split(delim).map(norm);
   const out = [];
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line?.trim()) continue;
-    const cols = line.split(delim); // simple; evita comas dentro de campos
+  for (let i=1;i<lines.length;i++) {
+    const cols = lines[i].split(delim);
     const row = {};
-    for (let j = 0; j < headers.length; j++) row[headers[j]] = (cols[j] ?? '').trim();
+    for (let j=0;j<headers.length;j++) row[headers[j]] = (cols[j] ?? '').trim();
     out.push(row);
   }
   return out;
-}
+};
 async function loadRows(origin) {
   if (CACHE_ROWS) return CACHE_ROWS;
-  const url = `${origin}/data.csv`;     // lee tu CSV estático del propio deploy
-  const r = await fetch(url, { redirect: 'follow' });
-  if (!r.ok) throw new Error(`No pude leer data.csv (HTTP ${r.status})`);
+  const r = await fetch(origin + '/data.csv', { redirect: 'follow' });
+  if (!r.ok) throw new Error('No pude leer data.csv (HTTP ' + r.status + ')');
   const text = await r.text();
   CACHE_ROWS = parseCSV(text);
   return CACHE_ROWS;
 }
 function withCORS(res, originHeader) {
-  // Abierto para que funcione YA; cuando tengas tu dominio Wix cámbialo por ese dominio exacto
-  res.headers.set('Access-Control-Allow-Origin', originHeader || '*'); 
+  // abierto para que funcione ya; cuando tengas tu dominio Wix, ponlo fijo aquí
+  res.headers.set('Access-Control-Allow-Origin', originHeader || '*');
   res.headers.set('Vary', 'Origin');
   res.headers.set('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-  res.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=86400');
+  res.headers.set('Cache-Control','public, s-maxage=60, stale-while-revalidate=86400');
   return res;
 }
-function json(obj, status, originHeader) {
-  return withCORS(
-    new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json; charset=utf-8' } }),
-    originHeader
-  );
-}
+const json = (obj, status, originHeader) =>
+  withCORS(new Response(JSON.stringify(obj), {
+    status, headers: { 'content-type':'application/json; charset=utf-8' }
+  }), originHeader);
 
-// ===== Handler =====
+// ----- handler -----
 export default async function handler(req) {
   const originHdr = req.headers.get('origin') || '*';
   if (req.method === 'OPTIONS') return withCORS(new Response(null, { status: 204 }), originHdr);
@@ -82,13 +64,14 @@ export default async function handler(req) {
     const url = new URL(req.url);
     const q = (url.searchParams.get('q') || '').trim();
 
-    // carga CSV una sola vez por ubicación Edge (queda cacheado en memoria)
-    const rows = await loadRows(url.origin);
+    // ping para probar CORS/URL
+    if (q.toLowerCase() === 'ping') return json({ ok: true }, 200, originHdr);
 
-    // Soporta: "Promedio de TIMIDEZ"
+    // calcula: “Promedio de TIMIDEZ”
     const m = q.match(/promedio\s+de\s+(.+)/i);
     if (m) {
       const campo = m[1].trim();
+      const rows = await loadRows(url.origin);  // lee /data.csv del deploy
       const st = promedio(rows, campo);
       if (st.n > 0 && st.mean != null) {
         return json({ respuesta: `Promedio de ${campo}: ${st.mean} (n=${st.n})`, stats: st }, 200, originHdr);
@@ -96,10 +79,9 @@ export default async function handler(req) {
       return json({ error: `No encontré valores numéricos para "${campo}".` }, 404, originHdr);
     }
 
-    // Ping y fallback
-    if (q.toLowerCase() === 'ping') return json({ ok: true }, 200, originHdr);
-    return json({ respuesta: 'Prueba: "Promedio de TIMIDEZ"' }, 200, originHdr);
-  } catch (err) {
-    return json({ error: String(err?.message || err) }, 500, originHdr);
+    // fallback
+    return json({ respuesta: 'Prueba: "Promedio de TIMIDEZ" o "ping"' }, 200, originHdr);
+  } catch (e) {
+    return json({ error: String(e?.message || e) }, 500, originHdr);
   }
 }
