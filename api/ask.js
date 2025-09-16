@@ -1,16 +1,16 @@
 // api/ask.js — Vercel Serverless (Node 18+, CommonJS)
 // ✔ CORS siempre
-// ✔ Health checks en JSON: ping / version / diag
-// ✔ Lee CSV (api/data.csv o data.csv) y lo manda COMPLETO al modelo en cada consulta
+// ✔ Health checks JSON: ping / version / diag
+// ✔ Lee CSV (api/data.csv o data.csv) y lo envía COMPLETO al modelo en cada consulta
 
 const fs = require("fs");
 const path = require("path");
 
-const VERSION = "gpt5-csv-direct-main-5"; // <-- DEBE verse en ?q=version
+const VERSION = "gpt5-csv-direct-main-6"; // <-- DEBE verse en ?q=version
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
 
-/* ===== Utils ===== */
+/* ---------- util ---------- */
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -50,8 +50,7 @@ function loadCSV() {
 }
 async function callOpenAI(system, user) {
   const payload = {
-    // Si tu cuenta no tiene gpt-5, cambia a "gpt-4o"
-    model: "gpt-5",
+    model: "gpt-5", // si tu cuenta no lo tiene, usa "gpt-4o"
     temperature: 0,
     response_format: { type: "json_object" },
     messages: [{ role: "system", content: system }, { role: "user", content: user }],
@@ -67,7 +66,7 @@ async function callOpenAI(system, user) {
   try { return JSON.parse(text); } catch { return { respuesta: text }; }
 }
 
-/* ===== Handler ===== */
+/* ---------- handler ---------- */
 module.exports = async (req, res) => {
   try {
     if (req.method === "OPTIONS") { cors(res); res.statusCode = 204; return res.end(); }
@@ -76,11 +75,11 @@ module.exports = async (req, res) => {
     const q = (isGET ? req.query.q : req.body?.q)?.toString().trim() || "";
     const csvInline = isGET ? null : (req.body?.csv ?? null);
 
-    // ---- Health checks (SIEMPRE JSON) ----
+    // Health checks (¡siempre JSON!)
     if (!q || q.toLowerCase() === "ping")    return send(res, 200, { ok: true });
     if (q.toLowerCase() === "version")       return send(res, 200, { version: VERSION });
 
-    // ---- Cargar CSV (inline o disco) ----
+    // Cargar CSV (inline o disco)
     let csv, filePath, rows, headers, source = "fs";
     if (typeof csvInline === "string" && csvInline.trim()) {
       csv = csvInline; filePath = "(inline)"; source = "inline";
@@ -91,14 +90,13 @@ module.exports = async (req, res) => {
       const loaded = loadCSV();
       csv = loaded.csv; filePath = loaded.filePath; rows = loaded.rows; headers = loaded.headers;
     }
-
     if (q.toLowerCase() === "diag") {
       return send(res, 200, { source, filePath, url: null, rows, headers });
     }
 
     if (!OPENAI_API_KEY) return send(res, 500, { error: "Falta OPENAI_API_KEY en Vercel" });
 
-    // ---- Prompt CSV → GPT (solo JSON) ----
+    // CSV → GPT (solo JSON)
     const system = `
 Eres un analista de datos. Recibirás el CSV COMPLETO entre <CSV>...</CSV> y una pregunta.
 Responde SOLO JSON válido:
@@ -108,8 +106,8 @@ Responde SOLO JSON válido:
   "stats": { "n": <int>, "mean": <num>, "extra": {...} } // si aplica
 }
 Reglas:
-- Normaliza mayúsculas/acentos y acepta sinónimos (ASERTIVIDAD, PHINTERPERSONALES, etc.).
-- "por separado"/"por paralelo" => agrupa por la columna de paralelo/sección (A y B).
+- Normaliza mayúsculas/acentos; acepta sinónimos (ASERTIVIDAD, PHINTERPERSONALES, etc.).
+- "por separado"/"por paralelo" => agrupa por columna de paralelo/sección (A y B).
 - Ranking = orden descendente (mayor→menor) con n y promedio.
 - Incluye TODOS los grupos detectados. Si la columna exacta no existe, indica el equivalente usado.
 - Nada de Markdown/HTML. SOLO JSON válido.
