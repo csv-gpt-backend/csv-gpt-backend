@@ -3,16 +3,16 @@ const fs = require("fs");
 const path = require("path");
 
 // === Build/version ===
-const VERSION = "gpt5-csv-direct-main-8";
+const VERSION = "gpt5-csv-direct-main-9";
 
-// === Modelo (forzado a GPT-5, con override opcional por env) ===
+// === Modelo (forzado a GPT-5; puedes sobreescribir con OPENAI_MODEL) ===
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
 
 // === API Key ===
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.OPENAI_API;
 
-// ---------- helpers de respuesta ----------
+// ---------- helpers ----------
 function setCORS(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -63,13 +63,13 @@ async function askOpenAI({ system, user }) {
   if (!OPENAI_API_KEY) throw new Error("Falta OPENAI_API_KEY en Vercel (Production).");
 
   const payload = {
-    model: MODEL,                         // ← GPT-5 (o lo que pongas en OPENAI_MODEL)
-    temperature: 1,
+    model: MODEL,                            // GPT-5
+    // ❗ NO ENVIAR 'temperature' con GPT-5 (usa el valor por defecto)
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: system },
-      { role: "user", content: user },
-    ],
+      { role: "user",   content: user }
+    ]
   };
 
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -101,11 +101,9 @@ module.exports = async (req, res) => {
       return res.end();
     }
 
-    // Query param "q" (GET) o body.q (POST)
+    // obtener q
     let q = "";
-    try {
-      q = new URL(req.url, `http://${req.headers.host}`).searchParams.get("q") || "";
-    } catch {}
+    try { q = new URL(req.url, `http://${req.headers.host}`).searchParams.get("q") || ""; } catch {}
     if (!q && req.method !== "GET") {
       const b = typeof req.body === "string" ? safeJSON(req.body) : (req.body || {});
       q = (b.q || "");
@@ -113,12 +111,12 @@ module.exports = async (req, res) => {
     q = (q || "").toString().trim();
     const ql = q.toLowerCase();
 
-    // ---- Health checks / utilidades ----
+    // health
     if (!q || ql === "ping")   return sendJSON(res, 200, { ok: true });
     if (ql === "version")      return sendJSON(res, 200, { version: VERSION });
     if (ql === "model")        return sendJSON(res, 200, { model: MODEL });
 
-    // ---- CSV: inline (POST.csv) o desde archivo ----
+    // CSV inline o archivo
     let csvInfo;
     if (req.method !== "GET") {
       const body = typeof req.body === "string" ? safeJSON(req.body) : (req.body || {});
@@ -133,32 +131,26 @@ module.exports = async (req, res) => {
     }
     if (!csvInfo) csvInfo = loadCSVFromFS();
 
-    // Diagnóstico rápido
     if (ql === "diag") {
       return sendJSON(res, 200, {
-        source: csvInfo.source,
-        filePath: csvInfo.filePath,
-        url: null,
-        rows: csvInfo.rows,
-        headers: csvInfo.headers,
+        source: csvInfo.source, filePath: csvInfo.filePath, url: null,
+        rows: csvInfo.rows, headers: csvInfo.headers
       });
     }
 
-    // ---- Prompt para análisis directo del CSV ----
     const system = `
-Eres un analista de datos. Devuelve SIEMPRE un JSON válido con esta forma:
+Eres un analista de datos. Devuelve SIEMPRE JSON válido con esta forma:
 {
   "respuesta": "texto claro en español",
   "tabla": { "headers": [..], "rows": [[..], ..] },
   "stats": { "n": <int>, "mean": <number> }
 }
-- Te paso el CSV completo entre <CSV>...</CSV>. La primera fila son encabezados.
-- Acepta variantes y sinónimos (acentos, mayúsculas).
-- "por separado" / "por paralelo" => agrupa por la columna de paralelo (A, B, etc.).
-- "ranking" => ordena de mayor a menor e incluye la posición (1,2,3...).
-- Si piden "¿NOMBRE está sobre el promedio...?" calcula y muestra el promedio del grupo y el valor de esa persona.
-- Cuando convenga, retorna "tabla" con headers/rows; si no aplica, puedes omitirla.
-- Nunca devuelvas Markdown ni texto fuera del JSON.`;
+- Recibirás el CSV entre <CSV>...</CSV>.
+- Acepta sinónimos y variaciones (acentos/mayúsculas).
+- "por separado"/"por paralelo" => agrupa por la columna de paralelo (A,B,...).
+- "ranking" => ordena de mayor a menor (incluye posición).
+- Si preguntan por una persona vs promedio, calcula ambos y muéstralos.
+- Nada de Markdown; solo JSON.`;
 
     const user = `<CSV>
 ${csvInfo.csv}
