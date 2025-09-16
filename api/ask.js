@@ -1,9 +1,9 @@
-// api/ask.js — Vercel Edge Function (rápida y con CORS)
+// api/ask.js — Vercel Edge Function
 export const config = { runtime: 'edge' };
 
 let CACHE_ROWS = null; // cache por región Edge
 
-// ========= utilidades =========
+// ===== utilidades =====
 const norm = s => String(s || '')
   .normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
 
@@ -15,7 +15,6 @@ const toNumber = v => {
 const detectDelimiter = first =>
   ((first.match(/;/g)||[]).length > (first.match(/,/g)||[]).length) ? ';' : ',';
 
-// parsea CSV simple (coma o punto y coma) y normaliza cabeceras
 const parseCSV = text => {
   const lines = text.replace(/\r/g,'').trim().split('\n');
   if (!lines.length) return [];
@@ -43,11 +42,12 @@ async function loadRows(origin) {
 }
 
 function withCORS(res, originHeader) {
-  res.headers.set('Access-Control-Allow-Origin', originHeader || '*'); // cámbialo por tu dominio Wix si quieres
+  res.headers.set('Access-Control-Allow-Origin', originHeader || '*'); // pon tu dominio Wix si quieres
   res.headers.set('Vary', 'Origin');
   res.headers.set('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-  res.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=86400');
+  // Para evitar caché mientras depuras:
+  res.headers.set('Cache-Control', 'no-store');
   return res;
 }
 
@@ -56,13 +56,12 @@ const json = (obj, status, originHeader) =>
     status, headers: { 'content-type':'application/json; charset=utf-8' }
   }), originHeader);
 
-// encuentra el nombre de columna para “NOMBRE” (NOMBRE/ESTUDIANTE/ALUMNO…)
+// intenta localizar la columna de nombre
 function findNameKey(rows) {
   if (!rows.length) return 'NOMBRE';
   const keys = Object.keys(rows[0] || {});
-  const candidates = ['NOMBRE','ESTUDIANTE','ALUMNO','APELLIDOS','NOMBRES'];
+  const candidates = ['NOMBRE','ESTUDIANTE','ALUMNO','NOMBRES','APELLIDOS'];
   for (const c of candidates) if (keys.includes(c)) return c;
-  // último recurso: la 1ª columna
   return keys[0] || 'NOMBRE';
 }
 
@@ -80,8 +79,7 @@ function ranking(rows, campo, nameKey) {
     [nameKey]: r[nameKey],
     valor: toNumber(r[KEY] ?? r[campo] ?? r[KEY.toLowerCase()])
   })).filter(x => Number.isFinite(x.valor));
-  items.sort((a,b)=> b.valor - a.valor); // mayor→menor
-  // añade posición (1..N)
+  items.sort((a,b)=> b.valor - a.valor);
   items.forEach((it, i) => it.posicion = i + 1);
   return items;
 }
@@ -89,8 +87,6 @@ function ranking(rows, campo, nameKey) {
 function alumnoVsGrupo(rows, nombreBuscado, campo, nameKey) {
   const KEY = norm(campo);
   const NB = norm(nombreBuscado);
-
-  // fila del alumno (coincidencia exacta tras normalizar)
   const fila = rows.find(r => norm(r[nameKey]) === NB);
   if (!fila) return { error: `No encontré a "${nombreBuscado}".` };
 
@@ -103,24 +99,22 @@ function alumnoVsGrupo(rows, nombreBuscado, campo, nameKey) {
 
   const mean = vals.reduce((a,b)=>a+b,0) / vals.length;
   const diff = v - mean;
-
-  // ranking y percentil
-  const sorted = [...vals].sort((a,b)=>a-b);
-  const rankDesc = [...vals].sort((a,b)=>b-a).findIndex(x => x <= v) + 1; // posición aprox.
-  const percentile = (sorted.filter(x => x <= v).length / vals.length) * 100;
+  const sortedAsc = [...vals].sort((a,b)=>a-b);
+  const rankDesc = [...vals].sort((a,b)=>b-a).findIndex(x => x <= v) + 1;
+  const percentile = (sortedAsc.filter(x => x <= v).length / vals.length) * 100;
 
   return {
     nombre: fila[nameKey],
     campo,
     valor: Number(v.toFixed(2)),
     grupo: { n: vals.length, media: Number(mean.toFixed(2)) },
-    diferencia: Number(diff.toFixed(2)),  // alumno - media
+    diferencia: Number(diff.toFixed(2)),
     posicion: rankDesc,
     percentil: Number(percentile.toFixed(1))
   };
 }
 
-// ========= handler =========
+// ===== handler =====
 export default async function handler(req) {
   const originHdr = req.headers.get('origin') || '*';
   if (req.method === 'OPTIONS') return withCORS(new Response(null, { status: 204 }), originHdr);
@@ -129,10 +123,8 @@ export default async function handler(req) {
     const url = new URL(req.url);
     const q = (url.searchParams.get('q') || '').trim();
 
-    // ping para probar CORS/URL
     if (q.toLowerCase() === 'ping') return json({ ok: true }, 200, originHdr);
 
-    // carga datos
     const rows = await loadRows(url.origin);
     const nameKey = findNameKey(rows);
 
@@ -153,13 +145,13 @@ export default async function handler(req) {
       const campo = m2[1].trim();
       const tabla = ranking(rows, campo, nameKey);
       if (!tabla.length) return json({ error: `No encontré valores numéricos para "${campo}".` }, 404, originHdr);
-      return json(tabla, 200, originHdr); // el front ya sabe mostrar tabla
+      return json(tabla, 200, originHdr);
     }
 
-    // 3) ¿Cómo está NOMBRE en CAMPO frente al grupo?  /  NOMBRE vs grupo (CAMPO)
+    // 3) ¿Cómo está NOMBRE en CAMPO frente al grupo?
     const m3 =
-      q.match(/como\s+esta\s+(.+?)\s+en\s+(.+?)\s+(?:frente\s+al\s+grupo|vs\s+grupo|comparad[oa]\s+con\s+el\s+grupo)\??/i)
-      || q.match(/(.+?)\s+vs\s+grupo\s*\((.+?)\)/i);
+      q.match(/como\s+esta\s+(.+?)\s+en\s+(.+?)\s+(?:frente\s+al\s+grupo|vs\s+grupo|comparad[oa]\s+con\s+el\s+grupo)\??/i) ||
+      q.match(/(.+?)\s+vs\s+grupo\s*\((.+?)\)/i);
     if (m3) {
       const nombre = m3[1].trim();
       const campo = m3[2].trim();
@@ -174,7 +166,6 @@ export default async function handler(req) {
       }, 200, originHdr);
     }
 
-    // fallback
     return json({ respuesta: 'Prueba: "Promedio de TIMIDEZ", "Ranking de AUTOESTIMA" o "¿Cómo está Julia en EMPATÍA frente al grupo?"' }, 200, originHdr);
   } catch (e) {
     return json({ error: String(e?.message || e) }, 500, originHdr);
