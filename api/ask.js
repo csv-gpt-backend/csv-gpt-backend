@@ -1,43 +1,38 @@
-// api/ask.js — Serverless Node + CORS + GPT-5 razonando sobre tu CSV
-// Requiere en Vercel una env var con tu clave (acepta cualquiera de estas):
-//   OPENAI_API_KEY / OPENAI_KEY / OPENAI_API / CLAVE_API_DE_OPENAI / API_KEY
+// api/ask_gpt.js — CSV → GPT-5 (Responses API) con CORS
+// Env var aceptadas (usa una): OPENAI_API_KEY / OPENAI_KEY / OPENAI_API / CLAVE_API_DE_OPENAI / API_KEY
 
 const fs = require('fs');
 const path = require('path');
 
-const BUILD_TAG = 'gpt5-prod-2025-09-16';
+const BUILD_TAG = 'gpt5-only-2025-09-16';
 
-// ===== detectar API key (aceptamos varios nombres) =====
+// --- API key (acepta varios nombres) ---
 const ENV_KEYS = ['OPENAI_API_KEY','OPENAI_KEY','OPENAI_API','CLAVE_API_DE_OPENAI','API_KEY'];
 let USED_ENV = null;
-function pickKey() {
-  for (const k of ENV_KEYS) {
+function pickKey(){
+  for (const k of ENV_KEYS){
     const v = process.env[k];
-    if (v && String(v).trim()) { USED_ENV = k; return String(v).trim(); }
+    if (v && String(v).trim()){ USED_ENV = k; return String(v).trim(); }
   }
   return '';
 }
 const OPENAI_API_KEY = pickKey();
 
-// ===== utilidades CSV =====
-const norm = s => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
+// --- utilidades CSV ---
+const norm = s => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase().trim();
 const toNum = v => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
-const detectDelimiter = first =>
-  ((first.match(/;/g)||[]).length > (first.match(/,/g)||[]).length) ? ';' : ',';
+const detectDelimiter = first => ((first.match(/;/g)||[]).length > (first.match(/,/g)||[]).length) ? ';' : ',';
 
 function parseCSV(text){
   const lines = text.replace(/\r/g,'').trim().split('\n');
   if (!lines.length) return { rows: [], headersRaw: [], headersNorm: [] };
-
   const delim = detectDelimiter(lines[0] || '');
   const headersRaw = (lines[0] || '').split(delim).map(h => h.trim());
   const headersNorm = headersRaw.map(norm);
-
   const rows = [];
   for (let i=1;i<lines.length;i++){
-    const line = lines[i];
-    if (!line?.trim()) continue;
-    const cols = line.split(delim); // simple parser suficiente para ~50 filas sin comillas internas
+    const line = lines[i]; if (!line?.trim()) continue;
+    const cols = line.split(delim); // suficiente para CSV simple
     const r = {};
     for (let j=0;j<headersNorm.length;j++) r[headersNorm[j]] = (cols[j] ?? '').trim();
     rows.push(r);
@@ -50,11 +45,11 @@ function loadOnce(){
   if (CACHE) return CACHE;
   const candidates = [
     path.join(__dirname, 'data.csv'),      // /api/data.csv
-    path.join(__dirname, '..', 'data.csv') // /data.csv (raíz)
+    path.join(__dirname, '..', 'data.csv') // /data.csv
   ];
   for (const fp of candidates){
     if (fs.existsSync(fp)){
-      const txt = fs.readFileSync(fp, 'utf8'); // si tu CSV está en latin-1, los números igual se leen
+      const txt = fs.readFileSync(fp, 'utf8');
       CACHE = { ...parseCSV(txt), filePath: fp };
       return CACHE;
     }
@@ -64,58 +59,53 @@ function loadOnce(){
 }
 
 function setCORS(res, origin='*'){
-  res.setHeader('Access-Control-Allow-Origin', origin); // cambia '*' por tu dominio Wix cuando esté estable
+  res.setHeader('Access-Control-Allow-Origin', origin); // luego limita a tu dominio Wix
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Cache-Control', 'no-store');
 }
 
-// Convierte filas a objeto con claves "humanas" y castea números
 function buildRowsForLLM(rows, headersRaw, headersNorm){
   const out = [];
   for (const r of rows){
-    const obj = {};
+    const o = {};
     for (let i=0;i<headersRaw.length;i++){
-      const keyRaw = headersRaw[i], keyNorm = headersNorm[i];
-      const n = toNum(r[keyNorm]);
-      obj[keyRaw] = Number.isFinite(n) ? n : r[keyNorm];
+      const raw = headersRaw[i], key = headersNorm[i];
+      const n = toNum(r[key]);
+      o[raw] = Number.isFinite(n) ? n : r[key];
     }
-    out.push(obj);
+    out.push(o);
   }
   return out;
 }
 
-// ===== llamada a GPT-5 (Responses API) =====
 async function askOpenAI(question, table, formatPref){
-  if (!OPENAI_API_KEY) {
-    return { error: `No encuentro tu API key. Define una env var: ${ENV_KEYS.join(' / ')}` };
-  }
+  if (!OPENAI_API_KEY) return { error: `Falta API key. Usa una de: ${ENV_KEYS.join(' / ')}` };
 
   const dataForLLM = buildRowsForLLM(table.rows, table.headersRaw, table.headersNorm);
 
   const system = [
-    'Eres un analista de datos experto. Responde SIEMPRE en español.',
-    'Usa únicamente la tabla proporcionada; si algo no está en los datos, dilo explícitamente.',
-    'Razona con rigor lógico y matemático (promedios, conteos, %, rankings, comparaciones).',
-    'Incluye números clave y tamaño de muestra (n). Redondea a 2 decimales cuando ayude.'
+    'Eres un analista de datos experto y SIEMPRE respondes en español.',
+    'Usa solo la tabla proporcionada; si algo no está en los datos, dilo.',
+    'Razona con rigor (promedios, conteos, %, rankings, comparaciones).',
+    'Incluye tamaño de muestra (n) y redondea a 2 decimales cuando ayude.'
   ].join(' ');
 
-  const userParts = [
+  const user = [
     `Pregunta: ${question}`,
     `Columnas: ${JSON.stringify(table.headersRaw.length ? table.headersRaw : table.headersNorm)}`,
     `Filas: ${dataForLLM.length}`,
-    (formatPref === 'tabla')
-      ? 'Formatea la respuesta con una tabla Markdown cuando aplique, seguida de un breve comentario.'
-      : 'Responde en texto claro; si aplica, puedes usar viñetas.'
-    ,
+    (formatPref === 'tabla'
+      ? 'Devuelve una tabla Markdown cuando aplique y un breve comentario.'
+      : 'Responde en texto claro; usa viñetas si ayuda.'
+    ),
     'Datos (JSON por fila):',
     JSON.stringify(dataForLLM)
-  ];
-  const user = userParts.join('\n');
+  ].join('\n');
 
   const payload = {
-    model: 'gpt-5-mini',   // puedes subir a 'gpt-5' si prefieres más capacidad
+    model: 'gpt-5-mini', // o 'gpt-5'
     input: [
       { role: 'system', content: system },
       { role: 'user',   content: user   }
@@ -141,13 +131,12 @@ async function askOpenAI(question, table, formatPref){
   return { text };
 }
 
-// ===== handler =====
 module.exports = async (req, res) => {
   setCORS(res, req.headers.origin || '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const q = String(req.query.q || '').trim();
-  const format = String(req.query.format || '').trim().toLowerCase(); // opcional: ?format=tabla
+  const format = String(req.query.format || '').trim().toLowerCase(); // ?format=tabla
 
   if (!q)                      return res.status(200).json({ respuesta: 'Escribe tu pregunta. Pruebas: ping, diag, env, version' });
   if (q.toLowerCase() === 'ping')    return res.status(200).json({ ok: true });
@@ -155,7 +144,6 @@ module.exports = async (req, res) => {
   if (q.toLowerCase() === 'env')     return res.status(200).json({ openai_key_present: Boolean(OPENAI_API_KEY), using_env_name: USED_ENV || null });
 
   const data = loadOnce();
-
   if (q.toLowerCase() === 'diag') {
     return res.status(200).json({
       file: data.filePath,
@@ -164,7 +152,7 @@ module.exports = async (req, res) => {
     });
   }
 
-  if (!data.filePath)    return res.status(404).json({ error: 'No encontré data.csv (colócalo en /api/data.csv o /data.csv).' });
+  if (!data.filePath)    return res.status(404).json({ error: 'No encontré data.csv (ponlo en /api/data.csv o /data.csv).' });
   if (!data.rows.length) return res.status(404).json({ error: 'data.csv está vacío o sin filas válidas.' });
 
   try {
