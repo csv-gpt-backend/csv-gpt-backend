@@ -64,7 +64,7 @@ async function askOpenAI({ system, user }) {
 
   const payload = {
     model: MODEL,                         // ← GPT-5 (o lo que pongas en OPENAI_MODEL)
-    temperature: 0,
+    temperature: 1,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: system },
