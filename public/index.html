@@ -7,7 +7,7 @@
 
   <style>
     :root{
-      --header-height: 360px; /* video más grande */
+      --header-height: 360px; /* video grande */
       --video-shift: 10px;
       --accent:#0078d7;
     }
@@ -58,7 +58,7 @@
       text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
     }
 
-    /* ====== Lista vertical enumerada (solo si se pide) ====== */
+    /* ====== Lista vertical ====== */
     .vlist{ width:min(95%,1100px); margin:16px auto 24px; font-size:13px; }
     .vitem{
       border:1px solid #e5e5e7; border-radius:12px;
@@ -70,7 +70,7 @@
     .vkey{ font-weight:600; color:#333; }
     .vval{ color:#111; word-break:break-word; }
 
-    /* ====== Tabla (fallback oculto) ====== */
+    /* ====== Tabla ====== */
     .table-wrap{
       width:min(95%,1100px); margin:16px auto 24px; overflow:auto;
       border:1px solid #e5e5e7; border-radius:10px; background:#fff;
@@ -89,11 +89,19 @@
       display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
     }
 
-    /* Print: solo resultados */
+    /* Área imprimible: oculta en pantalla, visible solo al imprimir */
+    #printable{
+      position:fixed; left:-10000px; top:-10000px;
+      width:0; height:0; overflow:hidden;
+    }
     @media print{
       body *{ visibility:hidden !important; }
       #printable, #printable *{ visibility:visible !important; }
-      #printable{ position:fixed; inset:0 0 auto 0; margin:0; padding:24px; }
+      #printable{
+        position:static; left:auto; top:auto;
+        width:auto; height:auto; overflow:visible;
+        margin:0; padding:24px;
+      }
     }
 
     /* Responsive */
@@ -134,14 +142,14 @@
     <!-- Texto por defecto -->
     <div id="respuesta">Aquí aparecerá la respuesta...</div>
 
-    <!-- Resultados estructurados (solo si se pide lista/tabla) -->
+    <!-- Salidas estructuradas -->
     <div id="vlist" class="vlist" hidden></div>
     <div id="tabla" class="table-wrap" hidden></div>
 
-    <!-- Zona imprimible -->
-    <div id="printable" hidden></div>
+    <!-- Zona imprimible (siempre fuera de pantalla) -->
+    <div id="printable"></div>
 
-    <!-- Botones inferiores -->
+    <!-- Botones -->
     <div class="footer-bar">
       <button class="btn" onclick="exportPDF()">Exportar PDF</button>
       <button class="btn" onclick="stopSpeech()">Detener voz</button>
@@ -150,10 +158,8 @@
   </div>
 
   <script>
-    // ====== Endpoints ======
+    /* ====== Config ====== */
     const ENDPOINTS = ["/api/ask", "/api/preguntar"];
-
-    // 🔗 Fuentes por defecto: CSV + TUS 2 PDFs (URLs absolutas)
     const DEFAULT_SOURCES = [
       "datos/decimo.csv",
       "https://csv-gpt-backend.vercel.app/lexium.pdf",
@@ -167,7 +173,7 @@
     const printable = document.getElementById("printable");
     let lastRows = null;
 
-    // ====== Voz (es-MX) ======
+    /* ====== Voz ====== */
     let chosenVoice = null;
     const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
     const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
@@ -224,7 +230,7 @@
     function stopSpeech(){ try{ window.speechSynthesis.cancel(); }catch{} try{ video?.pause(); }catch{} }
     window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
 
-    // ====== Helpers de parseo (estrictos) ======
+    /* ====== Parseo/Render ====== */
     const escapeHtml = (s) => String(s ?? "")
       .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 
@@ -282,7 +288,6 @@
       return rows.map(r => { const a=r.slice(0,max); while(a.length<max)a.push(""); return a; });
     }
 
-    // Prioriza nombre/estudiante/alumno
     function reorderHeaders(headers){
       const prio = ["nombre","estudiante","alumno","apellidos","nombres"];
       const idx = headers.map((h,i)=>({h, i, key:String(h||"").toLowerCase()}));
@@ -330,13 +335,18 @@
       return html;
     }
 
-    // ====== SOLO tabular si el usuario lo pide ======
+    /* ====== Activadores ====== */
     function wantsStructured(query){
       const rx = /\b(lista|listar|listado|enlistar|enlista|tabla|tabular|enumerar|ranking)\b/i;
       return rx.test(query || "");
     }
+    function wantsTable(query){
+      const rx = /\b(tabla|tabular)\b/i;
+      return rx.test(query || "");
+    }
+
+    /* ====== Estructurado ====== */
     function detectRowsFromText(text){
-      // solo se usa si wantsStructured() == true
       let rows = parseJsonTable(text);
       if (rows) return rows;
       const csvBlock = extractCsvBlock(text);
@@ -344,30 +354,35 @@
       rows = parseMarkdownTableStrict(text);
       return rows || null;
     }
-    function maybeRenderFromText(text){
+
+    function maybeRenderFromText(text, query){
       vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.hidden = true; printable.innerHTML = "";
+      printable.innerHTML = ""; // preparamos impresión
+
       lastRows = null;
-
       const rows = detectRowsFromText(text);
-      if (rows && rows.length >= 2 && rows[0].length >= 2){
-        const fixed = applyHeaderOrder(rows);
-        lastRows = fixed.slice();
+      if (!(rows && rows.length >= 2 && rows[0].length >= 2)) return false;
 
+      const fixed = applyHeaderOrder(rows);
+      lastRows = fixed.slice();
+
+      const showTable = wantsTable(query);
+      if (showTable){
+        const thtml = renderTable(fixed);
+        tablaWrap.innerHTML = thtml;
+        tablaWrap.hidden = false;
+        printable.innerHTML = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${thtml}`;
+      }else{
         const vhtml = renderVerticalList(fixed);
         vlistWrap.innerHTML = vhtml;
         vlistWrap.hidden = false;
-
-        tablaWrap.innerHTML = renderTable(fixed);
         printable.innerHTML = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${vhtml}`;
-        printable.hidden = false;
-        return true;
       }
-      return false;
+      return true;
     }
 
-    // ====== Enviar ======
+    /* ====== Enviar ====== */
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
@@ -376,19 +391,17 @@
       out.textContent = "Consultando...";
       vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.hidden = true; printable.innerHTML = "";
+      printable.innerHTML = "";
       lastRows = null;
 
-      // construir query con múltiples fuentes
       const params = new URLSearchParams({ q: pregunta });
       for (const s of DEFAULT_SOURCES) params.append("src", s);
 
-      let data = null, lastErr = null, lastStatus = null;
+      let data = null, lastErr = null;
       for (const base of ENDPOINTS){
         try{
           const url = `${base}?${params.toString()}`;
           const resp = await fetch(url);
-          lastStatus = resp.status;
           const txt = await resp.text();
           try { data = JSON.parse(txt); } catch { data = { text: txt || "" }; }
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -403,21 +416,20 @@
 
       const textoRaw = data.text || data.respuesta || data.answer || "";
       const shouldTab = wantsStructured(pregunta);
-      let huboTabla = false;
+      let huboEstructura = false;
 
       if (shouldTab){
-        huboTabla = maybeRenderFromText(textoRaw);
+        huboEstructura = maybeRenderFromText(textoRaw, pregunta);
       }
 
-      if (huboTabla){
-        out.hidden = true; // no duplicar
-        stopSpeech();      // no leer tablas
+      if (huboEstructura){
+        out.hidden = true;     // no duplicar
+        stopSpeech();          // no leer tablas/listas
       }else{
         const clean = sanitizeForSpeech(textoRaw);
         out.hidden = false;
         out.textContent = clean || "No se encontró respuesta.";
         printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(clean)}</div>`;
-        printable.hidden = false;
         speak(clean, ()=>video?.play(), ()=>video?.pause());
       }
     }
@@ -427,7 +439,7 @@
       if (e.key === "Enter"){ enviarPregunta(); }
     });
 
-    // ====== Micrófono ======
+    /* ====== Micrófono ====== */
     function startListening(){
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
@@ -444,16 +456,16 @@
       rec.start();
     }
 
-    // ====== Exportar PDF (siempre activo) ======
+    /* ====== Exportar PDF ====== */
     function exportPDF(){
-      if (vlistWrap.hidden){
+      // Si no hay estructura visible, nos aseguramos de tener algo en printable
+      if (!printable.innerHTML.trim()){
         printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(out.textContent || "")}</div>`;
-        printable.hidden = false;
       }
       window.print();
     }
 
-    // ====== Limpiar ======
+    /* ====== Limpiar ====== */
     function limpiar(){
       stopSpeech();
       document.getElementById("pregunta").value = "";
@@ -461,11 +473,11 @@
       out.hidden = false;
       vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.hidden = true; printable.innerHTML = "";
+      printable.innerHTML = "";
       lastRows = null;
     }
 
-    // Exponer funciones
+    // Exponer funciones a la ventana
     window.startListening = startListening;
     window.stopSpeech    = stopSpeech;
     window.exportPDF     = exportPDF;
