@@ -10,99 +10,69 @@
       --header-height: 360px; /* video grande */
       --video-shift: 10px;
       --accent:#0078d7;
+      --muted:#6b7280;
+      --ok:#16a34a;
+      --warn:#ca8a04;
     }
     *{ box-sizing:border-box; }
-    body{
-      margin:0; background:#fff;
-      font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
-      color:#111;
-    }
+    body{ margin:0; background:#fff; font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif; color:#111; }
 
     /* ====== Encabezado 25/50/25 ====== */
-    .header-rail{
-      display:flex; align-items:center; justify-content:center;
-      width:100%; height:var(--header-height); background:#fff; overflow:hidden;
-    }
+    .header-rail{ display:flex; align-items:center; justify-content:center; width:100%; height:var(--header-height); background:#fff; overflow:hidden; }
     .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
     .header-rail .col.left, .header-rail .col.right{ flex:0 0 25%; }
     .header-rail .col.center{ flex:0 0 50%; position:relative; }
-    .header-rail .col.left img, .header-rail .col.right img{
-      max-height:100%; max-width:100%; height:auto; width:auto; object-fit:contain; display:block;
-    }
-    .header-rail .col.center video{
-      max-height:100%; max-width:100%; height:100%; width:auto; object-fit:contain; display:block;
-      transform: translateY(var(--video-shift));
-    }
+    .header-rail .col.left img, .header-rail .col.right img{ max-height:100%; max-width:100%; height:auto; width:auto; object-fit:contain; display:block; }
+    .header-rail .col.center video{ max-height:100%; max-width:100%; height:100%; width:auto; object-fit:contain; display:block; transform: translateY(var(--video-shift)); }
 
     /* ====== Interacción ====== */
     .interaction{ padding:24px 16px; text-align:center; }
-    .bar{
-      display:flex; gap:8px; justify-content:center; align-items:center;
-      max-width:1100px; margin:0 auto;
-    }
-    .bar input[type="text"]{
-      flex:1 1 800px; padding:12px 14px; font-size:16px;
-      border:1px solid #d0d0d0; border-radius:8px; outline:none;
-    }
-    .btn{
-      padding:12px 16px; border:0; border-radius:8px;
-      background:var(--accent); color:#fff; font-weight:600; cursor:pointer;
-    }
+    .bar{ display:flex; gap:8px; justify-content:center; align-items:center; max-width:1100px; margin:0 auto; flex-wrap:wrap; }
+    .bar input[type="text"]{ flex:1 1 800px; min-width:240px; padding:12px 14px; font-size:16px; border:1px solid #d0d0d0; border-radius:8px; outline:none; }
+    .btn{ padding:12px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
     .btn:hover{ filter:brightness(0.95); }
 
-    /* Texto por defecto */
-    #respuesta{
-      margin:20px auto 0; width:min(90%,1100px);
-      min-height:64px; padding:14px; background:#f7f7f8;
-      border:1px solid #e5e5e7; border-radius:10px;
-      text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
-    }
+    /* Mic grande */
+    .btn-voice{ display:flex; align-items:center; gap:8px; font-size:18px; padding:14px 18px; }
+    .btn-voice .ico{ font-size:22px; }
 
-    /* ====== Lista vertical ====== */
-    .vlist{ width:min(95%,1100px); margin:16px auto 24px; font-size:13px; }
-    .vitem{
-      border:1px solid #e5e5e7; border-radius:12px;
-      padding:10px 12px; margin:8px 0; background:#fff;
-      display:grid; grid-template-columns:36px 1fr; gap:10px;
-    }
-    .vnum{ font-weight:700; color:#000; display:flex; align-items:flex-start; justify-content:center; padding-top:2px; }
-    .vbody{ display:grid; grid-template-columns:1fr 2fr; gap:6px 12px; align-items:start; }
-    .vkey{ font-weight:600; color:#333; }
-    .vval{ color:#111; word-break:break-word; }
+    /* ====== Controles ====== */
+    .controls{ max-width:1100px; margin:10px auto 0; text-align:left; display:grid; gap:10px; grid-template-columns:1fr; }
+    .row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .chip{ font-size:12px; padding:6px 10px; border-radius:999px; background:#eef2ff; color:#1f2937; border:1px solid #e5e7eb; }
+    .switch{ display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; font-size:14px; color:#111; }
+    .switch input{ accent-color:var(--accent); width:18px; height:18px; }
+    select, .select{ padding:8px 10px; border:1px solid #d0d0d0; border-radius:8px; }
+
+    /* Aviso */
+    .notice{ max-width:1100px; margin:10px auto 0; text-align:left; padding:10px 12px; border:1px solid #fde68a; background:#fffbeb; color:#78350f; border-radius:8px; font-size:13px; }
+
+    /* Texto por defecto */
+    #respuesta{ margin:16px auto 0; width:min(90%,1100px); min-height:64px; padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px; }
 
     /* ====== Tabla ====== */
-    .table-wrap{
-      width:min(95%,1100px); margin:16px auto 24px; overflow:auto;
-      border:1px solid #e5e5e7; border-radius:10px; background:#fff;
-    }
+    .table-wrap{ width:min(95%,1100px); margin:16px auto 8px; overflow:auto; border:1px solid #e5e5e7; border-radius:10px; background:#fff; }
     table.data{ width:100%; border-collapse:collapse; font-size:14px; }
-    table.data thead th{
-      position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6;
-      text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap;
-    }
-    table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; }
+    table.data thead th{ position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6; text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap; }
+    table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; white-space:nowrap; }
     table.data tbody tr:nth-child(odd){ background:#fafbfc; }
 
     /* ====== Botones inferiores ====== */
-    .footer-bar{
-      width:min(95%,1100px); margin:4px auto 28px;
-      display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
-    }
+    .footer-bar{ width:min(95%,1100px); margin:8px auto 28px; display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; }
+    .export-hint{ width:min(95%,1100px); margin:-12px auto 8px; color:#374151; font-size:13px; text-align:center; }
 
     /* ====== Área imprimible ====== */
-    #printable{ display:none; }            /* Nunca visible en pantalla */
+    #printable{ display:none; }
     @media print{
       body *{ visibility:hidden !important; }
-      #printable{ display:block; }         /* Solo aparece al imprimir */
+      #printable{ display:block; }
       #printable, #printable *{ visibility:visible !important; }
     }
 
-    /* Responsive */
     @media (max-width: 900px){ :root{ --header-height: 320px; } }
     @media (max-width: 640px){
       :root{ --header-height: 260px; }
       .header-rail .col.center video{ transform: translateY(8px); }
-      .vbody{ grid-template-columns:1fr; }
     }
   </style>
 </head>
@@ -129,191 +99,158 @@
     <div class="bar">
       <input id="pregunta" type="text" placeholder="Haz tu pregunta aquí..." />
       <button class="btn" onclick="enviarPregunta()">Enviar</button>
-      <button class="btn" onclick="startListening()">🎤</button>
+
+      <!-- Micrófono grande -->
+      <button class="btn btn-voice" onclick="startListening()">
+        <span class="ico">🎤</span><span>Voz</span>
+      </button>
+
+      <!-- Selector de voz -->
+      <select id="voiceSelect" class="select" title="Seleccionar voz"></select>
     </div>
+
+    <!-- Controles -->
+    <div class="controls">
+      <div class="row">
+        <span class="chip">Fuentes</span>
+        <label class="switch"><input type="checkbox" id="src-csv" checked> CSV (decimo.csv)</label>
+        <label class="switch"><input type="checkbox" id="src-lexium" checked> LEXIUM.pdf</label>
+        <label class="switch"><input type="checkbox" id="src-eval" checked> EVALUACIONES.pdf</label>
+        <label class="switch"><input type="checkbox" id="src-emo" checked> EMOCIONALES.pdf</label>
+      </div>
+      <div class="row">
+        <span class="chip">Formato</span>
+        <span class="chip" title="Siempre horizontal">Tabla</span>
+        <span class="chip" style="color:#065f46;border-color:#a7f3d0;background:#ecfdf5;">Lectura automática activada</span>
+      </div>
+    </div>
+
+    <!-- Aviso -->
+    <div id="aviso" class="notice" hidden></div>
 
     <!-- Texto por defecto -->
     <div id="respuesta">Aquí aparecerá la respuesta...</div>
 
-    <!-- Salidas estructuradas -->
-    <div id="vlist" class="vlist" hidden></div>
+    <!-- Tabla (horizontal) -->
     <div id="tabla" class="table-wrap" hidden></div>
 
-    <!-- Zona imprimible (vacía salvo al imprimir) -->
+    <!-- Zona imprimible -->
     <div id="printable"></div>
+
+    <!-- Aviso exportación -->
+    <div id="exportHint" class="export-hint" hidden>
+      Puede exportar su información en PDF, Word o Excel con los botones de abajo.
+    </div>
 
     <!-- Botones -->
     <div class="footer-bar">
-      <button class="btn" onclick="exportPDF()">Exportar PDF</button>
+      <select id="exportSelect" class="select" title="Formato de exportación">
+        <option value="pdf">Exportar PDF</option>
+        <option value="doc">Exportar Word (.doc)</option>
+        <option value="csv">Exportar Excel (CSV)</option>
+      </select>
+      <button class="btn" onclick="doExport()">Exportar</button>
       <button class="btn" onclick="stopSpeech()">Detener voz</button>
       <button class="btn" onclick="limpiar()">Limpiar</button>
+      <button class="btn" onclick="borrarMemoria()">Borrar memoria</button>
     </div>
   </div>
 
   <script>
-    /* ====== Config ====== */
-    const ENDPOINTS = ["/api/ask", "/api/preguntar"];
-    const DEFAULT_SOURCES = [
-      "datos/decimo.csv",
-      "https://csv-gpt-backend.vercel.app/lexium.pdf",
-      "https://csv-gpt-backend.vercel.app/evaluaciones.pdf"
-    ];
+    // ====== Fuentes por defecto ======
+    const ENDPOINT = "/api/ask"; // unificado
+    const SOURCES = {
+      csv:  "datos/decimo.csv",
+      lex:  "https://csv-gpt-backend.vercel.app/lexium.pdf",
+      eval: "https://csv-gpt-backend.vercel.app/evaluaciones.pdf",
+      emo:  "https://csv-gpt-backend.vercel.app/emocionales.pdf",
+    };
 
-    const video = document.getElementById("video");
-    const vlistWrap = document.getElementById("vlist");
-    const tablaWrap = document.getElementById("tabla");
-    const out = document.getElementById("respuesta");
-    const printable = document.getElementById("printable");
-    let lastRows = null;
+    // ====== Historia (memoria 10 min en localStorage) ======
+    const HISTORY_KEY = "nexa-history-v1";
+    const HISTORY_TTL_MS = 10 * 60 * 1000;
 
-    /* ====== Voz ====== */
+    function loadHistory(){
+      try{
+        const obj = JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]");
+        const now = Date.now();
+        return obj.filter(x => now - x.ts < HISTORY_TTL_MS);
+      }catch{ return []; }
+    }
+    function saveHistory(q, text){
+      const arr = loadHistory();
+      arr.push({ ts: Date.now(), q, text: String(text||"") });
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(arr.slice(-20)));
+    }
+    function clearHistory(){
+      localStorage.removeItem(HISTORY_KEY);
+    }
+
+    // ====== Voz (selector y TTS) ======
     let chosenVoice = null;
-    const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
-    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
-    const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
+    const voiceSelect = document.getElementById("voiceSelect");
 
     function scoreVoice(v){
       const name = (v.name||"").toLowerCase();
       const lang = (v.lang||"").toLowerCase();
       let s = 0;
       if (lang.startsWith("es-mx")) s += 100;
-      else if (lang.startsWith("es-419")) s += 60;
-      else if (lang.startsWith("es")) s += 30;
-      if (EXEC_PREF.some(t => name.includes(t))) s += 40;
-      if (FEMALE_HINTS.some(t => name.includes(t))) s += 20;
-      if (/(neural|natural|online)/i.test(name)) s += 25;
-      if (MALE_HINTS.some(t => name.includes(t))) s -= 80;
+      else if (lang.startsWith("es-419")) s += 70;
+      else if (lang.startsWith("es")) s += 40;
+      if (/(female|mujer|femenina|sabina|dalia|beatriz|abril|camila|lucia)/i.test(name)) s += 25;
+      if (/(neural|natural|online)/i.test(name)) s += 10;
       return s;
     }
-    function pickExecutiveSpanishFemale(){
-      const voices = window.speechSynthesis?.getVoices?.() || [];
-      if (!voices.length) return null;
-      const forced = new URLSearchParams(location.search).get("voice");
-      if (forced){
-        const v = voices.find(v => (v.name||"").toLowerCase().includes(forced.toLowerCase()));
-        if (v) return v;
-      }
-      return voices.slice().sort((a,b) => scoreVoice(b) - scoreVoice(a))[0] || voices[0];
+    function populateVoices(){
+      const vs = (window.speechSynthesis?.getVoices?.() || []).slice()
+        .filter(v => /^es(-|$)/i.test(v.lang))
+        .sort((a,b)=> scoreVoice(b)-scoreVoice(a));
+      voiceSelect.innerHTML = vs.map((v,i)=>`<option value="${i}">${v.name} — ${v.lang}</option>`).join("");
+      if (vs.length){ chosenVoice = vs[0]; voiceSelect.selectedIndex = 0; }
+      voiceSelect.onchange = ()=>{ chosenVoice = vs[voiceSelect.selectedIndex] || null; };
     }
-    function ensureVoiceSelected(){ if (!chosenVoice) chosenVoice = pickExecutiveSpanishFemale(); }
+    window.speechSynthesis.onvoiceschanged = populateVoices; populateVoices();
 
     function sanitizeForSpeech(text){
       if (!text) return "";
-      let t = text.replace(/```[\s\S]*?```/g, " "); // no leer bloques
-      t = t.replace(/\*/g, "");                    // no leer asteriscos
-      t = t.replace(/^[#>\-\u2022]\s*/gm, "");     // limpiar bullets/headers
+      let t = text.replace(/```[\s\S]*?```/g, " ");
+      t = t.replace(/\*/g, ""); // no leer asteriscos
+      t = t.replace(/^[#>\-\u2022]\s*/gm, "");
       t = t.replace(/\s{2,}/g, " ").trim();
       return t;
     }
-    function speak(text, onStart, onEnd){
-      if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
-      ensureVoiceSelected();
-      const clean = sanitizeForSpeech(text);
-      if (!clean){ onStart&&onStart(); onEnd&&onEnd(); return; }
-      const u = new SpeechSynthesisUtterance(clean);
-      if (chosenVoice) u.voice = chosenVoice;
-      u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-      u.rate = 1.12; u.pitch = 1.02; u.volume = 1.0;
-      u.onstart = ()=> onStart && onStart();
-      u.onend   = ()=> onEnd && onEnd();
-      u.onerror = ()=> onEnd && onEnd();
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
+    function speak(text){
+      try{
+        if(!window.speechSynthesis) return;
+        const u = new SpeechSynthesisUtterance(sanitizeForSpeech(text));
+        if (chosenVoice) u.voice = chosenVoice;
+        u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
+        u.rate = 1.08; u.pitch = 1.02; u.volume = 1.0;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+      }catch{}
     }
     function stopSpeech(){ try{ window.speechSynthesis.cancel(); }catch{} try{ video?.pause(); }catch{} }
-    window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
 
-    /* ====== Parseo/Render ====== */
-    const escapeHtml = (s) => String(s ?? "")
-      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-
-    function parseMarkdownTableStrict(text){
-      const lines = text.split(/\r?\n/).map(l=>l.trim());
-      const starts = lines.findIndex(l => /^\|.*\|$/.test(l));
-      if (starts === -1) return null;
-      const rows = [];
-      for (let i=starts; i<lines.length; i++){
-        const l = lines[i];
-        if (!/^\|.*\|$/.test(l)) break;
-        rows.push(l);
-      }
-      if (rows.length < 3) return null; // header + sep + 1 row
-      const cells = rows.map(l => l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
-      if (!cells[1].every(c => /^:?-{3,}:?$/.test(c))) return null; // separador
-      cells.splice(1,1);
-      return cells;
-    }
-    function parseJsonTable(text){
-      try{
-        const obj = JSON.parse(text);
-        if (Array.isArray(obj) && obj.length && typeof obj[0] === "object"){
-          const headers = Array.from(
-            obj.reduce((set,row)=>{ Object.keys(row).forEach(k=>set.add(k)); return set; }, new Set())
-          );
-          const rows = [headers, ...obj.map(o => headers.map(h => o[h] ?? ""))];
-          return rows;
-        }
-      }catch{}
-      return null;
-    }
-    function extractCsvBlock(text){
-      const m = text.match(/```(?:csv)?\s*([\s\S]*?)```/i);
-      return m ? m[1].trim() : null;
-    }
-    function parseDelimited(csvText){
-      const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
-      if (lines.length < 2) return null;
-      const cand = [",",";","\t","|"];
-      let best=",", ok=0, cols=0;
-      for (const d of cand){
-        let good=0, c=null;
-        for (const line of lines.slice(0,20)){
-          const p = line.split(d);
-          if (p.length<2) continue;
-          if (c==null) c=p.length;
-          if (p.length===c) good++;
-        }
-        if (good>ok){ ok=good; best=d; cols=c||0; }
-      }
-      if (ok<2 || cols<2) return null;
-      const rows = lines.map(l => l.split(best).map(c=>c.trim()));
-      const max = Math.max(...rows.map(r=>r.length));
-      return rows.map(r => { const a=r.slice(0,max); while(a.length<max)a.push(""); return a; });
-    }
-
-    function reorderHeaders(headers){
-      const prio = ["nombre","estudiante","alumno","apellidos","nombres"];
-      const idx = headers.map((h,i)=>({h, i, key:String(h||"").toLowerCase()}));
-      idx.sort((a,b)=>{
-        const pa = prio.findIndex(p => a.key.includes(p));
-        const pb = prio.findIndex(p => b.key.includes(p));
-        const sa = pa === -1 ? 999 : pa;
-        const sb = pb === -1 ? 999 : pb;
-        return sa - sb || a.i - b.i;
-      });
-      const map = idx.map(x=>x.i);
-      return { newHeaders: idx.map(x=>x.h), map };
-    }
-    function applyHeaderOrder(rows){
-      if (!rows || rows.length < 2) return rows;
+    // Para leer tablas: transforma filas a frase
+    function rowsToSpeech(rows){
       const [head, ...body] = rows;
-      const {newHeaders, map} = reorderHeaders(head);
-      const remap = body.map(r => map.map(i => r[i] ?? ""));
-      return [newHeaders, ...remap];
+      const cols = head.map(h => String(h).trim()).slice(0, 6); // para no hacerlo eterno
+      const parts = [];
+      body.slice(0, 30).forEach((r,i)=>{
+        const fields = cols.map((h,idx)=> `${h}: ${r[idx]}`).join("; ");
+        parts.push(`${i+1}. ${fields}.`);
+      });
+      return parts.join(" ");
     }
 
-    function renderVerticalList(rows){
-      const [head, ...body] = rows;
-      let html = "";
-      body.forEach((r, idx) => {
-        html += `<div class="vitem"><div class="vnum">#${idx+1}</div><div class="vbody">`;
-        for (let c = 0; c < head.length; c++){
-          html += `<div class="vkey">${escapeHtml(head[c])}</div><div class="vval">${escapeHtml(r[c])}</div>`;
-        }
-        html += `</div></div>`;
-      });
-      return html || "<div class='vitem'><div class='vnum'>#1</div><div class='vbody'><div class='vkey'>Mensaje</div><div class='vval'>Sin datos tabulares.</div></div></div>";
-    }
+    // ====== Helpers de tabla ======
+    const tablaWrap = document.getElementById("tabla");
+    const out = document.getElementById("respuesta");
+    const exportHint = document.getElementById("exportHint");
+    let lastRows = null; // [[headers], [row1], ...]
+    let lastText = "";   // texto plano usado (por si no hay tabla)
+
     function renderTable(rows){
       const [head, ...body] = rows;
       let html = '<table class="data"><thead><tr>';
@@ -327,98 +264,99 @@
       html += '</tbody></table>';
       return html;
     }
+    const escapeHtml = (s) => String(s ?? "")
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 
-    /* ====== Activadores ====== */
-    function wantsStructured(query){
-      const rx = /\b(lista|listar|listado|enlistar|enlista|tabla|tabular|enumerar|ranking)\b/i;
-      return rx.test(query || "");
-    }
-    function wantsTable(query){
-      const rx = /\b(tabla|tabular)\b/i;
-      return rx.test(query || "");
-    }
-
-    /* ====== Estructurado ====== */
-    function detectRowsFromText(text){
-      let rows = parseJsonTable(text);
-      if (rows) return rows;
-      const csvBlock = extractCsvBlock(text);
-      if (csvBlock){ rows = parseDelimited(csvBlock); if (rows) return rows; }
-      rows = parseMarkdownTableStrict(text);
-      return rows || null;
+    function parseJsonTable(text){
+      try{
+        const obj = JSON.parse(text);
+        if (Array.isArray(obj)){
+          if (obj.length === 0) return { empty:true, rows:null };
+          const headers = Array.from(
+            obj.reduce((set,row)=>{ Object.keys(row||{}).forEach(k=>set.add(k)); return set; }, new Set())
+          );
+          const rows = [headers, ...obj.map(o => headers.map(h => (o||{})[h] ?? ""))];
+          return { empty:false, rows };
+        }
+      }catch{}
+      return { empty:false, rows:null };
     }
 
-    function maybeRenderFromText(text, query){
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      lastRows = null;
-
-      const rows = detectRowsFromText(text);
-      if (!(rows && rows.length >= 2 && rows[0].length >= 2)) return false;
-
-      const fixed = applyHeaderOrder(rows);
-      lastRows = fixed.slice();
-
-      const showTable = wantsTable(query);
-      if (showTable){
-        tablaWrap.innerHTML = renderTable(fixed);
-        tablaWrap.hidden = false;
-      }else{
-        vlistWrap.innerHTML = renderVerticalList(fixed);
-        vlistWrap.hidden = false;
-      }
-      return true;
+    // ====== Enviar ======
+    function selectedSources(){
+      const arr = [];
+      if (document.getElementById("src-csv").checked)  arr.push(SOURCES.csv);
+      if (document.getElementById("src-lexium").checked) arr.push(SOURCES.lex);
+      if (document.getElementById("src-eval").checked)   arr.push(SOURCES.eval);
+      if (document.getElementById("src-emo").checked)    arr.push(SOURCES.emo);
+      return arr;
     }
 
-    /* ====== Enviar ====== */
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
 
-      out.hidden = false;
-      out.textContent = "Consultando...";
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
+      out.hidden = false; out.textContent = "Consultando...";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = "";   // vaciamos por si quedó algo de una impresión previa
-      lastRows = null;
+      exportHint.hidden = true;
+      lastRows = null; lastText = "";
 
-      const params = new URLSearchParams({ q: pregunta });
-      for (const s of DEFAULT_SOURCES) params.append("src", s);
+      const body = {
+        q: pregunta,
+        src: selectedSources(),
+        history: loadHistory().map(h => ({ q: h.q, text: h.text })),
+      };
 
-      let data = null, lastErr = null;
-      for (const base of ENDPOINTS){
-        try{
-          const url = `${base}?${params.toString()}`;
-          const resp = await fetch(url);
-          const txt = await resp.text();
-          try { data = JSON.parse(txt); } catch { data = { text: txt || "" }; }
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          break;
-        }catch(e){ lastErr = e; }
-      }
-      if (!data){
-        out.textContent = `No se pudo contactar al servidor. ${lastErr ? String(lastErr) : ""}`;
-        console.error(lastErr);
-        return;
+      let data = null;
+      try{
+        const resp = await fetch(ENDPOINT, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+        data = await resp.json();
+      }catch(e){
+        out.textContent = "No se pudo contactar al servidor.";
+        console.error(e); return;
       }
 
-      const textoRaw = data.text || data.respuesta || data.answer || "";
-      const shouldTab = wantsStructured(pregunta);
-      let huboEstructura = false;
+      // Mostrar aviso backend si viene
+      const aviso = (data.aviso||"").trim();
+      const avisoBox = document.getElementById("aviso");
+      if (aviso){ avisoBox.textContent = aviso; avisoBox.hidden = false; } else { avisoBox.hidden = true; }
 
-      if (shouldTab){
-        huboEstructura = maybeRenderFromText(textoRaw, pregunta);
+      const texto = data.text || "";
+      const formato = data.formato || "texto";
+
+      if (formato === "json"){
+        const parsed = parseJsonTable(texto);
+        if (parsed.empty){
+          out.hidden = false;
+          out.textContent = "No existe información.";
+          lastText = out.textContent;
+          speak(lastText);
+          exportHint.hidden = false;
+          saveHistory(pregunta, lastText);
+          return;
+        }
+        if (parsed.rows){
+          lastRows = parsed.rows;
+          tablaWrap.innerHTML = renderTable(parsed.rows);
+          tablaWrap.hidden = false;
+          out.hidden = true;
+
+          // lectura en voz para tablas
+          speak(rowsToSpeech(parsed.rows));
+          exportHint.hidden = false;
+          saveHistory(pregunta, "Se generó una tabla con " + (parsed.rows.length-1) + " registros.");
+          return;
+        }
       }
 
-      if (huboEstructura){
-        out.hidden = true;     // no duplicar
-        stopSpeech();          // no leer tablas/listas
-      }else{
-        const clean = sanitizeForSpeech(textoRaw);
-        out.hidden = false;
-        out.textContent = clean || "No se encontró respuesta.";
-        speak(clean, ()=>video?.play(), ()=>video?.pause());
-      }
+      // Texto normal
+      const clean = sanitizeForSpeech(texto || "No se encontró respuesta.");
+      out.hidden = false;
+      out.textContent = clean;
+      lastText = clean;
+      speak(clean);
+      exportHint.hidden = false;
+      saveHistory(pregunta, clean);
     }
 
     // Enter para enviar
@@ -426,7 +364,81 @@
       if (e.key === "Enter"){ enviarPregunta(); }
     });
 
-    /* ====== Micrófono ====== */
+    // ====== Exportar ======
+    function doExport(){
+      const opt = document.getElementById("exportSelect").value;
+      if (opt === "pdf") return exportPDF();
+      if (opt === "doc") return exportWord();
+      if (opt === "csv") return exportCSV();
+    }
+
+    function exportPDF(){
+      // construir contenido imprimible ahora
+      let html = `<h2 style="font-family:Arial;margin:0 0 12px 0">Resultado</h2>`;
+      if (!tablaWrap.hidden){ html += tablaWrap.innerHTML; }
+      else { html += `<div style="white-space:pre-wrap;font-family:Arial">${escapeHtml(lastText||out.textContent||"")}</div>`; }
+      printable.innerHTML = html;
+      const after = () => { printable.innerHTML = ""; window.removeEventListener('afterprint', after); };
+      window.addEventListener('afterprint', after);
+      setTimeout(after, 3000);
+      window.print();
+    }
+
+    function exportWord(){
+      let content = "";
+      if (!tablaWrap.hidden){
+        content = `<html><body>${tablaWrap.innerHTML}</body></html>`;
+      }else{
+        content = `<html><body><pre style="font-family:Arial, sans-serif; white-space:pre-wrap">${escapeHtml(lastText||out.textContent||"")}</pre></body></html>`;
+      }
+      const blob = new Blob([content], {type: "application/msword"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "reporte.doc";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function exportCSV(){
+      if (!lastRows){
+        // guardar texto como .txt si no hay tabla
+        const blob = new Blob([lastText||out.textContent||""], {type:"text/plain;charset=utf-8"});
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "reporte.txt";
+        a.click();
+        URL.revokeObjectURL(a.href);
+        return;
+      }
+      const rows = lastRows.map(r => r.map(c => {
+        const s = String(c??"");
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+      }).join(",")).join("\n");
+      const blob = new Blob([rows], {type:"text/csv;charset=utf-8"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "reporte.csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    // ====== Limpieza y memoria ======
+    function limpiar(){
+      stopSpeech();
+      document.getElementById("pregunta").value = "";
+      out.textContent = "";
+      out.hidden = false;
+      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+      printable.innerHTML = "";
+      exportHint.hidden = true;
+      // NO borro la memoria aquí (la quieres disponible 10 min)
+    }
+    function borrarMemoria(){
+      clearHistory();
+      alert("Memoria borrada.");
+    }
+
+    // ====== Micrófono ======
     function startListening(){
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
@@ -443,45 +455,13 @@
       rec.start();
     }
 
-    /* ====== Exportar PDF ====== */
-    function exportPDF(){
-      // Construir el contenido imprimible EN ESTE MOMENTO (nunca antes)
-      let html = "";
-      if (!vlistWrap.hidden){
-        html = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${vlistWrap.innerHTML}`;
-      } else if (!tablaWrap.hidden){
-        html = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${tablaWrap.innerHTML}`;
-      } else {
-        const text = out.textContent || "";
-        html = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(text)}</div>`;
-      }
-      printable.innerHTML = html;
-
-      // Imprimir y luego limpiar para evitar cualquier fuga visual
-      const after = () => { printable.innerHTML = ""; window.removeEventListener('afterprint', after); };
-      window.addEventListener('afterprint', after);
-      setTimeout(after, 3000); // respaldo por si el evento no dispara
-      window.print();
-    }
-
-    /* ====== Limpiar ====== */
-    function limpiar(){
-      stopSpeech();
-      document.getElementById("pregunta").value = "";
-      out.textContent = "";
-      out.hidden = false;
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = "";
-      lastRows = null;
-    }
-
-    // Exponer funciones
+    // Exponer
+    window.enviarPregunta = enviarPregunta;
     window.startListening = startListening;
-    window.stopSpeech    = stopSpeech;
-    window.exportPDF     = exportPDF;
-    window.limpiar       = limpiar;
-    window.enviarPregunta= enviarPregunta;
+    window.stopSpeech = stopSpeech;
+    window.doExport = doExport;
+    window.limpiar = limpiar;
+    window.borrarMemoria = borrarMemoria;
   </script>
 </body>
 </html>
