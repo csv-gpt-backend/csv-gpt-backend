@@ -29,13 +29,13 @@
       width:100%;
       height:var(--header-height);
       background:#fff;
-      overflow:hidden; /* evita que algo se salga del header */
+      overflow:hidden;
     }
     .header-rail .col{
       display:flex; justify-content:center; align-items:center;
       height:100%;
-      overflow:hidden; /* recorta desbordes de imágenes */
-      padding:0 8px;   /* aire lateral */
+      overflow:hidden;
+      padding:0 8px;
     }
     .header-rail .col.left,
     .header-rail .col.right{ flex:0 0 25%; }
@@ -88,9 +88,41 @@
       border-radius:10px;
       text-align:left; line-height:1.45;
       white-space:pre-wrap;
+      font-size:15px;
     }
 
-    /* ====== Tabla autodetectada ====== */
+    /* ====== Lista vertical enumerada ====== */
+    .vlist{
+      width:min(95%,1100px);
+      margin:16px auto 24px;
+      font-size:13px;          /* letra pequeña */
+    }
+    .vitem{
+      border:1px solid #e5e5e7;
+      border-radius:12px;
+      padding:10px 12px;
+      margin:8px 0;
+      background:#fff;
+      display:grid;
+      grid-template-columns: 36px 1fr;  /* número | contenido */
+      gap:10px;
+    }
+    .vnum{
+      font-weight:700;
+      color:#000;
+      display:flex; align-items:flex-start; justify-content:center;
+      padding-top:2px;
+    }
+    .vbody{
+      display:grid;
+      grid-template-columns: 1fr 2fr;   /* clave | valor */
+      gap:6px 12px;
+      align-items:start;
+    }
+    .vkey{ font-weight:600; color:#333; }
+    .vval{ color:#111; word-break:break-word; }
+
+    /* ====== Tabla (fallback opcional) ====== */
     .table-wrap{
       width:min(95%,1100px);
       margin:16px auto 24px;
@@ -118,9 +150,7 @@
       padding:8px 8px;
       vertical-align:top;
     }
-    table.data tbody tr:nth-child(odd){
-      background:#fafbfc;
-    }
+    table.data tbody tr:nth-child(odd){ background:#fafbfc; }
 
     /* Responsive */
     @media (max-width: 900px){
@@ -129,6 +159,7 @@
     @media (max-width: 640px){
       :root{ --header-height: 200px; }
       .header-rail .col.center video{ transform: translateY(8px); }
+      .vbody{ grid-template-columns: 1fr; } /* en móvil, clave encima del valor */
     }
   </style>
 </head>
@@ -161,6 +192,11 @@
       <button class="btn" onclick="startListening()">🎤</button>
     </div>
     <div id="respuesta">Aquí aparecerá la respuesta...</div>
+
+    <!-- Vista por defecto: lista vertical enumerada -->
+    <div id="vlist" class="vlist" hidden></div>
+
+    <!-- Fallback opcional: tabla clásica (si prefieres, puedes ocultarla siempre) -->
     <div id="tabla" class="table-wrap" hidden></div>
   </div>
 
@@ -172,16 +208,14 @@
     const DEFAULT_FILE = "decimo.csv";
 
     const video = document.getElementById("video");
+    const vlistWrap = document.getElementById("vlist");
     const tablaWrap = document.getElementById("tabla");
 
     // ---------- Voz femenina "ejecutiva" en español (México) ----------
     let chosenVoice = null;
-    const EXEC_PREF = ["sabina", "dalia", "beatriz", "abril", "camila", "lucia"];
-    const FEMALE_HINTS = [
-      "female","mujer","femenina",
-      "sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"
-    ];
-    const MALE_HINTS = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
+    const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
+    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
+    const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
 
     function scoreVoice(v){
       const name = (v.name||"").toLowerCase();
@@ -224,7 +258,7 @@
     }
     window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
 
-    // ---------- Helpers para TABLA ----------
+    // ---------- Helpers comunes ----------
     const escapeHtml = (s) =>
       String(s ?? "")
         .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
@@ -282,18 +316,58 @@
       const sample = lines.slice(0, 10);
       const d = pickDelimiter(sample);
       const rows = lines.map(l => l.split(d).map(c => c.trim()));
-      // si la primera fila no parece encabezado, igual lo mostramos
       const maxCols = Math.max(...rows.map(r => r.length));
       const normalized = rows.map(r => {
         const copy = r.slice(0, maxCols);
         while (copy.length < maxCols) copy.push("");
         return copy;
       });
-      // Validación mínima: al menos 2 columnas y 2 filas
       if (maxCols < 2 || normalized.length < 2) return null;
       return normalized;
     }
 
+    // ---------- Reordenar cabeceras: prioriza "nombre"/"estudiante"/"alumno" ----------
+    function reorderHeaders(headers){
+      const prio = ["nombre","estudiante","alumno","apellidos","nombres"];
+      const idx = headers.map((h,i)=>({h, i, key:String(h||"").toLowerCase()}));
+      idx.sort((a,b)=>{
+        const pa = prio.findIndex(p => a.key.includes(p));
+        const pb = prio.findIndex(p => b.key.includes(p));
+        const sa = pa === -1 ? 999 : pa;
+        const sb = pb === -1 ? 999 : pb;
+        return sa - sb || a.i - b.i; // misma prioridad -> orden original
+      });
+      const map = idx.map(x=>x.i);
+      const newHeaders = idx.map(x=>x.h);
+      return {newHeaders, map};
+    }
+    function applyHeaderOrder(rows){
+      if (!rows || rows.length < 2) return rows;
+      const [head, ...body] = rows;
+      const {newHeaders, map} = reorderHeaders(head);
+      const remap = body.map(r => map.map(i => r[i] ?? ""));
+      return [newHeaders, ...remap];
+    }
+
+    // ---------- Render: Lista Vertical (#) ----------
+    function renderVerticalList(rows){
+      const [head, ...body] = rows;
+      let html = "";
+      body.forEach((r, idx) => {
+        html += `<div class="vitem">
+          <div class="vnum">#${idx+1}</div>
+          <div class="vbody">`;
+        for (let c = 0; c < head.length; c++){
+          const key = escapeHtml(head[c]);
+          const val = escapeHtml(r[c]);
+          html += `<div class="vkey">${key}</div><div class="vval">${val}</div>`;
+        }
+        html += `</div></div>`;
+      });
+      return html || "<div class='vitem'><div class='vnum'>#1</div><div class='vbody'><div class='vkey'>Mensaje</div><div class='vval'>Sin datos tabulares.</div></div></div>";
+    }
+
+    // ---------- Render: Tabla (opcional) ----------
     function renderTable(rows){
       const [head, ...body] = rows;
       let html = '<table class="data"><thead><tr>';
@@ -308,31 +382,35 @@
       return html;
     }
 
-    function maybeRenderTableFromText(text){
-      tablaWrap.hidden = true;
-      tablaWrap.innerHTML = "";
+    // ---------- Autodetección de datos y pintado (preferencia: vertical) ----------
+    function maybeRenderFromText(text){
+      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
+      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
 
       // 1) JSON array de objetos
       let rows = parseJsonTable(text);
+
+      // 2) bloque ```csv``` explícito
       if (!rows){
-        // 2) bloque ```csv``` o ``` ```
         const csvBlock = extractCsvBlock(text);
-        if (csvBlock){
-          rows = parseDelimited(csvBlock);
-        }
-      }
-      if (!rows){
-        // 3) tabla Markdown
-        rows = parseMarkdownTable(text);
-      }
-      if (!rows){
-        // 4) heurística de separadores en el texto completo
-        rows = parseDelimited(text);
+        if (csvBlock) rows = parseDelimited(csvBlock);
       }
 
+      // 3) tabla Markdown
+      if (!rows) rows = parseMarkdownTable(text);
+
+      // 4) heurística de separadores en todo el texto
+      if (!rows) rows = parseDelimited(text);
+
       if (rows && rows.length >= 2 && rows[0].length >= 2){
+        rows = applyHeaderOrder(rows); // prioriza columna nombre
+        // Vista predeterminada: vertical enumerada
+        vlistWrap.innerHTML = renderVerticalList(rows);
+        vlistWrap.hidden = false;
+
+        // (Opcional) también dejamos la tabla lista, por si luego quieres un toggle
         tablaWrap.innerHTML = renderTable(rows);
-        tablaWrap.hidden = false;
+        // tablaWrap.hidden = false; // déjalo oculto por ahora
       }
     }
 
@@ -342,8 +420,8 @@
       if (!pregunta) return alert("Escribe una pregunta.");
       const out = document.getElementById("respuesta");
       out.textContent = "Consultando...";
-      tablaWrap.hidden = true;
-      tablaWrap.innerHTML = "";
+      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
+      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
 
       let data = null, lastErr = null;
       for (const base of ENDPOINTS){
@@ -361,11 +439,11 @@
         return;
       }
 
-      const texto = data.text || data.respuesta || "No se encontró respuesta.";
+      const texto = data.text || data.respuesta || data.answer || "No se encontró respuesta.";
       out.textContent = texto;
 
-      // Si el texto contiene datos tabulares, muéstralos ordenados
-      maybeRenderTableFromText(texto);
+      // Si el texto contiene datos tabulares, muéstralos en vertical enumerado
+      maybeRenderFromText(texto);
 
       // Reproduce el video durante la voz y pausa al terminar
       speak(texto, ()=>video?.play(), ()=>video?.pause());
