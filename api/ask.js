@@ -1,10 +1,10 @@
 // /api/ask.js
-// Analiza múltiples fuentes: CSV y/o PDF dentro de /public (por URL).
-// Acepta ?src=datos/decimo.csv&src=documentos/LEXIUM%20.pdf ... (varios)
-// Si no pasas src, usa por defecto datos/decimo.csv
-// Devuelve texto (para voz) y opcionalmente JSON con ?format=json.
+// Analiza múltiples fuentes: CSV y/o PDF en /public usando URLs internas.
+// Acepta varios ?src=... (p.ej., src=datos/decimo.csv&src=documentos/LEXIUM.pdf)
+// Si no hay src, usa datos/decimo.csv.
+// Devuelve texto (para voz) o JSON con ?format=json.
 
-import pdfParse from "pdf-parse";
+export const config = { runtime: "nodejs" }; // asegurar Node en Vercel
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const API_KEY =
@@ -15,7 +15,18 @@ const API_KEY =
 const CACHE_MS = 5 * 60 * 1000;
 const cache = new Map(); // url -> { ts, text }
 
-// ——— util ———
+let pdfParseModule = undefined;
+async function loadPdfParse() {
+  if (pdfParseModule !== undefined) return pdfParseModule;
+  try {
+    const mod = await import("pdf-parse"); // dynamic optional
+    pdfParseModule = mod.default || mod;
+  } catch {
+    pdfParseModule = null; // seguirá funcionando sin PDF-parse
+  }
+  return pdfParseModule;
+}
+
 function safePathParam(s, def = "datos/decimo.csv") {
   let x = (s || "").toString().trim();
   if (!x) return def;
@@ -23,6 +34,7 @@ function safePathParam(s, def = "datos/decimo.csv") {
   x = x.replace(/^\/+/, ""); // sin slash inicial
   return x;
 }
+
 function extOf(path) {
   return (path.split(".").pop() || "").toLowerCase();
 }
@@ -35,18 +47,26 @@ async function getTextFromPublicUrl(publicUrl) {
   const r = await fetch(publicUrl);
   if (!r.ok) throw new Error(`No pude leer ${publicUrl} (HTTP ${r.status})`);
 
-  const u = new URL(publicUrl);
-  const isPDF = u.pathname.toLowerCase().endsWith(".pdf");
-
+  const isPDF = new URL(publicUrl).pathname.toLowerCase().endsWith(".pdf");
   let text = "";
+
   if (isPDF) {
-    const ab = await r.arrayBuffer();
-    const buf = Buffer.from(ab);
-    const parsed = await pdfParse(buf);
-    text = (parsed.text || "").trim();
+    const mod = await loadPdfParse();
+    if (!mod) {
+      text = "[PDF encontrado, pero falta instalar 'pdf-parse' en el servidor.]";
+    } else {
+      const ab = await r.arrayBuffer();
+      const buf = Buffer.from(ab);
+      const parsed = await mod(buf).catch(() => ({ text: "" }));
+      text = (parsed.text || "").trim();
+      if (!text) {
+        text = "[No se pudo extraer texto del PDF (¿escaneado/imagen?).]";
+      }
+    }
   } else {
-    text = await r.text(); // CSV u otro texto
+    text = await r.text(); // CSV/Texto
   }
+
   cache.set(publicUrl, { ts: now, text });
   return text;
 }
@@ -59,26 +79,23 @@ function detectDelim(firstLine) {
   return ",";
 }
 
-// ——— prompts ———
+// --- Prompts
 function systemPromptText() {
   return [
     "Eres una asesora educativa clara y ejecutiva (español México).",
-    "Recibirás uno o varios documentos: CSV y/o PDFs, con columnas y formatos variables.",
+    "Recibirás uno o varios documentos: CSV y/o PDFs.",
     "Reglas:",
-    "1) Si hay CSV: detecta el delimitador y analiza tal cual (sin asumir encabezados fijos).",
-    "2) Si hay PDF: extrae ideas, definiciones, rubricas y escalas relevantes; no inventes nada.",
-    "3) Si el usuario pide ORDENAR o RANQUEAR: aplica el orden EXACTO solicitado (asc/desc, por la columna o métrica indicada).",
-    "   Indica explícitamente: 'Criterio de orden aplicado: ...'.",
-    "4) Cuando la respuesta requiera LISTADOS/GRUPOS/RANKINGS, agrega al final un bloque CSV entre triple backticks (sin texto dentro).",
-    "   Primera columna debe ser '#'. Encabezados claros en español.",
-    "5) Si hay grupos A/B u otros, incluye todos los grupos detectados y NO omitas ninguno.",
-    "6) Si faltan datos para el criterio pedido, dilo y entrega la mejor aproximación posible basada en lo disponible.",
-    "7) Responde concisa (~150–180 palabras) en español (MX).",
+    "1) CSV: detecta delimitador y analiza tal cual (no asumas encabezados fijos).",
+    "2) PDF: usa definiciones/escalas/criterios útiles; no inventes.",
+    "3) Si piden ORDENAR/RANQUEAR, aplica exactamente el criterio (asc/desc, columna/métrica) y dilo: 'Criterio de orden aplicado: ...'.",
+    "4) Si la respuesta requiere listados/grupos/top-N, añade al final un bloque CSV entre triple backticks (sin texto dentro). Primera columna '#'.",
+    "5) Si hay grupos A/B u otros, inclúyelos todos.",
+    "6) Si faltan datos, dilo y aproxima con lo disponible.",
+    "7) Extensión ~150–180 palabras, español (MX).",
   ].join(" ");
 }
 
 function userPromptText(query, sourcesText) {
-  // sourcesText: array de {label, type, text}
   const blocks = sourcesText
     .map((s, i) => {
       if (s.type === "csv") {
@@ -91,20 +108,14 @@ function userPromptText(query, sourcesText) {
           "```",
         ].join("\n");
       } else {
-        // PDF o texto: lo pasamos como bloque de texto clásico
-        // (el modelo no verá el PDF binario; aquí ya es texto plano extraído)
-        return [
-          `=== FUENTE ${i + 1}: ${s.label} (PDF TEXTO) ===`,
-          s.text,
-        ].join("\n");
+        return [`=== FUENTE ${i + 1}: ${s.label} (PDF TEXTO) ===`, s.text].join("\n");
       }
     })
     .join("\n\n");
 
   return [
     `PREGUNTA: ${query}`,
-    "",
-    "Analiza TODAS las fuentes a continuación. Si hay conflicto, sé explícita.",
+    "Analiza TODAS las fuentes. Si hay conflicto, sé explícita.",
     blocks,
   ].join("\n");
 }
@@ -112,15 +123,8 @@ function userPromptText(query, sourcesText) {
 function systemPromptJSON() {
   return [
     "Eres una asesora educativa clara y ejecutiva (español México).",
-    "Recibirás varios documentos (CSV/PDF).",
-    "Devuelve SOLO un objeto JSON con estas claves exactas:",
-    "diagnostico (string),",
-    "fortalezas (array<string>),",
-    "oportunidades (array<string>),",
-    "recomendaciones_corto_plazo (array<string>),",
-    "recomendaciones_mediano_plazo (array<string>),",
-    "riesgos (array<string>).",
-    "Si faltan datos, indícalo textualmente en los campos pertinentes.",
+    "Devuelve SOLO un objeto JSON con claves:",
+    "diagnostico, fortalezas, oportunidades, recomendaciones_corto_plazo, recomendaciones_mediano_plazo, riesgos.",
   ].join(" ");
 }
 
@@ -135,18 +139,12 @@ function userPromptJSON(query, sourcesText) {
           "```",
         ].join("\n");
       } else {
-        return [`=== FUENTE ${i + 1}: ${s.label} (PDF TEXTO) ===`, s.text].join(
-          "\n"
-        );
+        return [`=== FUENTE ${i + 1}: ${s.label} (PDF TEXTO) ===`, s.text].join("\n");
       }
     })
     .join("\n\n");
 
-  return [
-    `PREGUNTA: ${query}`,
-    "Analiza TODAS las fuentes:",
-    blocks,
-  ].join("\n");
+  return [`PREGUNTA: ${query}`, "Analiza TODAS las fuentes:", blocks].join("\n");
 }
 
 async function callOpenAI(messages, forceJson = false) {
@@ -170,15 +168,14 @@ async function callOpenAI(messages, forceJson = false) {
   return { ok: true, text };
 }
 
+// --- Handler
 export default async function handler(req, res) {
   try {
     const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
     const format = (req.query.format || "").toString().toLowerCase(); // "json" | ""
 
-    // Soporta varios ?src=...
     let srcs = req.query.src;
     if (!srcs) {
-      // backward-compat: ?file=decimo.csv
       const legacy = (req.query.file || req.query.f || "decimo.csv").toString();
       srcs = [`datos/${legacy}`];
     }
@@ -187,15 +184,13 @@ export default async function handler(req, res) {
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers.host;
 
-    // Descarga y normaliza texto de cada fuente
     const sourcesText = [];
     for (const raw of srcs) {
       const p = safePathParam(raw);
-      const label = p;
       const publicUrl = `${proto}://${host}/${encodeURI(p)}`;
-      const t = await getTextFromPublicUrl(publicUrl);
+      const t = await getTextFromPublicUrl(publicUrl); // puede lanzar si 404
       const type = extOf(p) === "pdf" ? "pdf" : "csv";
-      sourcesText.push({ label, type, text: t });
+      sourcesText.push({ label: p, type, text: t });
     }
 
     let messages, forceJson = false;
@@ -221,6 +216,9 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ text: "Error interno.", details: String(e) });
+    // Regresa 200 con explicación para que el front no muestre el genérico
+    return res
+      .status(200)
+      .json({ text: `Error interno al preparar fuentes: ${String(e)}` });
   }
 }
