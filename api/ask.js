@@ -1,160 +1,149 @@
-// /api/ask.js
-// Analiza un CSV completo (columnas variables) “tal cual” se sube, sin fijar encabezados.
-// Lee /public/datos/<file>.csv por URL (cache 5 min). Devuelve texto para tu voz,
-// y opcionalmente JSON estructurado si usas ?format=json.
+// api/stats.js  (Vercel Serverless - CommonJS)
+const fs = require("fs").promises;
+const path = require("path");
 
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-const API_KEY =
-  process.env.OPENAI_API_KEY ||
-  process.env.CLAVE_API_DE_OPENAI ||
-  process.env["CLAVE API DE OPENAI"];
-
-const CACHE_MS = 5 * 60 * 1000;
-const cache = new Map(); // url -> { ts, text }
-
-function safeFileParam(s, def = "decimo.csv") {
-  const x = (s || "").toString().trim();
-  if (!x) return def;
-  if (x.includes("..") || x.includes("/") || x.includes("\\")) return def;
-  return x;
-}
-
-async function getCSVText(publicUrl) {
-  const hit = cache.get(publicUrl);
-  const now = Date.now();
-  if (hit && now - hit.ts < CACHE_MS) return hit.text;
-
-  const r = await fetch(publicUrl);
-  if (!r.ok) throw new Error(`No pude leer CSV ${publicUrl} (HTTP ${r.status})`);
-  const text = await r.text();
-  cache.set(publicUrl, { ts: now, text });
-  return text;
-}
-
-function detectDelim(line) {
-  if (!line) return ",";
-  if (line.includes(";")) return ";";
-  if (line.includes("\t")) return "\t";
-  if (line.includes("|")) return "|";
-  return ",";
-}
-
-function systemPromptText() {
-  return [
-    "Eres una asesora educativa clara y ejecutiva (español México).",
-    "Recibirás un CSV completo con columnas variables (no asumas nombres fijos).",
-    "Instrucciones:",
-    "1) Detecta el delimitador (coma/; /tab/|) y analiza la tabla tal cual.",
-    "2) Si preguntan por una persona, localízala por coincidencia del nombre en cualquier columna.",
-    "3) No inventes datos: basar todo en el CSV entregado. Si falta info, dilo.",
-    "4) Responde breve (~150-180 palabras), tono profesional, en español (MX).",
-  ].join(" ");
-}
-
-function userPromptText(query, csvText) {
-  const first = (csvText.split(/\r?\n/)[0] || "").slice(0, 500);
-  const delim = detectDelim(first);
-  return [
-    `PREGUNTA: ${query}`,
-    "",
-    `DELIMITADOR_APROX: ${JSON.stringify(delim)}`,
-    "",
-    "A continuación va el CSV completo entre triple backticks. Analízalo tal cual:",
-    "```csv",
-    csvText,
-    "```",
-  ].join("\n");
-}
-
-function systemPromptJSON() {
-  return [
-    "Eres una asesora educativa clara y ejecutiva (español México).",
-    "Recibirás un CSV completo con columnas variables.",
-    "Objetivo: entregar un RESUMEN ESTRUCTURADO en JSON con estas claves exactas:",
-    'diagnostico (string corto),',
-    'fortalezas (array de strings),',
-    'oportunidades (array de strings),',
-    'recomendaciones_corto_plazo (array de strings),',
-    'recomendaciones_mediano_plazo (array de strings),',
-    'riesgos (array de strings).',
-    "No inventes datos. Si faltan, indícalo de forma explícita.",
-    "Devuelve SOLO el JSON (sin texto adicional).",
-  ].join(" ");
-}
-
-function userPromptJSON(query, csvText) {
-  const first = (csvText.split(/\r?\n/)[0] || "").slice(0, 500);
-  const delim = detectDelim(first);
-  return [
-    `PREGUNTA: ${query}`,
-    `DELIMITADOR_APROX: ${JSON.stringify(delim)}`,
-    "CSV completo entre triple backticks:",
-    "```csv",
-    csvText,
-    "```",
-  ].join("\n");
-}
-
-async function callOpenAI(messages) {
-  if (!API_KEY) {
-    return { ok: false, text: "Falta configurar OPENAI_API_KEY en Vercel." };
+// --- Utilidades CSV (auto-delimitador y comillas) ---
+function detectDelimiter(line) {
+  const cands = [",", ";", "\t", "|"];
+  let best = { d: ",", n: 0 };
+  for (const d of cands) {
+    const n = line.split(d).length;
+    if (n > best.n) best = { d, n };
   }
-  const r = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      temperature: 0.35, // más consistente
-    }),
-  });
-  const data = await r.json().catch(() => null);
-  const text =
-    data?.choices?.[0]?.message?.content?.trim() ||
-    `No pude consultar OpenAI (HTTP ${r.status}).`;
-  return { ok: true, text };
+  return best.d;
 }
 
-export default async function handler(req, res) {
+function splitCSVLine(line, d) {
+  const out = [];
+  let cur = "", inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === d && !inQuotes) {
+      out.push(cur); cur = "";
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+function parseCSV(text) {
+  const lines = text.replace(/\r/g, "").split("\n").filter(l => l.length > 0);
+  if (!lines.length) return { headers: [], rows: [], delimiter: "," };
+  const delimiter = detectDelimiter(lines[0]);
+  const headers = splitCSVLine(lines[0], delimiter);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const vals = splitCSVLine(lines[i], delimiter);
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = vals[idx] ?? ""; });
+    rows.push(obj);
+  }
+  return { headers, rows, delimiter };
+}
+
+// --- Números y estadísticas ---
+function toNum(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "number") return isFinite(v) ? v : null;
+  let s = String(v).trim();
+  if (s === "" || s.toLowerCase() === "na" || s.toLowerCase() === "null") return null;
+  // Intento decimal con coma si no hay punto
+  let n = Number(s);
+  if (Number.isNaN(n) && s.includes(",") && !s.includes(".")) n = Number(s.replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+function basicStats(arr) {
+  const a = arr.filter(v => v !== null && Number.isFinite(v)).sort((x, y) => x - y);
+  const n = a.length;
+  if (!n) return { n: 0, min: null, max: null, mean: null, p50: null, p90: null, p99: null };
+  const min = a[0], max = a[n - 1];
+  const mean = a.reduce((s, v) => s + v, 0) / n;
+  const pct = (p) => {
+    if (n === 1) return a[0];
+    const pos = (n - 1) * p;
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    if (lo === hi) return a[lo];
+    const w = pos - lo;
+    return a[lo] * (1 - w) + a[hi] * w;
+  };
+  return { n, min, max, mean, p50: pct(0.5), p90: pct(0.9), p99: pct(0.99) };
+}
+
+function pearson(xs, ys) {
+  const pairs = [];
+  for (let i = 0; i < xs.length; i++) {
+    const x = xs[i], y = ys[i];
+    if (x !== null && y !== null) pairs.push([x, y]);
+  }
+  const n = pairs.length;
+  if (n < 2) return { r: null, n_pairs: n };
+  let sumX = 0, sumY = 0, sumXX = 0, sumYY = 0, sumXY = 0;
+  for (const [x, y] of pairs) {
+    sumX += x; sumY += y;
+    sumXX += x * x; sumYY += y * y; sumXY += x * y;
+  }
+  const cov = sumXY - (sumX * sumY) / n;
+  const varX = sumXX - (sumX * sumX) / n;
+  const varY = sumYY - (sumY * sumY) / n;
+  if (varX <= 0 || varY <= 0) return { r: null, n_pairs: n };
+  const r = cov / Math.sqrt(varX * varY);
+  return { r, n_pairs: n };
+}
+
+// --- Handler ---
+module.exports = async (req, res) => {
   try {
-    const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
-    const file = safeFileParam(req.query.file || req.query.f || "decimo.csv");
-    const format = (req.query.format || "").toString().toLowerCase(); // "json" | ""
+    const { file = "decimo.csv", x = "AGRESIVIDAD", y = "EMPATIA", group_by } = req.query || {};
+    const csvPath = path.join(process.cwd(), "public", "datos", file);
+    const raw = await fs.readFile(csvPath, "utf8");
+    const { headers, rows, delimiter } = parseCSV(raw);
 
-    const proto = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host;
-    const publicUrl = `${proto}://${host}/datos/${encodeURIComponent(file)}`;
+    // Normaliza acceso a columnas (case-insensitive)
+    const keyMap = {};
+    for (const h of headers) keyMap[h.toLowerCase()] = h;
+    const kx = keyMap[String(x).toLowerCase()] ?? x;
+    const ky = keyMap[String(y).toLowerCase()] ?? y;
+    const kg = group_by ? (keyMap[String(group_by).toLowerCase()] ?? group_by) : null;
 
-    const csvText = await getCSVText(publicUrl);
-    const lines = csvText.split(/\r?\n/).filter(Boolean).length;
+    // Extrae columnas numéricas
+    const X = rows.map(r => toNum(r[kx]));
+    const Y = rows.map(r => toNum(r[ky]));
+    const overall = {
+      x: basicStats(X),
+      y: basicStats(Y),
+      ...pearson(X, Y)
+    };
 
-    let messages;
-    if (format === "json") {
-      messages = [
-        { role: "system", content: systemPromptJSON() },
-        { role: "user", content: userPromptJSON(q, csvText) },
-      ];
-    } else {
-      messages = [
-        { role: "system", content: systemPromptText() },
-        { role: "user", content: userPromptText(q, csvText) },
-      ];
+    // Por grupos (si se pide)
+    const groups = {};
+    if (kg) {
+      const by = {};
+      for (let i = 0; i < rows.length; i++) {
+        const g = (rows[i][kg] ?? "SinGrupo") || "SinGrupo";
+        if (!by[g]) by[g] = { X: [], Y: [] };
+        by[g].X.push(X[i]);
+        by[g].Y.push(Y[i]);
+      }
+      for (const g of Object.keys(by)) {
+        const xg = by[g].X, yg = by[g].Y;
+        groups[g] = { x: basicStats(xg), y: basicStats(yg), ...pearson(xg, yg) };
+      }
     }
 
-    const ai = await callOpenAI(messages);
-
-    // Para el front: text se usa en pantalla/voz.
-    return res.status(200).json({
-      text: ai.text,
-      archivo: file,
-      filas_aprox: lines,
-      formato: format || "texto",
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.status(200).json({
+      file, delimiter_used: delimiter,
+      columns_detected: headers,
+      x: kx, y: ky, group_by: kg || null,
+      n_total: rows.length,
+      overall, groups
     });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ text: "Error interno.", details: String(e) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "No se pudo procesar el CSV o parámetros inválidos." });
   }
-}
+};
