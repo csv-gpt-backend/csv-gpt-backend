@@ -1,54 +1,41 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <style>
-    /* --- tus estilos existentes --- */
-    .header-rail{ ... }
-    .header-rail .col{ ... }
-    .header-rail img, .header-rail video{ ... }
-    /* etc. */
-
-    /* === BAJAR SOLO EL VIDEO (Opción A) === */
-    .header-rail .col.center video{
-      transform: translateY(14px); /* ajusta 8–24px a tu gusto */
-    }
-    @media (max-width: 640px){
-      .header-rail .col.center video{ transform: translateY(8px); }
-    }
-  </style>
-</head>
-
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Consulta Educativa</title>
 
-  <!-- ===== Encabezado 25% / 50% / 25% (imágenes a los lados y video al centro) ===== -->
   <style>
-    :root { --accent:#0078d7; }
-    * { box-sizing: border-box; }
+    :root{
+      --accent:#0078d7;
+      /* mueve el video hacia ABAJO cambiando este valor */
+      --video-shift: 18px; /* prueba 10–26px según te guste */
+    }
+    *{ box-sizing:border-box; }
     body{
       margin:0;
       background:#fff;
-      font-family: Arial, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
+      font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
       color:#111;
     }
 
-    /* Header con dos imágenes (25%/25%) y video al centro (50%) */
+    /* ====== Encabezado: 25% (img) / 50% (video) / 25% (img) ====== */
     .header-rail{
       display:flex;
       align-items:center;
       justify-content:center;
       width:100%;
-      height:clamp(180px, 28vh, 260px); /* mejor en móvil */
+      height:clamp(180px, 28vh, 260px);
       background:#fff;
       overflow:hidden;
     }
     .header-rail .col{
       display:flex; justify-content:center; align-items:center;
+      height:100%;
     }
     .header-rail .col.left,
-    .header-rail .col.right { flex:0 0 25%; }
-    .header-rail .col.center    { flex:0 0 50%; }
+    .header-rail .col.right{ flex:0 0 25%; }
+    .header-rail .col.center{ flex:0 0 50%; position:relative; }
 
     .header-rail img,
     .header-rail video{
@@ -56,16 +43,22 @@
       width:auto;
       object-fit:contain;
       display:block;
-      border:0;
-      outline:0;
+      border:0; outline:0;
     }
-    video#video{ max-width:100%; max-height:100%; }
 
-    /* Sección de interacción */
-    .interaction{
-      padding:24px 16px;
-      text-align:center;
+    /* ↓↓↓ DESPLAZA SOLO EL VIDEO HACIA ABAJO ↓↓↓ */
+    .header-rail .col.center video{
+      transform: translateY(var(--video-shift)) !important;
+      max-width:100%; max-height:100%;
     }
+    @media (max-width:640px){
+      .header-rail .col.center video{
+        transform: translateY(10px) !important;
+      }
+    }
+
+    /* ====== Interacción ====== */
+    .interaction{ padding:24px 16px; text-align:center; }
     .bar{
       display:flex; gap:8px; justify-content:center; align-items:center;
       max-width:1100px; margin:0 auto;
@@ -80,29 +73,27 @@
     }
     .btn{
       padding:12px 16px; border:0; border-radius:8px;
-      background:var(--accent); color:#fff; font-weight:600;
-      cursor:pointer;
+      background:var(--accent); color:#fff; font-weight:600; cursor:pointer;
     }
     .btn:hover{ filter:brightness(0.95); }
     #respuesta{
       margin:20px auto 0;
-      width:min(90%, 1100px);
+      width:min(90%,1100px);
       min-height:64px;
       padding:14px;
       background:#f7f7f8;
       border:1px solid #e5e5e7;
       border-radius:10px;
-      text-align:left;
-      line-height:1.45;
+      text-align:left; line-height:1.45;
     }
   </style>
 </head>
 <body>
 
-  <!-- ====== ENCABEZADO ====== -->
+  <!-- ====== ENCABEZADO (25 / 50 / 25) ====== -->
   <div class="header-rail">
     <div class="col left">
-      <!-- IMPORTANTE: con index en /public, las rutas son /left.png y /right.png -->
+      <!-- Ojo: como este archivo está en /public, las rutas son /left.png y /right.png -->
       <img src="/left.png" alt="Imagen izquierda">
     </div>
 
@@ -168,9 +159,7 @@
       return notMale || voices[0];
     }
     function ensureVoiceSelected(){
-      if (!chosenVoice){
-        chosenVoice = pickFemaleSpanishVoice();
-      }
+      if (!chosenVoice){ chosenVoice = pickFemaleSpanishVoice(); }
     }
     function speak(text,onStart,onEnd){
       if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
@@ -211,7 +200,7 @@
       const texto = data.text || data.respuesta || "No se encontró respuesta.";
       out.textContent = texto;
 
-      // Reproducir video durante la voz y pausar al terminar
+      // Reproduce el video durante la voz y pausa al terminar
       speak(texto, ()=>video?.play(), ()=>video?.pause());
     }
 
