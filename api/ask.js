@@ -63,7 +63,7 @@ function getCol(headers, ...aliases){
   for (const a of aliases){
     const k = cmap[a.toLowerCase()]; if (k) return k;
   }
-  // búsqueda por contiene
+  // búsqueda por contiene (normalizada)
   for (const h of headers){
     const H = normalize(h);
     if (aliases.some(a => H.includes(normalize(a)))) return h;
@@ -110,7 +110,7 @@ module.exports = async (req, res) => {
     // -------- Base de datos "data" --------
     let data = rows.map(r => ({ ...r }));
 
-    // Proyección de columnas (?columns=Nombre,Promedio,Paralelo)
+    // Proyección (?columns=Nombre,Promedio,Paralelo)
     if (columns) {
       const cmap = caseMap(headers);
       const want = String(columns).split(",").map(s => s.trim()).filter(Boolean);
@@ -146,18 +146,17 @@ module.exports = async (req, res) => {
       data = data.filter(r => normalize(r[colParalelo]) === filtroPar);
     }
 
-    // Si mencionan una “feature” específica, proyecta: Nombre + Feature + Paralelo/Curso
+    // Feature específica (insensible a tildes) p.ej. AGRESIÓN, EMPATÍA, TIMIDEZ, etc.
     const cmap = caseMap(headers);
-    const featureMatch = qlow.match(/\b(agresividad|empat[ií]a|timidez|f[ií]sico|autoestima|tensi[oó]n|ansiedad|promedio|nota|puntaje)\b/);
+    const featureMatch = qlow.match(/\b(agresividad|agresi[oó]n|empat[ií]a|timidez|f[ií]sico|autoestima|tensi[oó]n|ansiedad|promedio|nota|puntaje)\b/);
     if (featureMatch){
-      const feat = featureMatch[1];
-      const kf = Object.keys(cmap).find(k => k.includes(feat));
+      const featNorm = normalize(featureMatch[1]);
+      const kf = headers.find(h => normalize(h).includes(featNorm)); // header real con tildes
       if (kf){
-        const Kf = cmap[kf];
         data = data.map(r => {
           const o = {};
           if (colNombre)   o[colNombre] = r[colNombre];
-          o[Kf] = r[Kf];
+          o[kf] = r[kf];
           if (colParalelo) o[colParalelo] = r[colParalelo];
           if (colCurso)    o[colCurso]    = r[colCurso];
           return o;
@@ -165,7 +164,7 @@ module.exports = async (req, res) => {
       }
     }
 
-    // Ranking (por Promedio/Nota… o primera numérica)
+    // Ranking (Promedio/Nota… o primera numérica)
     if (wantsRanking){
       const hints = ["Calificación","CALIFICACION","Calificacion","Promedio","Nota","Puntaje","Score","Total"];
       let metric = headers.find(h => hints.some(w => normalize(h).includes(normalize(w))));
@@ -186,7 +185,7 @@ module.exports = async (req, res) => {
     if (!Number.isFinite(n) || n <= 0) n = data.length;
     data = data.slice(0, n);
 
-    // Salida JSON por defecto (tu front usa format=json)
+    // Salida JSON (tu front usa format=json)
     if (wantsList || wantsRanking || featureMatch || columns || filter_key || sort_by || format === "json"){
       res.setHeader("Content-Type", "application/json; charset=utf-8");
       return res.status(200).json({
@@ -195,7 +194,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Texto (no lo usas, pero lo dejamos)
+    // Texto (opcional)
     const lines = data.slice(0, 20).map((r,i)=>{
       const nom = colNombre ? r[colNombre] : `Fila ${i+1}`;
       const par = colParalelo ? `, Paralelo: ${r[colParalelo]}` : "";
