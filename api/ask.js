@@ -1,28 +1,28 @@
-// api/ask.js — Análisis guiado 100% por GPT-5 Thinking con el CSV real.
-// CommonJS (Vercel Serverless).
+// api/ask.js — GPT-5 + fallback + debug
+// CommonJS (Vercel)
 
 const fs = require("fs").promises;
 const path = require("path");
 
-// ------- utilidades CSV (sin suposiciones) -------
-function detectDelimiter(line){const c=[",",";","\t","|"];let b={d:",",n:0};for(const d of c){const n=line.split(d).length;if(n>b.n)b={d,n}}return b.d}
-function splitCSVLine(line,d){const out=[];let cur="",q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}else if(ch===d&&!q){out.push(cur);cur="";}else cur+=ch;}out.push(cur);return out;}
+// ---------- CSV utils ----------
+function detectDelim(line){const c=[",",";","\t","|"];let b={d:",",n:0};for(const d of c){const n=line.split(d).length;if(n>b.n)b={d,n}}return b.d}
+function split(line,d){const o=[];let cur="",q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}else if(ch===d&&!q){o.push(cur);cur="";}else cur+=ch;}o.push(cur);return o;}
 function parseCSV(text){
-  const lines=text.replace(/\r/g,"").split("\n").filter(Boolean);
-  if(!lines.length) return {headers:[],rows:[]};
-  const d=detectDelimiter(lines[0]);
-  const headers=splitCSVLine(lines[0],d).map(s=>s.trim());
-  const rows=[];
-  for(let i=1;i<lines.length;i++){
-    const vals=splitCSVLine(lines[i],d);
-    const o={}; headers.forEach((h,j)=>o[h]=(vals[j]??"").trim());
-    rows.push(o);
+  const rows=text.replace(/\r/g,"").split("\n").filter(Boolean);
+  if(!rows.length) return {headers:[],rows:[]};
+  const d=detectDelim(rows[0]);
+  const headers=split(rows[0],d).map(s=>s.trim());
+  const out=[];
+  for(let i=1;i<rows.length;i++){
+    const vals=split(rows[i],d); const o={}; headers.forEach((h,j)=>o[h]=(vals[j]??"").trim()); out.push(o);
   }
-  return {headers,rows};
+  return {headers,rows:out};
 }
 const norm=s=>String(s??"").normalize("NFD").replace(/\p{Diacritic}/gu,"").toUpperCase().trim();
+const toNum=v=>{if(v==null)return null;const n=Number(String(v).replace(",",".").trim());return Number.isFinite(n)?n:null;}
+const isNumeric=(rows,col)=>rows.some(r=>toNum(r[col])!==null);
 
-// ------- leer CSV desde /public/datos o URL propia -------
+// ---------- CSV loader ----------
 async function readCSV(file, req){
   const local=path.join(process.cwd(),"public","datos",file);
   try{ return await fs.readFile(local,"utf8"); }
@@ -30,113 +30,197 @@ async function readCSV(file, req){
     const host=req.headers["x-forwarded-host"]||req.headers.host||"localhost:3000";
     const proto=host.includes("localhost")?"http":"https";
     const url=`${proto}://${host}/datos/${encodeURIComponent(file)}`;
-    const r=await fetch(url);
-    if(!r.ok) throw new Error(`HTTP ${r.status} al leer ${url}`);
+    const r=await fetch(url); if(!r.ok) throw new Error(`HTTP ${r.status} ${url}`);
     return await r.text();
   }
 }
 
-// ------- llamada a GPT-5 Thinking -------
-async function askLLM({q, headers, csvText}){
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-  if(!OPENAI_API_KEY) throw new Error("Falta OPENAI_API_KEY");
-  const model = process.env.LLM_MODEL || "gpt-5-thinking";
-
-  const system = [
-    "Eres una analista de datos en español (México).",
-    "Analiza un archivo CSV de estudiantes (encabezados y filas).",
-    "Responde SIEMPRE en JSON estricto y NADA de texto adicional.",
-    "Nunca digas frases como 'según el CSV'. No uses asteriscos.",
-    "Cuando pidan tablas/listas/rankings, devuelve una tabla: columnas + filas.",
-    "Cuando pidan cálculos (promedios, correlaciones, conteos, etc.), devuélvelos en 'message' y 'speak'; solo agrega tabla si realmente se pidió una lista.",
-    "Respeta tildes y variantes: trata los nombres de columnas sin distinguir mayúsculas/acentos (e.g. 'propension al cambio' == 'PROPENSIÓN AL CAMBIO').",
-    "No inventes columnas. Usa solo las que existan.",
-    "",
-    "Formato JSON de salida:",
-    "{",
-    '  "intent": "table" | "calc" | "message",',
-    '  "speak": "frase corta para leer en voz alta",',
-    '  "message": "texto para mostrar en pantalla",',
-    '  "table": { "columns": [..], "rows": [[..],..] } // opcional',
-    "}",
-  ].join("\n");
-
-  const user = [
-    `Pregunta del usuario: ${q}`,
-    "Encabezados del CSV:",
-    JSON.stringify(headers),
-    "",
-    "CSV_DATA_START",
-    csvText,
-    "CSV_DATA_END"
-  ].join("\n");
-
-  const payload = {
-    model,
-    response_format: { type: "json_object" },
-    input: [
-      { role: "system", content: system },
-      { role: "user", content: user }
-    ],
-    max_output_tokens: 1200
-  };
-
-  const r = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-
-  const jr = await r.json();
-  const text = jr.output_text || jr.content?.[0]?.text || jr.choices?.[0]?.message?.content || "{}";
-  let out;
-  try { out = JSON.parse(text); }
-  catch { out = { intent:"message", speak:"No pude interpretar la solicitud.", message:"No pude interpretar la solicitud." }; }
-  // limpiar asteriscos por si acaso
-  if(out.speak) out.speak = String(out.speak).replace(/\*/g,"");
-  if(out.message) out.message = String(out.message).replace(/\*/g,"");
-  return out;
+// ---------- OpenAI callers ----------
+async function callResponses({model, system, user, apiKey}){
+  try{
+    const r=await fetch("https://api.openai.com/v1/responses",{
+      method:"POST",
+      headers:{Authorization:`Bearer ${apiKey}`,"Content-Type":"application/json"},
+      body:JSON.stringify({model, response_format:{type:"json_object"}, input:[{role:"system",content:system},{role:"user",content:user}]})
+    });
+    const j=await r.json();
+    if(!r.ok) return {ok:false, error:(j.error?.message||`HTTP ${r.status}`)};
+    const text = j.output_text || j.content?.[0]?.text || j.choices?.[0]?.message?.content;
+    if(!text) return {ok:false, error:"Respuesta vacía del endpoint Responses"};
+    return {ok:true, text};
+  }catch(e){ return {ok:false, error:String(e)} }
 }
 
-// ------- handler HTTP -------
-module.exports = async (req, res) => {
+async function callChat({model, system, user, apiKey}){
+  try{
+    const r=await fetch("https://api.openai.com/v1/chat/completions",{
+      method:"POST",
+      headers:{Authorization:`Bearer ${apiKey}`,"Content-Type":"application/json"},
+      body:JSON.stringify({model, messages:[{role:"system",content:system},{role:"user",content:user}], temperature:0})
+    });
+    const j=await r.json();
+    if(!r.ok) return {ok:false, error:(j.error?.message||`HTTP ${r.status}`)};
+    const text = j.choices?.[0]?.message?.content;
+    if(!text) return {ok:false, error:"Respuesta vacía de Chat Completions"};
+    return {ok:true, text};
+  }catch(e){ return {ok:false, error:String(e)} }
+}
+
+// ---------- LLM prompt ----------
+function buildSystem(){
+  return [
+    "Eres analista de datos (es-MX). Lee un CSV (encabezados + filas) y responde SOLO JSON.",
+    "Nunca uses asteriscos ni frases como 'según el CSV'.",
+    "Si piden listas/tablas/rankings: devuelve {intent:'table', speak, message, table:{columns, rows:[[...]]}}.",
+    "Si piden cálculos (promedio, correlación, conteos…): devuelve {intent:'calc', speak, message} y tabla SOLO si la piden.",
+    "Respeta tildes: 'propension' == 'PROPENSIÓN', etc. No inventes columnas.",
+    "Formato JSON ESTRICTO:",
+    "{ \"intent\":\"table|calc|message\", \"speak\":\"...\", \"message\":\"...\", \"table\": {\"columns\":[...], \"rows\":[[...], ...]} }"
+  ].join("\n");
+}
+function buildUser(q, headers, csvText){
+  return `Pregunta del usuario: ${q}
+
+Encabezados:
+${JSON.stringify(headers)}
+
+CSV_DATA_START
+${csvText}
+CSV_DATA_END`;
+}
+
+// ---------- Heurístico (solo si LLM falla) ----------
+function fallbackHeuristic(q, headers, rows){
+  const qn=norm(q);
+  const wantsList = /\b(LISTA|LISTADO|TABLA|ESTUDIANTE|RANK|ORDEN|TOP)\b/.test(qn);
+  const hName = headers.find(h=>/NOMBRE|ESTUDIANTE|ALUMNO/i.test(norm(h))) || headers[0];
+  // columna pedida explícita
+  let col = headers.find(h=> qn.includes(norm(h)));
+  // si no, elige una numérica razonable
+  if(!col){
+    const prefer = headers.filter(h=>/PROMEDIO|NOTA|PUNTAJE|SCORE|CALIFICACION|TOTAL|AGRESION|EMPATIA|TIMIDEZ|AUTOESTIMA|FISICO|TENSION|ANSIEDAD/i.test(norm(h)));
+    col = prefer.find(h=>isNumeric(rows,h)) || headers.find(h=>isNumeric(rows,h)) || headers[1] || hName;
+  }
+  let outRows=[...rows];
+  if(/DECIMO|D[EÉ]CIMO/.test(qn)){
+    const cCurso = headers.find(h=>/CURSO|GRADO|NIVEL/i.test(norm(h)));
+    if(cCurso) outRows = outRows.filter(r=>/DECIMO/i.test(norm(r[cCurso])));
+  }
+  const mPar = qn.match(/\b(PARALELO|SECCION|SECCIÓN|GRUPO)\s*([AB])\b/);
+  if(mPar){
+    const cPar = headers.find(h=>/PARALELO|SECCION|SECCIÓN|GRUPO/i.test(norm(h)));
+    if(cPar) outRows = outRows.filter(r=> norm(r[cPar])===mPar[2]);
+  }
+  if(wantsList){
+    // ordenar por col
+    const numeric = isNumeric(outRows,col);
+    outRows.sort((a,b)=>{
+      if(numeric){ const A=toNum(a[col])??-Infinity, B=toNum(b[col])??-Infinity; return B-A; }
+      return String(b[col]??"").localeCompare(String(a[col]??""));
+    });
+    const columns = [hName, col].concat(headers.filter(h=>/PARALELO|CURSO/i.test(norm(h))));
+    const tableRows = outRows.map(r=>columns.map(c=>r[c]));
+    return {
+      intent:"table",
+      speak:`Mostrando ${tableRows.length} estudiantes ordenados por ${col}.`,
+      message:`Listado por ${col}.`,
+      table:{ columns: ["#", ...columns], rows: tableRows.map((r,i)=>[i+1, ...r]) }
+    };
+  }
+  // cálculo simple: promedio de X
+  if(/\bPROMEDIO\b/.test(qn)){
+    const arr = outRows.map(r=>toNum(r[col])).filter(n=>n!=null);
+    const avg = arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : null;
+    return {
+      intent:"calc",
+      speak: avg!=null ? `Promedio de ${col}: ${avg.toFixed(2)}` : `No encontré datos numéricos en ${col}.`,
+      message: avg!=null ? `Promedio de ${col}: ${avg.toFixed(2)}` : `No encontré datos numéricos en la columna ${col}.`
+    };
+  }
+  return { intent:"message", speak:"No tengo suficiente contexto.", message:"No tengo suficiente contexto." };
+}
+
+// ---------- Handler ----------
+module.exports = async (req,res)=>{
   const q    = String(req.query?.q || "").trim();
   const file = String(req.query?.file || "decimo.csv");
+  const debug = String(req.query?.debug||"") === "1";
+
+  const dbg = { step:"start" };
+
   try{
-    // 1) leer CSV completo y parsear (también lo pasaremos TAL CUAL a GPT-5)
     const csvText = await readCSV(file, req);
-    const { headers } = parseCSV(csvText); // solo para mostrar al modelo
-    if(!headers.length) return res.status(200).json({ rows:[], speak:"No hay datos.", message:"No hay datos." });
+    const {headers, rows} = parseCSV(csvText);
+    if(!rows.length){ return res.status(200).json({ rows:[], speak:"No hay datos.", message:"No hay datos.", debug: debug?dbg:undefined }); }
+    dbg.csvBytes = csvText.length; dbg.rows = rows.length; dbg.headers = headers;
 
-    // 2) pedir la respuesta 100% al modelo (sin defaults del backend)
-    const llm = await askLLM({ q, headers, csvText });
+    // ----- LLM intento 1: Responses API (GPT-5) -----
+    const apiKey = process.env.OPENAI_API_KEY || "";
+    dbg.keyPresent = Boolean(apiKey);
+    const modelPrimary = process.env.LLM_MODEL || "gpt-5-thinking";
+    const system = buildSystem(); const user = buildUser(q, headers, csvText);
 
-    // 3) adaptar a la UI: si trae tabla, la convertimos en rows [{..}]
-    let rows = [];
-    if (llm.table && Array.isArray(llm.table.columns) && Array.isArray(llm.table.rows)) {
-      const cols = llm.table.columns;
-      rows = llm.table.rows.map(r => {
-        const obj = {};
-        cols.forEach((c, i) => { obj[c] = r[i]; });
-        return obj;
+    let llmOut = null, llmErr = null, used = null;
+
+    if(apiKey){
+      const r1 = await callResponses({model:modelPrimary, system, user, apiKey});
+      if(r1.ok){
+        used = `responses:${modelPrimary}`; dbg.used = used;
+        try{ llmOut = JSON.parse(r1.text); }catch(e){ llmErr = "JSON inválido de Responses"; dbg.responsesParseError = String(e); }
+      }else{
+        dbg.responsesError = r1.error;
+      }
+
+      // ----- LLM intento 2: Chat Completions (fallback) -----
+      if(!llmOut){
+        const fbModel = process.env.LLM_FALLBACK_MODEL || "gpt-4o-mini";
+        const r2 = await callChat({model:fbModel, system, user, apiKey});
+        if(r2.ok){
+          used = `chat:${fbModel}`; dbg.used = used;
+          try{ llmOut = JSON.parse(r2.text); }catch(e){ llmErr = "JSON inválido de Chat"; dbg.chatParseError = String(e); }
+        }else{
+          dbg.chatError = r2.error;
+        }
+      }
+    }else{
+      dbg.note = "OPENAI_API_KEY ausente";
+    }
+
+    // ----- Si LLM dio algo válido -----
+    if(llmOut && (llmOut.intent || llmOut.table || llmOut.message || llmOut.speak)){
+      const cols = llmOut.table?.columns;
+      const trs  = llmOut.table?.rows;
+      let rowsOut = [];
+      if(Array.isArray(cols) && Array.isArray(trs)){
+        rowsOut = trs.map(r=>{ const o={}; cols.forEach((c,i)=>o[c]=r[i]); return o; });
+      }
+      return res.status(200).json({
+        rows: rowsOut,
+        speak: (llmOut.speak||"").replace(/\*/g,""),
+        message: (llmOut.message||"").replace(/\*/g,""),
+        intent: llmOut.intent || (rowsOut.length?"table":"message"),
+        debug: debug?dbg:undefined
       });
     }
 
-    // 4) responder
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    // ----- Fallback heurístico (sin defaults forzados) -----
+    dbg.fallback = true;
+    const fb = fallbackHeuristic(q, headers, rows);
+    let rowsOut = [];
+    if(fb.table && fb.table.columns && fb.table.rows){
+      rowsOut = fb.table.rows.map(r=>{ const o={}; fb.table.columns.forEach((c,i)=>o[c]=r[i]); return o; });
+    }
     return res.status(200).json({
-      rows,                               // si hay tabla; si no, []
-      speak:   llm.speak   || "",         // frase para la voz
-      message: llm.message || "",         // texto para el área de resultados
-      intent:  llm.intent  || "message"   // útil para depurar en el front si quieres
+      rows: rowsOut,
+      speak: fb.speak,
+      message: fb.message,
+      intent: fb.intent,
+      debug: debug?dbg:undefined
     });
 
   }catch(err){
-    console.error("ask.js error:", err);
-    return res.status(200).json({
-      error: true,
-      message: "No fue posible procesar la consulta.",
-      details: err?.message
-    });
+    const msg = "No fue posible procesar la consulta.";
+    if(debug){ dbg.error = String(err); }
+    return res.status(200).json({ error:true, message: msg, details: String(err), debug: debug?dbg:undefined });
   }
 };
