@@ -7,9 +7,8 @@
 
   <style>
     :root{
-      /* Ajustes rápidos */
-      --header-height: 240px;  /* altura del encabezado */
-      --video-shift: 14px;     /* cuánto “baja” el video (0–24px) */
+      --header-height: 240px;
+      --video-shift: 14px;
       --accent:#0078d7;
     }
 
@@ -21,7 +20,7 @@
       color:#111;
     }
 
-    /* ====== Encabezado: 25% (img) / 50% (video) / 25% (img) ====== */
+    /* ====== Encabezado 25/50/25 ====== */
     .header-rail{
       display:flex;
       align-items:center;
@@ -29,32 +28,23 @@
       width:100%;
       height:var(--header-height);
       background:#fff;
-      overflow:hidden; /* evita que algo se salga del header */
+      overflow:hidden;
     }
     .header-rail .col{
       display:flex; justify-content:center; align-items:center;
-      height:100%;
-      overflow:hidden; /* recorta desbordes de imágenes */
-      padding:0 8px;   /* aire lateral */
+      height:100%; overflow:hidden; padding:0 8px;
     }
     .header-rail .col.left,
     .header-rail .col.right{ flex:0 0 25%; }
     .header-rail .col.center{ flex:0 0 50%; position:relative; }
-
-    /* Logos limitados al espacio de su columna */
     .header-rail .col.left img,
     .header-rail .col.right img{
-      max-height:100%;
-      max-width:100%;
-      height:auto; width:auto;
-      object-fit:contain; display:block;
+      max-height:100%; max-width:100%;
+      height:auto; width:auto; object-fit:contain; display:block;
     }
-
-    /* Video centrado y con desplazamiento hacia abajo */
     .header-rail .col.center video{
       max-height:100%; max-width:100%;
-      height:100%; width:auto;
-      object-fit:contain; display:block;
+      height:100%; width:auto; object-fit:contain; display:block;
       transform: translateY(var(--video-shift));
     }
 
@@ -65,12 +55,8 @@
       max-width:1100px; margin:0 auto;
     }
     .bar input[type="text"]{
-      flex:1 1 800px;
-      padding:12px 14px;
-      font-size:16px;
-      border:1px solid #d0d0d0;
-      border-radius:8px;
-      outline:none;
+      flex:1 1 800px; padding:12px 14px; font-size:16px;
+      border:1px solid #d0d0d0; border-radius:8px; outline:none;
     }
     .btn{
       padding:12px 16px; border:0; border-radius:8px;
@@ -79,50 +65,34 @@
     .btn:hover{ filter:brightness(0.95); }
 
     #respuesta{
-      margin:20px auto 0;
-      width:min(90%,1100px);
-      min-height:64px;
-      padding:14px;
-      background:#f7f7f8;
-      border:1px solid #e5e5e7;
-      border-radius:10px;
-      text-align:left; line-height:1.45;
-      white-space:pre-wrap;
+      margin:20px auto 0; width:min(90%,1100px); min-height:64px;
+      padding:14px; background:#f7f7f8; border:1px solid #e5e5e7;
+      border-radius:10px; text-align:left; line-height:1.45; white-space:pre-wrap;
     }
 
-    /* ====== Tabla autodetectada ====== */
+    /* ====== Tabla autodetectada (vertical y enumerada) ====== */
     .table-wrap{
-      width:min(95%,1100px);
-      margin:16px auto 24px;
-      overflow:auto;
-      border:1px solid #e5e5e7;
-      border-radius:10px;
-      background:#fff;
+      width:min(95%,1100px); margin:16px auto 24px; overflow:auto;
+      border:1px solid #e5e5e7; border-radius:10px; background:#fff;
     }
     table.data{
-      width:100%;
-      border-collapse:collapse;
-      font-size:14px;
+      width:100%; border-collapse:collapse; font-size:14px;
     }
     table.data thead th{
-      position:sticky; top:0;
-      background:#f3f5f7;
-      border-bottom:1px solid #dee1e6;
-      text-align:left;
-      padding:10px 8px;
-      font-weight:700;
-      white-space:nowrap;
+      position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6;
+      text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap;
+    }
+    table.data thead th.idx{
+      width:56px; text-align:right;
     }
     table.data tbody td{
-      border-top:1px solid #f0f2f5;
-      padding:8px 8px;
-      vertical-align:top;
+      border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top;
     }
-    table.data tbody tr:nth-child(odd){
-      background:#fafbfc;
+    table.data tbody td.idx{
+      text-align:right; color:#4b5563; font-variant-numeric: tabular-nums;
     }
+    table.data tbody tr:nth-child(odd){ background:#fafbfc; }
 
-    /* Responsive */
     @media (max-width: 900px){
       :root{ --header-height: 220px; }
     }
@@ -134,20 +104,17 @@
 </head>
 <body>
 
-  <!-- ====== ENCABEZADO (25 / 50 / 25) ====== -->
+  <!-- ====== ENCABEZADO ====== -->
   <div class="header-rail">
     <div class="col left">
-      <!-- Como este archivo está en /public, las rutas son /left.png y /right.png -->
       <img src="/left.png" alt="Imagen izquierda">
     </div>
-
     <div class="col center">
       <video id="video" muted playsinline preload="metadata">
         <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
         Tu navegador no soporta video.
       </video>
     </div>
-
     <div class="col right">
       <img src="/right.png" alt="Imagen derecha">
     </div>
@@ -165,35 +132,27 @@
   </div>
 
   <script>
-    // Endpoints (usa /api/ask; si no existe, intenta /api/preguntar)
     const ENDPOINTS = ["/api/ask", "/api/preguntar"];
-
-    // CSV por defecto a consultar (dentro de /public/datos/)
     const DEFAULT_FILE = "decimo.csv";
 
     const video = document.getElementById("video");
     const tablaWrap = document.getElementById("tabla");
 
-    // ---------- Voz femenina "ejecutiva" en español (México) ----------
+    /* ====== VOZ EJECUTIVA ====== */
     let chosenVoice = null;
     const EXEC_PREF = ["sabina", "dalia", "beatriz", "abril", "camila", "lucia"];
-    const FEMALE_HINTS = [
-      "female","mujer","femenina",
-      "sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"
-    ];
+    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
     const MALE_HINTS = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
 
     function scoreVoice(v){
-      const name = (v.name||"").toLowerCase();
-      const lang = (v.lang||"").toLowerCase();
-      let s = 0;
-      if (lang.startsWith("es-mx")) s += 100;
-      else if (lang.startsWith("es-419")) s += 60;
-      else if (lang.startsWith("es")) s += 30;
-      if (EXEC_PREF.some(t => name.includes(t))) s += 40;
-      if (FEMALE_HINTS.some(t => name.includes(t))) s += 20;
-      if (/(neural|natural|online)/i.test(name)) s += 25;
-      if (MALE_HINTS.some(t => name.includes(t))) s -= 80;
+      const name=(v.name||"").toLowerCase();
+      const lang=(v.lang||"").toLowerCase();
+      let s=0;
+      if (lang.startsWith("es-mx")) s+=100; else if (lang.startsWith("es-419")) s+=60; else if (lang.startsWith("es")) s+=30;
+      if (EXEC_PREF.some(t=>name.includes(t))) s+=40;
+      if (FEMALE_HINTS.some(t=>name.includes(t))) s+=20;
+      if (/(neural|natural|online)/i.test(name)) s+=25;
+      if (MALE_HINTS.some(t=>name.includes(t))) s-=80;
       return s;
     }
     function pickExecutiveSpanishFemale(){
@@ -204,11 +163,9 @@
         const v = voices.find(v => (v.name||"").toLowerCase().includes(forced.toLowerCase()));
         if (v) return v;
       }
-      return voices.slice().sort((a,b) => scoreVoice(b) - scoreVoice(a))[0] || voices[0];
+      return voices.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0] || voices[0];
     }
-    function ensureVoiceSelected(){
-      if (!chosenVoice) chosenVoice = pickExecutiveSpanishFemale();
-    }
+    function ensureVoiceSelected(){ if(!chosenVoice) chosenVoice = pickExecutiveSpanishFemale(); }
     function speak(text, onStart, onEnd){
       if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
       ensureVoiceSelected();
@@ -222,88 +179,115 @@
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(u);
     }
-    window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
+    window.speechSynthesis.onvoiceschanged = ()=>{ chosenVoice=null; ensureVoiceSelected(); };
 
-    // ---------- Helpers para TABLA ----------
-    const escapeHtml = (s) =>
-      String(s ?? "")
-        .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+    /* ====== TABLA / LISTA VERTICAL ====== */
+    const escapeHtml = (s)=> String(s ?? "")
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 
     function pickDelimiter(sampleLines){
-      const cands = [",",";","\t","|"];
-      let best = ",", bestScore = -1;
-      for (const d of cands){
-        let score = 0;
-        for (const line of sampleLines){
-          const parts = line.split(d);
-          if (parts.length > 1) score += parts.length;
-        }
-        if (score > bestScore){ bestScore = score; best = d; }
+      const cands=[",",";","\t","|"]; let best=",",score=-1;
+      for(const d of cands){
+        let sc=0; for(const l of sampleLines){ const p=l.split(d); if(p.length>1) sc+=p.length; }
+        if(sc>score){ score=sc; best=d; }
       }
       return best;
     }
 
     function parseMarkdownTable(text){
-      const lines = text.split(/\r?\n/).map(l=>l.trim());
-      const md = lines.filter(l => /^\|.*\|$/.test(l));
-      if (md.length < 2) return null;
-      const rows = md.map(l=>{
-        const cells = l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim());
-        return cells;
-      });
-      // quitar fila separadora si existe
-      const sepIdx = rows.findIndex(r => r.every(c => /^:?-{3,}:?$/.test(c)));
-      if (sepIdx >= 0) rows.splice(sepIdx,1);
-      return rows.length >= 2 ? rows : null;
+      const lines=text.split(/\r?\n/).map(l=>l.trim());
+      const md=lines.filter(l=>/^\|.*\|$/.test(l));
+      if(md.length<2) return null;
+      const rows=md.map(l=>l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
+      const sepIdx=rows.findIndex(r=>r.every(c=>/^:?-{3,}:?$/.test(c)));
+      if(sepIdx>=0) rows.splice(sepIdx,1);
+      return rows.length>=2?rows:null;
     }
 
     function parseJsonTable(text){
       try{
-        const obj = JSON.parse(text);
-        if (Array.isArray(obj) && obj.length && typeof obj[0] === "object"){
-          const headers = Array.from(
-            obj.reduce((set,row)=>{ Object.keys(row).forEach(k=>set.add(k)); return set; }, new Set())
-          );
-          const rows = [headers, ...obj.map(o => headers.map(h => o[h] ?? ""))];
-          return rows;
+        const obj=JSON.parse(text);
+        if(Array.isArray(obj) && obj.length && typeof obj[0]==="object"){
+          const headers=Array.from(obj.reduce((s,row)=>{Object.keys(row).forEach(k=>s.add(k)); return s;},new Set()));
+          return [headers, ...obj.map(o=>headers.map(h=>o[h]??""))];
         }
       }catch{}
       return null;
     }
 
     function extractCsvBlock(text){
-      const m = text.match(/```(?:csv)?\s*([\s\S]*?)```/i);
-      return m ? m[1].trim() : null;
+      const m=text.match(/```(?:csv)?\s*([\s\S]*?)```/i);
+      return m?m[1].trim():null;
     }
 
     function parseDelimited(text){
-      const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
-      if (lines.length < 2) return null;
-      const sample = lines.slice(0, 10);
-      const d = pickDelimiter(sample);
-      const rows = lines.map(l => l.split(d).map(c => c.trim()));
-      // si la primera fila no parece encabezado, igual lo mostramos
-      const maxCols = Math.max(...rows.map(r => r.length));
-      const normalized = rows.map(r => {
-        const copy = r.slice(0, maxCols);
-        while (copy.length < maxCols) copy.push("");
-        return copy;
-      });
-      // Validación mínima: al menos 2 columnas y 2 filas
-      if (maxCols < 2 || normalized.length < 2) return null;
+      const lines=text.split(/\r?\n/).filter(l=>l.trim().length);
+      if(lines.length<2) return null;
+      const d=pickDelimiter(lines.slice(0,10));
+      const rows=lines.map(l=>l.split(d).map(c=>c.trim()));
+      const maxCols=Math.max(...rows.map(r=>r.length));
+      const normalized=rows.map(r=>{const c=r.slice(0,maxCols); while(c.length<maxCols)c.push(""); return c;});
+      if(maxCols<1 || normalized.length<1) return null;
       return normalized;
     }
 
-    function renderTable(rows){
-      const [head, ...body] = rows;
-      let html = '<table class="data"><thead><tr>';
-      for (const h of head) html += `<th>${escapeHtml(h)}</th>`;
-      html += '</tr></thead><tbody>';
-      for (const r of body){
-        html += '<tr>';
-        for (const c of r) html += `<td>${escapeHtml(c)}</td>`;
-        html += '</tr>';
+    // NUEVO: para "listas en una sola línea" con | o ,
+    function parseInlineList(text){
+      // Tomamos la línea más larga que tenga varios separadores
+      const lines = text.split(/\r?\n/).map(l=>l.trim());
+      let bestLine = ""; let bestCount = 0;
+      for (const l of lines){
+        const count = (l.match(/\|/g)||[]).length + (l.match(/,/g)||[]).length;
+        if (count > bestCount){ bestCount = count; bestLine = l; }
       }
+      if (bestCount < 3) return null; // no parece lista
+
+      // split por | o ,
+      let items = bestLine.split(/[|,]/).map(s=>s.trim()).filter(Boolean);
+
+      // Limpieza: quitamos palabras/ruido comunes
+      const ban = [
+        /^-{2,}$/, /^={2,}$/, /^NOMBRE$/i, /^NOMBRES$/i, /^ESTUDIANTE/i,
+        /^A continuación/i, /^Si necesitas/i, /^curso/i, /^DECIMO/i, /^DÉCIMO/i
+      ];
+      items = items.filter(x => !ban.some(rx => rx.test(x)));
+
+      // sacar duplicados simples y vacíos
+      const seen=new Set(); items=items.filter(x=>{const k=x.toLowerCase(); if(seen.has(k)) return false; seen.add(k); return x.length>0;});
+      if (items.length < 2) return null;
+
+      // Transformamos en dos columnas: ["#", "Item"]
+      return [["#", "Item"], ...items.map(it => [it])]; // numeraremos al renderizar
+    }
+
+    function renderTable(rows){
+      if(!rows || !rows.length) return "";
+
+      // Si viene "solo una columna", igual enumeramos verticalmente
+      let [head, ...body] = rows;
+      if (head.length === 1) head = ["#", head[0]]; else head = ["#", ...head];
+
+      let html = '<table class="data"><thead><tr>';
+      html += `<th class="idx">#</th>`;
+      for (let i=1; i<head.length; i++){
+        html += `<th>${escapeHtml(head[i])}</th>`;
+      }
+      html += '</tr></thead><tbody>';
+
+      body.forEach((r,idx)=>{
+        html += '<tr>';
+        html += `<td class="idx">${idx+1}</td>`;
+        // si el body traía una sola celda (lista), es vertical
+        if (r.length === 1){
+          html += `<td>${escapeHtml(r[0])}</td>`;
+        } else {
+          for (let i=0;i<r.length;i++){
+            html += `<td>${escapeHtml(r[i])}</td>`;
+          }
+        }
+        html += '</tr>';
+      });
+
       html += '</tbody></table>';
       return html;
     }
@@ -312,71 +296,69 @@
       tablaWrap.hidden = true;
       tablaWrap.innerHTML = "";
 
-      // 1) JSON array de objetos
-      let rows = parseJsonTable(text);
+      let rows = null;
+
+      // 1) JSON array → tabla
+      rows = parseJsonTable(text);
+
+      // 2) bloque ```csv```
       if (!rows){
-        // 2) bloque ```csv``` o ``` ```
         const csvBlock = extractCsvBlock(text);
-        if (csvBlock){
-          rows = parseDelimited(csvBlock);
-        }
-      }
-      if (!rows){
-        // 3) tabla Markdown
-        rows = parseMarkdownTable(text);
-      }
-      if (!rows){
-        // 4) heurística de separadores en el texto completo
-        rows = parseDelimited(text);
+        if (csvBlock) rows = parseDelimited(csvBlock);
       }
 
-      if (rows && rows.length >= 2 && rows[0].length >= 2){
+      // 3) tabla Markdown
+      if (!rows) rows = parseMarkdownTable(text);
+
+      // 4) heurística general delimitada (por si el modelo tiró varias líneas separadas)
+      if (!rows) rows = parseDelimited(text);
+
+      // 5) NUEVO: lista en una sola línea separada por | o ,
+      if (!rows) rows = parseInlineList(text);
+
+      if (rows && rows.length){
         tablaWrap.innerHTML = renderTable(rows);
         tablaWrap.hidden = false;
       }
     }
 
-    // ---------- Enviar pregunta (incluye &file=DEFAULT_FILE) ----------
+    /* ====== ENVIAR PREGUNTA ====== */
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
       const out = document.getElementById("respuesta");
       out.textContent = "Consultando...";
-      tablaWrap.hidden = true;
-      tablaWrap.innerHTML = "";
+      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
 
-      let data = null, lastErr = null;
+      let data=null, lastErr=null;
       for (const base of ENDPOINTS){
         try{
           const url = `${base}?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}`;
           const resp = await fetch(url);
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          data = await resp.json();
-          break;
-        }catch(e){ lastErr = e; }
+          data = await resp.json(); break;
+        }catch(e){ lastErr=e; }
       }
       if (!data){
         out.textContent = "No se pudo contactar al servidor.";
-        console.error(lastErr);
-        return;
+        console.error(lastErr); return;
       }
 
       const texto = data.text || data.respuesta || "No se encontró respuesta.";
       out.textContent = texto;
 
-      // Si el texto contiene datos tabulares, muéstralos ordenados
+      // Render vertical enumerado si hay datos tabulares o lista
       maybeRenderTableFromText(texto);
 
-      // Reproduce el video durante la voz y pausa al terminar
+      // Voz + video
       speak(texto, ()=>video?.play(), ()=>video?.pause());
     }
 
-    // Enter para enviar
-    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
-      if (e.key === "Enter"){ enviarPregunta(); }
+    document.getElementById("pregunta").addEventListener("keydown",(e)=>{
+      if (e.key === "Enter") enviarPregunta();
     });
 
-    // ---------- Micrófono ----------
+    /* ====== MICRÓFONO ====== */
     function startListening(){
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
