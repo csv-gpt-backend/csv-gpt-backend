@@ -7,12 +7,11 @@
 
   <style>
     :root{
-      /* VIDEO MÁS GRANDE */
-      --header-height: 360px;   /* antes 240px */
+      /* Video grande */
+      --header-height: 360px;
       --video-shift: 10px;
       --accent:#0078d7;
     }
-
     *{ box-sizing:border-box; }
     body{
       margin:0; background:#fff;
@@ -20,29 +19,19 @@
       color:#111;
     }
 
-    /* ====== Encabezado: 25 / 50 / 25 ====== */
+    /* ====== Encabezado 25/50/25 ====== */
     .header-rail{
       display:flex; align-items:center; justify-content:center;
-      width:100%; height:var(--header-height);
-      background:#fff; overflow:hidden;
+      width:100%; height:var(--header-height); background:#fff; overflow:hidden;
     }
-    .header-rail .col{
-      display:flex; justify-content:center; align-items:center;
-      height:100%; overflow:hidden; padding:0 8px;
-    }
+    .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
     .header-rail .col.left, .header-rail .col.right{ flex:0 0 25%; }
     .header-rail .col.center{ flex:0 0 50%; position:relative; }
-
-    .header-rail .col.left img,
-    .header-rail .col.right img{
-      max-height:100%; max-width:100%;
-      height:auto; width:auto; object-fit:contain; display:block;
+    .header-rail .col.left img, .header-rail .col.right img{
+      max-height:100%; max-width:100%; height:auto; width:auto; object-fit:contain; display:block;
     }
-
-    /* Más grande SIN recortar: crecer por altura, sin scale */
     .header-rail .col.center video{
-      max-height:100%; max-width:100%;
-      height:100%; width:auto; object-fit:contain; display:block;
+      max-height:100%; max-width:100%; height:100%; width:auto; object-fit:contain; display:block;
       transform: translateY(var(--video-shift));
     }
 
@@ -62,6 +51,7 @@
     }
     .btn:hover{ filter:brightness(0.95); }
 
+    /* Texto de respuesta (por defecto) */
     #respuesta{
       margin:20px auto 0; width:min(90%,1100px);
       min-height:64px; padding:14px; background:#f7f7f8;
@@ -69,7 +59,7 @@
       text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
     }
 
-    /* ====== Lista vertical enumerada ====== */
+    /* ====== Lista vertical enumerada (solo cuando se pide) ====== */
     .vlist{ width:min(95%,1100px); margin:16px auto 24px; font-size:13px; }
     .vitem{
       border:1px solid #e5e5e7; border-radius:12px;
@@ -104,7 +94,7 @@
     @media print{
       body *{ visibility:hidden !important; }
       #printable, #printable *{ visibility:visible !important; }
-      #printable{ position:fixed; inset:0 0 auto 0; margin:0; }
+      #printable{ position:fixed; inset:0 0 auto 0; margin:0; padding:24px; }
     }
 
     /* Responsive */
@@ -112,25 +102,23 @@
     @media (max-width: 640px){
       :root{ --header-height: 260px; }
       .header-rail .col.center video{ transform: translateY(8px); }
-      .vbody{ grid-template-columns:1fr; } /* clave encima del valor */
+      .vbody{ grid-template-columns:1fr; }
     }
   </style>
 </head>
 <body>
 
-  <!-- ====== ENCABEZADO (25 / 50 / 25) ====== -->
+  <!-- ====== ENCABEZADO ====== -->
   <div class="header-rail">
     <div class="col left">
       <img src="/left.png" alt="Imagen izquierda">
     </div>
-
     <div class="col center">
       <video id="video" muted playsinline preload="metadata">
         <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
         Tu navegador no soporta video.
       </video>
     </div>
-
     <div class="col right">
       <img src="/right.png" alt="Imagen derecha">
     </div>
@@ -144,28 +132,34 @@
       <button class="btn" onclick="startListening()">🎤</button>
     </div>
 
-    <!-- El texto se oculta automáticamente si hay datos tabulares -->
+    <!-- Texto por defecto -->
     <div id="respuesta">Aquí aparecerá la respuesta...</div>
 
-    <!-- Resultados -->
+    <!-- Resultados estructurados (solo si se pide lista/tabla) -->
     <div id="vlist" class="vlist" hidden></div>
     <div id="tabla" class="table-wrap" hidden></div>
 
     <!-- Zona imprimible -->
     <div id="printable" hidden></div>
 
-    <!-- ====== Botones inferiores en una sola línea ====== -->
+    <!-- Botones inferiores -->
     <div class="footer-bar">
       <button class="btn" onclick="exportPDF()">Exportar PDF</button>
-      <button class="btn" onclick="exportExcel()">Exportar Excel</button>
       <button class="btn" onclick="stopSpeech()">Detener voz</button>
       <button class="btn" onclick="limpiar()">Limpiar</button>
     </div>
   </div>
 
   <script>
+    // Endpoints
     const ENDPOINTS = ["/api/ask", "/api/preguntar"];
-    const DEFAULT_FILE = "decimo.csv";
+
+    // FUENTES POR DEFECTO: CSV + 2 PDFs (rutas bajo /public/)
+    const DEFAULT_SOURCES = [
+      "datos/decimo.csv",
+      "documentos/EVALUACIONES EXAMENES 1.CON HABILIDADES Y DEFINICION TIEMPO.pdf",
+      "documentos/LEXIUM .pdf"
+    ];
 
     const video = document.getElementById("video");
     const vlistWrap = document.getElementById("vlist");
@@ -175,7 +169,7 @@
 
     let lastRows = null;
 
-    // ---------- Voz (es-MX) ----------
+    // ====== Voz (es-MX) ======
     let chosenVoice = null;
     const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
     const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
@@ -208,14 +202,12 @@
 
     function sanitizeForSpeech(text){
       if (!text) return "";
-      // No leer tablas/código ni asteriscos
-      let t = text.replace(/```[\s\S]*?```/g, " ");
-      t = t.replace(/\*/g, "");
-      t = t.replace(/^[#>\-\u2022]\s*/gm, "");
+      let t = text.replace(/```[\s\S]*?```/g, " "); // no leer bloques
+      t = t.replace(/\*/g, "");                    // no leer asteriscos
+      t = t.replace(/^[#>\-\u2022]\s*/gm, "");     // limpiar bullets/headers
       t = t.replace(/\s{2,}/g, " ").trim();
       return t;
     }
-
     function speak(text, onStart, onEnd){
       if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
       ensureVoiceSelected();
@@ -231,18 +223,14 @@
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(u);
     }
-    function stopSpeech(){
-      try{ window.speechSynthesis.cancel(); }catch{}
-      try{ video?.pause(); }catch{}
-    }
+    function stopSpeech(){ try{ window.speechSynthesis.cancel(); }catch{} try{ video?.pause(); }catch{} }
     window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
 
-    // ---------- Helpers tabla ----------
+    // ====== Helpers de parseo estrictos (para cuando se pida lista/tabla) ======
     const escapeHtml = (s) => String(s ?? "")
       .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 
     function parseMarkdownTableStrict(text){
-      // Solo acepta tablas Markdown con fila separadora --- (evita falsos positivos)
       const lines = text.split(/\r?\n/).map(l=>l.trim());
       const starts = lines.findIndex(l => /^\|.*\|$/.test(l));
       if (starts === -1) return null;
@@ -252,15 +240,12 @@
         if (!/^\|.*\|$/.test(l)) break;
         rows.push(l);
       }
-      if (rows.length < 3) return null; // header + separator + 1 row
+      if (rows.length < 3) return null; // header + sep + 1 row
       const cells = rows.map(l => l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
-      // fila separadora
-      if (!cells[1].every(c => /^:?-{3,}:?$/.test(c))) return null;
-      // quitar separadora
+      if (!cells[1].every(c => /^:?-{3,}:?$/.test(c))) return null; // separador
       cells.splice(1,1);
       return cells;
     }
-
     function parseJsonTable(text){
       try{
         const obj = JSON.parse(text);
@@ -274,37 +259,29 @@
       }catch{}
       return null;
     }
-
     function extractCsvBlock(text){
       const m = text.match(/```(?:csv)?\s*([\s\S]*?)```/i);
       return m ? m[1].trim() : null;
     }
-
     function parseDelimited(csvText){
       const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
       if (lines.length < 2) return null;
-      // detectar separador simple por cuenta de columnas
       const cand = [",",";","\t","|"];
-      let best=",", bestCols=0, ok=0;
+      let best=",", ok=0, cols=0;
       for (const d of cand){
-        let cols = null, good=0;
+        let good=0, c=null;
         for (const line of lines.slice(0,20)){
-          const parts = line.split(d);
-          if (parts.length<2) continue;
-          if (cols==null) cols = parts.length;
-          if (parts.length===cols) good++;
+          const p = line.split(d);
+          if (p.length<2) continue;
+          if (c==null) c=p.length;
+          if (p.length===c) good++;
         }
-        if (good>ok){ ok=good; best=d; bestCols=cols||0; }
+        if (good>ok){ ok=good; best=d; cols=c||0; }
       }
-      if (ok<2 || bestCols<2) return null;
+      if (ok<2 || cols<2) return null;
       const rows = lines.map(l => l.split(best).map(c=>c.trim()));
-      const maxCols = Math.max(...rows.map(r => r.length));
-      const normalized = rows.map(r => {
-        const copy = r.slice(0, maxCols);
-        while (copy.length < maxCols) copy.push("");
-        return copy;
-      });
-      return normalized.length>=2 && maxCols>=2 ? normalized : null;
+      const max = Math.max(...rows.map(r=>r.length));
+      return rows.map(r => { const a=r.slice(0,max); while(a.length<max)a.push(""); return a; });
     }
 
     // Prioriza nombre/estudiante/alumno
@@ -319,8 +296,7 @@
         return sa - sb || a.i - b.i;
       });
       const map = idx.map(x=>x.i);
-      const newHeaders = idx.map(x=>x.h);
-      return {newHeaders, map};
+      return { newHeaders: idx.map(x=>x.h), map };
     }
     function applyHeaderOrder(rows){
       if (!rows || rows.length < 2) return rows;
@@ -330,7 +306,6 @@
       return [newHeaders, ...remap];
     }
 
-    // Render
     function renderVerticalList(rows){
       const [head, ...body] = rows;
       let html = "";
@@ -357,29 +332,20 @@
       return html;
     }
 
-    /* === Detección MÁS ESTRICTA
-       Solo tabulamos si:
-       - La respuesta es JSON de objetos, o
-       - Trae un bloque ```csv ...```, o
-       - Es una tabla Markdown con separador ---.
-       (El texto normal JAMÁS se convierte en tabla) */
+    // ====== Lógica: SOLO tabular si el usuario lo pide ======
+    function wantsStructured(query){
+      const rx = /\b(lista|listar|listado|enlistar|enlista|tabla|tabular)\b/i;
+      return rx.test(query || "");
+    }
+
     function detectRowsFromText(text){
-      // 1) JSON
+      // Solo se usa si wantsStructured() == true
       let rows = parseJsonTable(text);
       if (rows) return rows;
-
-      // 2) bloque csv explícito
       const csvBlock = extractCsvBlock(text);
-      if (csvBlock){
-        rows = parseDelimited(csvBlock);
-        if (rows) return rows;
-      }
-
-      // 3) tabla Markdown estricta
+      if (csvBlock){ rows = parseDelimited(csvBlock); if (rows) return rows; }
       rows = parseMarkdownTableStrict(text);
-      if (rows) return rows;
-
-      return null; // <- texto normal
+      return rows || null;
     }
 
     function maybeRenderFromText(text){
@@ -406,7 +372,7 @@
       return false;
     }
 
-    // ---------- Enviar ----------
+    // ====== Enviar ======
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
@@ -418,10 +384,14 @@
       printable.hidden = true; printable.innerHTML = "";
       lastRows = null;
 
+      // Construir query con múltiples fuentes
+      const params = new URLSearchParams({ q: pregunta });
+      for (const s of DEFAULT_SOURCES) params.append("src", s);
+
       let data = null, lastErr = null;
       for (const base of ENDPOINTS){
         try{
-          const url = `${base}?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}`;
+          const url = `${base}?${params.toString()}`;
           const resp = await fetch(url);
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           data = await resp.json();
@@ -435,16 +405,24 @@
       }
 
       const textoRaw = data.text || data.respuesta || data.answer || "";
-      const huboTabla = maybeRenderFromText(textoRaw);
+      const shouldTab = wantsStructured(pregunta);
+      let huboTabla = false;
+
+      if (shouldTab){
+        huboTabla = maybeRenderFromText(textoRaw);
+      }
 
       if (huboTabla){
-        // No duplicar: ocultar texto si hay datos tabulares
+        // No duplicar texto si hay datos tabulares
         out.hidden = true;
         stopSpeech();
       }else{
         const clean = sanitizeForSpeech(textoRaw);
         out.hidden = false;
         out.textContent = clean || "No se encontró respuesta.";
+        // preparar printable con texto
+        printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(clean)}</div>`;
+        printable.hidden = false;
         speak(clean, ()=>video?.play(), ()=>video?.pause());
       }
     }
@@ -454,7 +432,7 @@
       if (e.key === "Enter"){ enviarPregunta(); }
     });
 
-    // ---------- Micrófono ----------
+    // ====== Micrófono ======
     function startListening(){
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
@@ -471,36 +449,17 @@
       rec.start();
     }
 
-    // ---------- Exportar ----------
-    function rowsToCSV(rows){
-      return rows.map(r => r.map(c=>{
-        const s = String(c ?? "");
-        if (/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
-        return s;
-      }).join(",")).join("\n");
-    }
-
+    // ====== Exportar PDF (siempre activo) ======
     function exportPDF(){
-      if (printable.hidden){ alert("No hay resultados para exportar."); return; }
+      // Si hay lista, ya está en #printable; si no, usamos el texto.
+      if (vlistWrap.hidden){
+        printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(out.textContent || "")}</div>`;
+        printable.hidden = false;
+      }
       window.print();
     }
 
-    function exportExcel(){
-      if (!lastRows || !lastRows.length){
-        alert("No hay resultados para exportar.");
-        return;
-      }
-      const tableHTML = renderTable(lastRows);
-      const html = `<html><head><meta charset="UTF-8"></head><body>${tableHTML}</body></html>`;
-      const blob = new Blob([html], { type: "application/vnd.ms-excel" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = "resultado.xls";
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-    }
-
-    // ---------- Limpiar ----------
+    // ====== Limpiar ======
     function limpiar(){
       stopSpeech();
       document.getElementById("pregunta").value = "";
@@ -512,13 +471,12 @@
       lastRows = null;
     }
 
-    // Exponer botones
+    // Exponer funciones
     window.startListening = startListening;
-    window.stopSpeech = stopSpeech;
-    window.exportPDF = exportPDF;
-    window.exportExcel = exportExcel;
-    window.limpiar = limpiar;
-    window.enviarPregunta = enviarPregunta;
+    window.stopSpeech    = stopSpeech;
+    window.exportPDF     = exportPDF;
+    window.limpiar       = limpiar;
+    window.enviarPregunta= enviarPregunta;
   </script>
 </body>
 </html>
