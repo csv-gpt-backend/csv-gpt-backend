@@ -1,379 +1,236 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Consulta Educativa</title>
-
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>csv-gpt-backend · Demo</title>
   <style>
-    :root{
-      --header-height: 240px;
-      --video-shift: 14px;
-      --accent:#0078d7;
+    /* Layout 25/50/25 */
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; color:#111; }
+    .grid {
+      display:grid; grid-template-columns: 1fr 2fr 1fr; gap: 12px; padding: 12px;
     }
+    @media (max-width: 1024px) { .grid { grid-template-columns: 1fr; } }
 
-    *{ box-sizing:border-box; }
-    body{
-      margin:0;
-      background:#fff;
-      font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
-      color:#111;
-    }
+    /* Paneles */
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
+    .muted { color:#6b7280; font-size:0.9rem; }
 
-    /* ====== Encabezado 25/50/25 ====== */
-    .header-rail{
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      width:100%;
-      height:var(--header-height);
-      background:#fff;
-      overflow:hidden;
-    }
-    .header-rail .col{
-      display:flex; justify-content:center; align-items:center;
-      height:100%; overflow:hidden; padding:0 8px;
-    }
-    .header-rail .col.left,
-    .header-rail .col.right{ flex:0 0 25%; }
-    .header-rail .col.center{ flex:0 0 50%; position:relative; }
-    .header-rail .col.left img,
-    .header-rail .col.right img{
-      max-height:100%; max-width:100%;
-      height:auto; width:auto; object-fit:contain; display:block;
-    }
-    .header-rail .col.center video{
-      max-height:100%; max-width:100%;
-      height:100%; width:auto; object-fit:contain; display:block;
-      transform: translateY(var(--video-shift));
-    }
+    /* Entrada */
+    .row { display:flex; gap:8px; margin-bottom:10px; }
+    input[type="text"] { flex:1; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; font-size:1rem; }
+    button { padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer; }
+    button.secondary { background:#fff; color:#111; border:1px solid #111; }
 
-    /* ====== Interacción ====== */
-    .interaction{ padding:24px 16px; text-align:center; }
-    .bar{
-      display:flex; gap:8px; justify-content:center; align-items:center;
-      max-width:1100px; margin:0 auto;
-    }
-    .bar input[type="text"]{
-      flex:1 1 800px; padding:12px 14px; font-size:16px;
-      border:1px solid #d0d0d0; border-radius:8px; outline:none;
-    }
-    .btn{
-      padding:12px 16px; border:0; border-radius:8px;
-      background:var(--accent); color:#fff; font-weight:600; cursor:pointer;
-    }
-    .btn:hover{ filter:brightness(0.95); }
+    /* Contenedores de resultado */
+    #texto { white-space:pre-wrap; }
+    .vertical-list { padding-left: 1.25rem; margin: .5rem 0; }
+    .vertical-list > li { margin: .35rem 0; font-size: 0.9rem; }
+    .vcard { width: 100%; display: grid; grid-template-columns: 160px 1fr; gap: .25rem .75rem; }
+    .k { font-weight: 600; color: #222; }
+    .v { color: #333; word-break: break-word; }
+    @media (max-width: 640px) { .vcard { grid-template-columns: 1fr; } }
 
-    #respuesta{
-      margin:20px auto 0; width:min(90%,1100px); min-height:64px;
-      padding:14px; background:#f7f7f8; border:1px solid #e5e5e7;
-      border-radius:10px; text-align:left; line-height:1.45; white-space:pre-wrap;
-    }
-
-    /* ====== Tabla autodetectada (vertical y enumerada) ====== */
-    .table-wrap{
-      width:min(95%,1100px); margin:16px auto 24px; overflow:auto;
-      border:1px solid #e5e5e7; border-radius:10px; background:#fff;
-    }
-    table.data{
-      width:100%; border-collapse:collapse; font-size:14px;
-    }
-    table.data thead th{
-      position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6;
-      text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap;
-    }
-    table.data thead th.idx{
-      width:56px; text-align:right;
-    }
-    table.data tbody td{
-      border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top;
-    }
-    table.data tbody td.idx{
-      text-align:right; color:#4b5563; font-variant-numeric: tabular-nums;
-    }
-    table.data tbody tr:nth-child(odd){ background:#fafbfc; }
-
-    @media (max-width: 900px){
-      :root{ --header-height: 220px; }
-    }
-    @media (max-width: 640px){
-      :root{ --header-height: 200px; }
-      .header-rail .col.center video{ transform: translateY(8px); }
-    }
+    .small { font-size:0.85rem; }
+    .sep { height:8px; }
   </style>
 </head>
 <body>
+  <div class="grid">
+    <!-- Izquierda (25%) -->
+    <div class="card">
+      <div class="muted">Logo / Info</div>
+      <div class="small">Archivo por defecto: <b id="fileLabel">decimo.csv</b></div>
+      <div class="sep"></div>
+      <button class="secondary" onclick="verCorrelacion()">Ver correlación A↔E</button>
+      <div class="sep"></div>
+      <div class="small muted">Consejo: escribe “lista”, “ranking”, “timidez”, etc.</div>
+    </div>
 
-  <!-- ====== ENCABEZADO ====== -->
-  <div class="header-rail">
-    <div class="col left">
-      <img src="/left.png" alt="Imagen izquierda">
+    <!-- Centro (50%) -->
+    <div class="card">
+      <div class="row">
+        <input id="pregunta" type="text" placeholder="Escribe tu consulta… (Enter para enviar)" />
+        <button onclick="enviarPregunta()">Preguntar</button>
+      </div>
+      <!-- Texto “inicial” (se ocultará si hay tabla/lista) -->
+      <div id="texto" class="muted">Escribe una consulta y te mostraré resultados del CSV.</div>
+      <div class="sep"></div>
+      <!-- Montaje de listas/tablas -->
+      <div id="respuesta"></div>
     </div>
-    <div class="col center">
-      <video id="video" muted playsinline preload="metadata">
-        <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
-        Tu navegador no soporta video.
-      </video>
-    </div>
-    <div class="col right">
-      <img src="/right.png" alt="Imagen derecha">
-    </div>
-  </div>
 
-  <!-- ====== INTERACCIÓN ====== -->
-  <div class="interaction">
-    <div class="bar">
-      <input id="pregunta" type="text" placeholder="Haz tu pregunta aquí..." />
-      <button class="btn" onclick="enviarPregunta()">Enviar</button>
-      <button class="btn" onclick="startListening()">🎤</button>
+    <!-- Derecha (25%) -->
+    <div class="card">
+      <div class="muted">Logo / Panel</div>
+      <div class="small" id="audioState">TTS listo.</div>
     </div>
-    <div id="respuesta">Aquí aparecerá la respuesta...</div>
-    <div id="tabla" class="table-wrap" hidden></div>
   </div>
 
   <script>
-    const ENDPOINTS = ["/api/ask", "/api/preguntar"];
-    const DEFAULT_FILE = "decimo.csv";
+    // ===== Config =====
+    const DEFAULT_FILE = "decimo.csv"; // Cambia si necesitas otro por defecto
+    document.getElementById("fileLabel").textContent = DEFAULT_FILE;
 
-    const video = document.getElementById("video");
-    const tablaWrap = document.getElementById("tabla");
-
-    /* ====== VOZ EJECUTIVA ====== */
-    let chosenVoice = null;
-    const EXEC_PREF = ["sabina", "dalia", "beatriz", "abril", "camila", "lucia"];
-    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
-    const MALE_HINTS = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
-
-    function scoreVoice(v){
-      const name=(v.name||"").toLowerCase();
-      const lang=(v.lang||"").toLowerCase();
-      let s=0;
-      if (lang.startsWith("es-mx")) s+=100; else if (lang.startsWith("es-419")) s+=60; else if (lang.startsWith("es")) s+=30;
-      if (EXEC_PREF.some(t=>name.includes(t))) s+=40;
-      if (FEMALE_HINTS.some(t=>name.includes(t))) s+=20;
-      if (/(neural|natural|online)/i.test(name)) s+=25;
-      if (MALE_HINTS.some(t=>name.includes(t))) s-=80;
-      return s;
-    }
-    function pickExecutiveSpanishFemale(){
-      const voices = window.speechSynthesis?.getVoices?.() || [];
-      if (!voices.length) return null;
-      const forced = new URLSearchParams(location.search).get("voice");
-      if (forced){
-        const v = voices.find(v => (v.name||"").toLowerCase().includes(forced.toLowerCase()));
-        if (v) return v;
+    // ===== Utilidades UI =====
+    const TEXT_IDS = ["texto"]; // añade otros si tienes varios
+    function setVisible(ids, visible){
+      for (const id of ids){
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.style.display = visible ? "" : "none";
+        if (!visible) el.innerHTML = "";
       }
-      return voices.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0] || voices[0];
     }
-    function ensureVoiceSelected(){ if(!chosenVoice) chosenVoice = pickExecutiveSpanishFemale(); }
-    function speak(text, onStart, onEnd){
-      if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
-      ensureVoiceSelected();
-      const u = new SpeechSynthesisUtterance(text);
-      if (chosenVoice) u.voice = chosenVoice;
-      u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-      u.rate = 1.12; u.pitch = 1.02; u.volume = 1.0;
-      u.onstart = ()=> onStart && onStart();
-      u.onend   = ()=> onEnd && onEnd();
-      u.onerror = ()=> onEnd && onEnd();
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
-    }
-    window.speechSynthesis.onvoiceschanged = ()=>{ chosenVoice=null; ensureVoiceSelected(); };
-
-    /* ====== TABLA / LISTA VERTICAL ====== */
-    const escapeHtml = (s)=> String(s ?? "")
-      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-
-    function pickDelimiter(sampleLines){
-      const cands=[",",";","\t","|"]; let best=",",score=-1;
-      for(const d of cands){
-        let sc=0; for(const l of sampleLines){ const p=l.split(d); if(p.length>1) sc+=p.length; }
-        if(sc>score){ score=sc; best=d; }
-      }
-      return best;
+    function looksStructuredText(s){
+      if (!s) return false;
+      const lines = s.split(/\r?\n/);
+      const hasMarkdownTable = lines.filter(l => l.includes("|")).length >= 2;
+      const hasNumberedList  = /^\s*\d+\./m.test(s);
+      const hasCSVish        = lines.some(l => l.split(",").length >= 3);
+      return hasMarkdownTable || hasNumberedList || hasCSVish;
     }
 
-    function parseMarkdownTable(text){
-      const lines=text.split(/\r?\n/).map(l=>l.trim());
-      const md=lines.filter(l=>/^\|.*\|$/.test(l));
-      if(md.length<2) return null;
-      const rows=md.map(l=>l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
-      const sepIdx=rows.findIndex(r=>r.every(c=>/^:?-{3,}:?$/.test(c)));
-      if(sepIdx>=0) rows.splice(sepIdx,1);
-      return rows.length>=2?rows:null;
-    }
-
-    function parseJsonTable(text){
+    // ===== TTS (voz femenina ES-MX cuando esté disponible) =====
+    function speak(text){
       try{
-        const obj=JSON.parse(text);
-        if(Array.isArray(obj) && obj.length && typeof obj[0]==="object"){
-          const headers=Array.from(obj.reduce((s,row)=>{Object.keys(row).forEach(k=>s.add(k)); return s;},new Set()));
-          return [headers, ...obj.map(o=>headers.map(h=>o[h]??""))];
-        }
-      }catch{}
-      return null;
+        if (!window.speechSynthesis) return;
+        const u = new SpeechSynthesisUtterance(text);
+        const mx = speechSynthesis.getVoices().find(v => /es(-|_)mx/i.test(v.lang));
+        u.lang = mx?.lang || "es-MX";
+        if (mx) u.voice = mx;
+        speechSynthesis.cancel(); // corta lectura previa
+        speechSynthesis.speak(u);
+        document.getElementById("audioState").textContent = "Leyendo respuesta…";
+        u.onend = () => document.getElementById("audioState").textContent = "TTS listo.";
+      }catch(e){}
     }
 
-    function extractCsvBlock(text){
-      const m=text.match(/```(?:csv)?\s*([\s\S]*?)```/i);
-      return m?m[1].trim():null;
+    // ===== Helpers de datos/tablas =====
+    function orderKeysPreferName(obj){
+      const keys = Object.keys(obj);
+      const preferred = ["nombre","estudiante","alumno","NOMBRE","ESTUDIANTE","ALUMNO"];
+      const first = keys.find(k => preferred.includes(k));
+      const others = keys.filter(k => k !== first);
+      return first ? [first, ...others] : keys;
     }
-
-    function parseDelimited(text){
-      const lines=text.split(/\r?\n/).filter(l=>l.trim().length);
-      if(lines.length<2) return null;
-      const d=pickDelimiter(lines.slice(0,10));
-      const rows=lines.map(l=>l.split(d).map(c=>c.trim()));
-      const maxCols=Math.max(...rows.map(r=>r.length));
-      const normalized=rows.map(r=>{const c=r.slice(0,maxCols); while(c.length<maxCols)c.push(""); return c;});
-      if(maxCols<1 || normalized.length<1) return null;
-      return normalized;
-    }
-
-    // NUEVO: para "listas en una sola línea" con | o ,
-    function parseInlineList(text){
-      // Tomamos la línea más larga que tenga varios separadores
-      const lines = text.split(/\r?\n/).map(l=>l.trim());
-      let bestLine = ""; let bestCount = 0;
-      for (const l of lines){
-        const count = (l.match(/\|/g)||[]).length + (l.match(/,/g)||[]).length;
-        if (count > bestCount){ bestCount = count; bestLine = l; }
+    function normalizeRow(row){
+      const out = {};
+      for (const k of Object.keys(row||{})) {
+        const nk = String(k).trim();
+        const v = row[k];
+        out[nk] = (v===undefined || v===null) ? "" : (typeof v==="string" ? v.trim() : v);
       }
-      if (bestCount < 3) return null; // no parece lista
-
-      // split por | o ,
-      let items = bestLine.split(/[|,]/).map(s=>s.trim()).filter(Boolean);
-
-      // Limpieza: quitamos palabras/ruido comunes
-      const ban = [
-        /^-{2,}$/, /^={2,}$/, /^NOMBRE$/i, /^NOMBRES$/i, /^ESTUDIANTE/i,
-        /^A continuación/i, /^Si necesitas/i, /^curso/i, /^DECIMO/i, /^DÉCIMO/i
-      ];
-      items = items.filter(x => !ban.some(rx => rx.test(x)));
-
-      // sacar duplicados simples y vacíos
-      const seen=new Set(); items=items.filter(x=>{const k=x.toLowerCase(); if(seen.has(k)) return false; seen.add(k); return x.length>0;});
-      if (items.length < 2) return null;
-
-      // Transformamos en dos columnas: ["#", "Item"]
-      return [["#", "Item"], ...items.map(it => [it])]; // numeraremos al renderizar
+      return out;
     }
-
-    function renderTable(rows){
-      if(!rows || !rows.length) return "";
-
-      // Si viene "solo una columna", igual enumeramos verticalmente
-      let [head, ...body] = rows;
-      if (head.length === 1) head = ["#", head[0]]; else head = ["#", ...head];
-
-      let html = '<table class="data"><thead><tr>';
-      html += `<th class="idx">#</th>`;
-      for (let i=1; i<head.length; i++){
-        html += `<th>${escapeHtml(head[i])}</th>`;
+    function getLikelyScoreKey(sample){
+      if(!sample) return null;
+      const prefs = ["Calificación","CALIFICACION","Calificacion","Nota","Puntaje","Score","Total","Promedio"];
+      const keys = Object.keys(sample);
+      for (const p of prefs){ if (keys.includes(p)) return p; }
+      return keys.find(k => !isNaN(parseFloat(sample[k])));
+    }
+    function sortByMetricDesc(rows, metricCandidate){
+      let metric = metricCandidate;
+      if (!metric) {
+        const sample = rows.find(r => r && typeof r === "object");
+        if (sample){ metric = Object.keys(sample).find(k => !isNaN(parseFloat(sample[k]))); }
       }
-      html += '</tr></thead><tbody>';
-
-      body.forEach((r,idx)=>{
-        html += '<tr>';
-        html += `<td class="idx">${idx+1}</td>`;
-        // si el body traía una sola celda (lista), es vertical
-        if (r.length === 1){
-          html += `<td>${escapeHtml(r[0])}</td>`;
-        } else {
-          for (let i=0;i<r.length;i++){
-            html += `<td>${escapeHtml(r[i])}</td>`;
-          }
-        }
-        html += '</tr>';
+      if (!metric) return rows;
+      return [...rows].sort((a,b) => (parseFloat(b[metric])||-Infinity) - (parseFloat(a[metric])||-Infinity));
+    }
+    function drawVerticalNumberedList(rows, mountId = "respuesta"){
+      const mount = document.getElementById(mountId);
+      if(!mount) return;
+      mount.innerHTML = "";
+      const ol = document.createElement("ol");
+      ol.className = "vertical-list";
+      rows.forEach((row) => {
+        const li = document.createElement("li");
+        const keys = orderKeysPreferName(row);
+        li.innerHTML = `
+          <div class="vcard">
+            ${keys.map(k => `
+              <div class="k">${k}</div>
+              <div class="v">${row[k] ?? ""}</div>
+            `).join("")}
+          </div>`;
+        ol.appendChild(li);
       });
-
-      html += '</tbody></table>';
-      return html;
+      mount.appendChild(ol);
     }
 
-    function maybeRenderTableFromText(text){
-      tablaWrap.hidden = true;
-      tablaWrap.innerHTML = "";
-
-      let rows = null;
-
-      // 1) JSON array → tabla
-      rows = parseJsonTable(text);
-
-      // 2) bloque ```csv```
-      if (!rows){
-        const csvBlock = extractCsvBlock(text);
-        if (csvBlock) rows = parseDelimited(csvBlock);
-      }
-
-      // 3) tabla Markdown
-      if (!rows) rows = parseMarkdownTable(text);
-
-      // 4) heurística general delimitada (por si el modelo tiró varias líneas separadas)
-      if (!rows) rows = parseDelimited(text);
-
-      // 5) NUEVO: lista en una sola línea separada por | o ,
-      if (!rows) rows = parseInlineList(text);
-
-      if (rows && rows.length){
-        tablaWrap.innerHTML = renderTable(rows);
-        tablaWrap.hidden = false;
-      }
-    }
-
-    /* ====== ENVIAR PREGUNTA ====== */
+    // ===== Lógica principal =====
     async function enviarPregunta(){
-      const pregunta = document.getElementById("pregunta").value.trim();
-      if (!pregunta) return alert("Escribe una pregunta.");
-      const out = document.getElementById("respuesta");
-      out.textContent = "Consultando...";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+      const input = document.getElementById("pregunta");
+      const mountId = "respuesta";
+      const pregunta = (input?.value || "").trim();
+      if(!pregunta) return;
 
-      let data=null, lastErr=null;
-      for (const base of ENDPOINTS){
-        try{
-          const url = `${base}?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}`;
-          const resp = await fetch(url);
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          data = await resp.json(); break;
-        }catch(e){ lastErr=e; }
+      const url = `/api/ask?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
+
+      try {
+        const resp = await fetch(url);
+        let data = null, text = "";
+        try { data = await resp.json(); } catch { /* no-json */ }
+        if (!data) text = await resp.text();
+
+        // 1) JSON con filas
+        const rows = data?.rows || data?.data || data?.items;
+        if (Array.isArray(rows) && rows.length){
+          setVisible(TEXT_IDS, false);
+          const clean = rows.map(normalizeRow);
+          const metric = getLikelyScoreKey(clean[0]);
+          const ranked = sortByMetricDesc(clean, metric); // ranking desc si hay métrica
+          drawVerticalNumberedList(ranked, mountId);
+          speak?.(`Mostrando ${ranked.length} registros en lista vertical.`);
+          return; // importante: no mostramos texto
+        }
+
+        // 2) Texto con pinta de tabla/lista (markdown/csv/lista numerada) → ocultar texto inicial
+        if (looksStructuredText(text || data?.answer || data?.text)){
+          setVisible(TEXT_IDS, false);
+          const mount = document.getElementById(mountId); if (mount) mount.innerHTML = "";
+          speak?.("Mostrando resultados estructurados.");
+          return;
+        }
+
+        // 3) Solo texto plano
+        const mount = document.getElementById(mountId); if (mount) mount.innerHTML = "";
+        setVisible(TEXT_IDS, true);
+        const textEl = document.getElementById("texto");
+        const show = data?.answer ?? data?.text ?? text ?? "Sin resultados.";
+        if (textEl) textEl.textContent = show;
+        speak?.(show);
+
+      } catch (err){
+        console.error(err);
+        setVisible(TEXT_IDS, true);
+        const textEl = document.getElementById("texto");
+        if (textEl) textEl.textContent = "Ocurrió un error consultando el backend.";
       }
-      if (!data){
-        out.textContent = "No se pudo contactar al servidor.";
-        console.error(lastErr); return;
-      }
-
-      const texto = data.text || data.respuesta || "No se encontró respuesta.";
-      out.textContent = texto;
-
-      // Render vertical enumerado si hay datos tabulares o lista
-      maybeRenderTableFromText(texto);
-
-      // Voz + video
-      speak(texto, ()=>video?.play(), ()=>video?.pause());
     }
 
-    document.getElementById("pregunta").addEventListener("keydown",(e)=>{
+    async function verCorrelacion() {
+      const url = `/api/stats?file=${encodeURIComponent(DEFAULT_FILE)}&x=AGRESIVIDAD&y=EMPATIA&group_by=Paralelo`;
+      try {
+        const data = await (await fetch(url)).json();
+        const r = (data.overall?.r !== null && data.overall?.r !== undefined) ? data.overall.r.toFixed(3) : "N/D";
+        const t = `n=${data.overall.x.n} | r=${r}`;
+        setVisible(TEXT_IDS, true);
+        const el = document.getElementById("texto");
+        if (el) el.textContent = `Correlación global AGRESIVIDAD↔EMPATIA: ${t}`;
+        speak?.(`Correlación global ${r}.`);
+      } catch(e){
+        const el = document.getElementById("texto");
+        if (el) el.textContent = "No se pudo calcular la correlación.";
+      }
+    }
+
+    // Enter para enviar
+    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
       if (e.key === "Enter") enviarPregunta();
     });
-
-    /* ====== MICRÓFONO ====== */
-    function startListening(){
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
-      const rec = new SR();
-      rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
-      rec.onresult = e => {
-        const t = e.results[0][0].transcript;
-        document.getElementById("pregunta").value = t;
-        enviarPregunta();
-      };
-      rec.onerror = e => {
-        alert("Error de micrófono: " + e.error + "\nVe al candado del navegador y permite el micrófono para este sitio.");
-      };
-      rec.start();
-    }
   </script>
 </body>
 </html>
