@@ -135,4 +135,92 @@ function userPromptJSON(query, sourcesText) {
           "```",
         ].join("\n");
       } else {
-        return [`=== FUENTE ${i + 1}: ${s.label} (PDF TEXTO) ===`, s]()
+        return [`=== FUENTE ${i + 1}: ${s.label} (PDF TEXTO) ===`, s.text].join(
+          "\n"
+        );
+      }
+    })
+    .join("\n\n");
+
+  return [
+    `PREGUNTA: ${query}`,
+    "Analiza TODAS las fuentes:",
+    blocks,
+  ].join("\n");
+}
+
+async function callOpenAI(messages, forceJson = false) {
+  if (!API_KEY) {
+    return { ok: false, text: "Falta configurar OPENAI_API_KEY en Vercel." };
+  }
+  const body = { model: MODEL, messages, temperature: 0.35 };
+  if (forceJson) body.response_format = { type: "json_object" };
+
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+    body: JSON.stringify(body),
+  });
+
+  let data = null;
+  try { data = await r.json(); } catch {}
+  const text =
+    data?.choices?.[0]?.message?.content?.trim() ||
+    `No pude consultar OpenAI (HTTP ${r.status}).`;
+  return { ok: true, text };
+}
+
+export default async function handler(req, res) {
+  try {
+    const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
+    const format = (req.query.format || "").toString().toLowerCase(); // "json" | ""
+
+    // Soporta varios ?src=...
+    let srcs = req.query.src;
+    if (!srcs) {
+      // backward-compat: ?file=decimo.csv
+      const legacy = (req.query.file || req.query.f || "decimo.csv").toString();
+      srcs = [`datos/${legacy}`];
+    }
+    if (!Array.isArray(srcs)) srcs = [srcs];
+
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    const host = req.headers.host;
+
+    // Descarga y normaliza texto de cada fuente
+    const sourcesText = [];
+    for (const raw of srcs) {
+      const p = safePathParam(raw);
+      const label = p;
+      const publicUrl = `${proto}://${host}/${encodeURI(p)}`;
+      const t = await getTextFromPublicUrl(publicUrl);
+      const type = extOf(p) === "pdf" ? "pdf" : "csv";
+      sourcesText.push({ label, type, text: t });
+    }
+
+    let messages, forceJson = false;
+    if (format === "json") {
+      messages = [
+        { role: "system", content: systemPromptJSON() },
+        { role: "user", content: userPromptJSON(q, sourcesText) },
+      ];
+      forceJson = true;
+    } else {
+      messages = [
+        { role: "system", content: systemPromptText() },
+        { role: "user", content: userPromptText(q, sourcesText) },
+      ];
+    }
+
+    const ai = await callOpenAI(messages, forceJson);
+
+    return res.status(200).json({
+      text: ai.text,
+      fuentes: srcs,
+      formato: format || "texto",
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ text: "Error interno.", details: String(e) });
+  }
+}
