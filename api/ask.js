@@ -79,82 +79,56 @@ function parseCSVToRows(csvText){
   return rows.map(r => { const a=r.slice(0,max); while(a.length<max)a.push(""); return a; });
 }
 
-/* ========== Sinónimos + Fuzzy resolver (evita mapear cientos de columnas) ========== */
-// Puedes mover este objeto a /public/synonyms.json en el futuro y cargarlo dinámicamente.
+/* ========== Sinónimos + Fuzzy resolver ========== */
 let SYNONYMS = {
-  /* Identidad */
   "nombre": ["nombre","nombres","apellidos","estudiante","alumno","name","nombre del estudiante","estudiantes"],
   "edad": ["edad"],
   "curso": ["curso","grado"],
   "paralelo": ["paralelo","seccion","sección"],
 
-  /* Intraper/interper/vida/IE (según tus encabezados) */
   "autoestima": ["autoestima"],
-
-  "manejo de la tension": [
-    "manejo de la tension","manejo de la tensión","tension","tensión","manejo tension"
-  ],
-  "bienestar fisico": [
-    "bienestar fisico","bienestar físico","bienestar"
-  ],
+  "manejo de la tension": ["manejo de la tension","manejo de la tensión","tension","tensión","manejo tension"],
+  "bienestar fisico": ["bienestar fisico","bienestar físico","bienestar"],
 
   "promedio habilidades intrapersonales": [
     "promedio de habilidades intrapersonales",
     "promedio habilidades intrapersonales",
     "intrapersonales promedio"
   ],
-
   "asertividad": ["asertividad","asertivid","asertiv"],
-
-  "conciencia de los demas": [
-    "conciencia de los demas","conciencia de los demás",
-    "conciencia social","conciencia"
-  ],
-
+  "conciencia de los demas": ["conciencia de los demas","conciencia de los demás","conciencia social","conciencia"],
   "empatia": ["empatia","empatía","empatia emocional","empatia social","empatia total"],
-
   "promedio habilidades interpersonales": [
     "promedio de habilidades interpersonales",
-    "promedio  de  habilidades interpersonales", // doble espacio
+    "promedio  de  habilidades interpersonales",
     "promedio habilidades interpersonales",
     "interpersonales promedio"
   ],
-
   "motivacion": ["motivacion","motivación"],
-
   "compromiso": ["compromiso","compromiso academico","compromiso académico","engagement"],
-
   "administracion del tiempo": [
     "administracion del tiempo","administración del tiempo",
     "gestion del tiempo","gestión del tiempo",
     "manejo del tiempo","planificacion del tiempo","planificación del tiempo",
     "time management"
   ],
-
   "toma de decisiones": ["toma de decisiones","toma decisiones","decision making"],
-
   "liderazgo": ["liderazgo","lider"],
-
   "promedio habilidades para la vida": [
     "promedio de habilidades para la vida",
     "promedio habilidades para la vida",
     "life skills promedio","habilidades para la vida promedio"
   ],
-
   "promedio inteligencia emocional": [
     "promedio de inteligencia emocional",
     "promedio inteligencia emocional",
-    "promedio de iinteligencia emocional", /* typo con doble i */
+    "promedio de iinteligencia emocional",
     "ie promedio","inteligencia emocional promedio"
   ],
 
-  /* Conductuales */
   "agresion": ["agresion","agresión","agresividad"],
   "timidez": ["timidez"],
-  "propension al cambio": [
-    "propension al cambio","propensión al cambio",
-    "apertura al cambio","apertura al cambio (propension)"
-  ]
+  "propension al cambio": ["propension al cambio","propensión al cambio","apertura al cambio","apertura al cambio (propension)"]
 };
 
 function lev(a,b){
@@ -170,15 +144,12 @@ function lev(a,b){
   }
   return m[a.length][b.length];
 }
-
 function resolveColumn(queryTerm, headers){
   const q = norm(queryTerm);
   const H = headers.map(h => ({raw:h, n:norm(h)}));
 
-  // 1) match directo por inclusión
   for (const {raw,n} of H) if (n.includes(q) || q.includes(n)) return { idx: headers.indexOf(raw), label: raw };
 
-  // 2) sinónimos → candidatos
   let cand = new Set();
   for (const [canon, aliases] of Object.entries(SYNONYMS)){
     if (canon===q || aliases.some(a => q.includes(norm(a)) || norm(a).includes(q))) {
@@ -186,7 +157,6 @@ function resolveColumn(queryTerm, headers){
       cand.add(canon);
     }
   }
-  // 3) mejor por Levenshtein entre candidatos
   if (cand.size){
     let best = {score: Infinity, idx:-1, label:null};
     for (const {raw,n} of H){
@@ -197,7 +167,6 @@ function resolveColumn(queryTerm, headers){
     }
     if (best.idx !== -1) return best;
   }
-  // 4) último recurso: el header más parecido
   let best = {score: Infinity, idx:-1, label:null};
   for (const {raw,n} of H){
     const d = lev(q, n);
@@ -205,7 +174,6 @@ function resolveColumn(queryTerm, headers){
   }
   return best.idx !== -1 ? best : { idx:-1, label:null };
 }
-
 function composeName(headers, row){
   const hNorm = headers.map(norm);
   const idxNombre = hNorm.findIndex(h => ["nombre","name","estudiante","alumno","nombre del estudiante"].includes(h));
@@ -225,7 +193,7 @@ function composeName(headers, row){
   return "";
 }
 
-/* ========== Estadística / Plan executor (determinista) ========== */
+/* ========== Estadística / Plan ========== */
 function percentile(values, p){
   const v = values.map(Number).filter(x => Number.isFinite(x)).sort((a,b)=>a-b);
   if (!v.length) return null;
@@ -261,7 +229,6 @@ function executePlan(headers, rows, plan){
 
   let data = rows.slice(1).map(r => r.slice());
 
-  // Filtros numéricos
   for (const f of (plan.filter||[])){
     const idx = getIdx(f.col); if (idx<0) continue;
     const op = (f.op||"=").trim(); const val = +f.value;
@@ -278,7 +245,6 @@ function executePlan(headers, rows, plan){
     });
   }
 
-  // Compute
   for (const c of (plan.compute||[])){
     const idx = getIdx(c.col); if (idx<0) continue;
     const vals = data.map(r => +String(r[idx]).replace(/[^\d.-]/g,"")).filter(Number.isFinite);
@@ -296,7 +262,6 @@ function executePlan(headers, rows, plan){
     }
   }
 
-  // Orden
   for (const s of (plan.sort||[]).slice().reverse()){
     const idx = getIdx(s.col); if (idx<0) continue;
     const dir = (s.dir||"desc").toLowerCase()==="asc" ? 1 : -1;
@@ -309,10 +274,8 @@ function executePlan(headers, rows, plan){
     });
   }
 
-  // Limit
   if (Number.isFinite(+plan.limit) && +plan.limit>0) data = data.slice(0, +plan.limit);
 
-  // Select
   if (Array.isArray(plan.select) && plan.select.length){
     const idxs = plan.select.map(getIdx).filter(i=>i>=0);
     const head = idxs.map(i=>headers[i]);
@@ -323,7 +286,7 @@ function executePlan(headers, rows, plan){
   return [headers, ...data];
 }
 
-/* ========== Parser de intención → Plan ========== */
+/* ========== Parser → Plan ========== */
 function parseNumeric(query){
   const q = norm(query);
   const between = q.match(/entre\s+(\d+)\s+y\s+(\d+)/);
@@ -376,7 +339,7 @@ function detectMetric(query){
 function detectPercentileOps(query){
   const q = norm(query);
   const ops = [];
-  const rx = /\bp\s*(\d{2})\b/g; // P90, P95 …
+  const rx = /\bp\s*(\d{2})\b/g;
   let m;
   while ((m = rx.exec(q))){
     const p = +m[1];
@@ -407,7 +370,7 @@ function buildPlanFromQuery(query, headers){
   let metric = detectMetric(query);
   if (!metric){
     const term = extractMetricTermFree(query);
-    if (term) metric = term; // resolveColumn lo mapeará por fuzzy
+    if (term) metric = term;
   }
 
   const cmp = parseNumeric(query);
@@ -420,7 +383,6 @@ function buildPlanFromQuery(query, headers){
     return null;
   }
 
-  // select por defecto
   let select = selectWords.length ? selectWords.slice() : ["nombre","curso","paralelo"];
   if (metric && !select.includes(metric)) select.push(metric);
 
@@ -497,7 +459,6 @@ export default async function handler(req, res){
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host  = req.headers.host;
 
-    // Fuentes
     let srcs = body.src || req.query.src;
     if (srcs && !Array.isArray(srcs)) srcs = [srcs];
     const sources = [];
@@ -519,7 +480,6 @@ export default async function handler(req, res){
       sources.push({ type:"csv", label:file, text: csvText });
     }
 
-    // 1) CSV determinista con PLAN
     const firstCsv = sources.find(s => s.type==="csv");
     if (firstCsv){
       const rows = parseCSVToRows(firstCsv.text);
@@ -531,28 +491,18 @@ export default async function handler(req, res){
           if (!table || table.length<=1){
             return res.status(200).json({ text:"[]", formato:"json", aviso:"" });
           }
-          // Asegurar columna "Nombre" si existe pero no fue seleccionada
           const head = table[0].map(String);
           const nameIdx = head.findIndex(h => norm(h)==="nombre");
           if (nameIdx === -1){
             const h2 = ["Nombre", ...head];
             const bodyRows = table.slice(1).map(r => [composeName(headers, r), ...r]);
-            return res.status(200).json({
-              text: JSON.stringify([h2, ...bodyRows], null, 2),
-              formato: "json",
-              aviso: ""
-            });
+            return res.status(200).json({ text: JSON.stringify([h2, ...bodyRows], null, 2), formato: "json", aviso: "" });
           }
-          return res.status(200).json({
-            text: JSON.stringify(table, null, 2),
-            formato: "json",
-            aviso: ""
-          });
+          return res.status(200).json({ text: JSON.stringify(table, null, 2), formato: "json", aviso: "" });
         }
       }
     }
 
-    // 2) Fallback GPT (con historia y PDFs)
     const history = Array.isArray(body.history) ? body.history : [];
     const messages = [
       { role: "system", content: systemPromptText() },
@@ -560,11 +510,7 @@ export default async function handler(req, res){
     ];
     const ai = await callOpenAI(messages);
 
-    return res.status(200).json({
-      text: ai.text,
-      formato: "texto",
-      aviso: ""
-    });
+    return res.status(200).json({ text: ai.text, formato: "texto", aviso: "" });
   }catch(e){
     console.error(e);
     return res.status(500).json({ text:"Error interno.", details:String(e) });
