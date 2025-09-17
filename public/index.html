@@ -1,247 +1,256 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Demo CSV + Voz</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Consulta Educativa</title>
+
   <style>
-    html,body{margin:0;background:#fff;color:#111;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
-    /* 25% - 50% - 25% */
-    .grid{display:grid;grid-template-columns:1fr 2fr 1fr;gap:16px;padding:16px}
-    @media(max-width:1024px){.grid{grid-template-columns:1fr}}
-    .col{display:flex;flex-direction:column;gap:16px}
-    .side-img{width:100%;height:auto;object-fit:contain}
-    .video-wrap{width:100%;border-radius:14px;overflow:hidden;background:#000}
-    video{width:100%;height:auto;display:block;border:none;outline:none}
+    :root{
+      /* Ajustes rápidos */
+      --header-height: 240px;  /* altura del encabezado */
+      --video-shift: 14px;     /* cuánto “baja” el video (0–24px) */
+      --accent:#0078d7;
+    }
 
-    textarea{width:100%;min-height:96px;resize:vertical;border:1px solid #d1d5db;border-radius:10px;padding:10px 12px;font-size:1rem}
-    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    button{padding:10px 14px;border-radius:10px;font-size:1rem;cursor:pointer}
-    .primary{background:#111;color:#fff;border:1px solid #111}
-    .secondary{background:#fff;color:#111;border:1px solid #111}
-    #texto{white-space:pre-wrap;margin-top:6px}
-    .muted{color:#6b7280}
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      background:#fff;
+      font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
+      color:#111;
+    }
 
-    table{border-collapse:collapse;width:100%}
-    th,td{padding:8px 10px;border-bottom:1px solid #eee;text-align:left}
-    th{font-weight:600}
-    .num{width:48px;text-align:right}
+    /* ====== Encabezado: 25% (img) / 50% (video) / 25% (img) ====== */
+    .header-rail{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      width:100%;
+      height:var(--header-height);
+      background:#fff;
+      overflow:hidden; /* evita que algo se salga del header */
+    }
+    .header-rail .col{
+      display:flex; justify-content:center; align-items:center;
+      height:100%;
+      overflow:hidden; /* recorta desbordes de imágenes */
+      padding:0 8px;   /* aire lateral */
+    }
+    .header-rail .col.left,
+    .header-rail .col.right{ flex:0 0 25%; }
+    .header-rail .col.center{ flex:0 0 50%; position:relative; }
+
+    /* Logos limitados al espacio de su columna */
+    .header-rail .col.left img,
+    .header-rail .col.right img{
+      max-height:100%;
+      max-width:100%;
+      height:auto; width:auto;
+      object-fit:contain; display:block;
+    }
+
+    /* Video centrado y con desplazamiento hacia abajo */
+    .header-rail .col.center video{
+      max-height:100%; max-width:100%;
+      height:100%; width:auto;
+      object-fit:contain; display:block;
+      transform: translateY(var(--video-shift));
+    }
+
+    /* ====== Interacción ====== */
+    .interaction{ padding:24px 16px; text-align:center; }
+    .bar{
+      display:flex; gap:8px; justify-content:center; align-items:center;
+      max-width:1100px; margin:0 auto;
+    }
+    .bar input[type="text"]{
+      flex:1 1 800px;
+      padding:12px 14px;
+      font-size:16px;
+      border:1px solid #d0d0d0;
+      border-radius:8px;
+      outline:none;
+    }
+    .btn{
+      padding:12px 16px; border:0; border-radius:8px;
+      background:var(--accent); color:#fff; font-weight:600; cursor:pointer;
+    }
+    .btn:hover{ filter:brightness(0.95); }
+    #respuesta{
+      margin:20px auto 0;
+      width:min(90%,1100px);
+      min-height:64px;
+      padding:14px;
+      background:#f7f7f8;
+      border:1px solid #e5e5e7;
+      border-radius:10px;
+      text-align:left; line-height:1.45;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px){
+      :root{ --header-height: 220px; }
+    }
+    @media (max-width: 640px){
+      :root{ --header-height: 200px; }
+      .header-rail .col.center video{ transform: translateY(8px); }
+    }
   </style>
 </head>
 <body>
-  <div class="grid">
-    <!-- 25% izquierda: UNA sola imagen grande -->
-    <div class="col">
-      <img src="/left.png" alt="Imagen izquierda" class="side-img" onerror="this.style.display='none'">
+
+  <!-- ====== ENCABEZADO (25 / 50 / 25) ====== -->
+  <div class="header-rail">
+    <div class="col left">
+      <!-- Como este archivo está en /public, las rutas son /left.png y /right.png -->
+      <img src="/left.png" alt="Imagen izquierda">
     </div>
 
-    <!-- 50% centro: SOLO el video arriba y luego la UI -->
-    <div class="col">
-      <div class="video-wrap">
-        <video id="videoMain" playsinline muted preload="metadata" poster="/right.png"></video>
-      </div>
-
-      <textarea id="pregunta" placeholder="Escribe tu consulta (3 líneas)…&#10;• Puedes dictar con el micrófono.&#10;• Pide listas/rankings/tablas y cálculos."></textarea>
-
-      <div class="row">
-        <button class="primary" id="btnPreguntar" onclick="enviarPregunta()">Preguntar</button>
-        <button class="secondary" id="btnDictar" onclick="toggleDictado()">🎤 Dictar</button>
-        <button class="secondary" id="btnSilencio" onclick="toggleVoz()">🔊 Silenciar voz</button>
-        <button class="secondary" onclick="detenerVoz()">⏹️ Detener voz</button>
-        <button class="secondary" onclick="limpiar()">🧹 Limpiar</button>
-        <button class="secondary" onclick="exportarPDF()">📄 Exportar PDF</button>
-        <button class="secondary" onclick="exportarCSV()">📊 Exportar Excel</button>
-      </div>
-
-      <div id="texto" class="muted">Escribe o dicta una consulta y te mostraré los resultados.</div>
-      <div id="respuesta"></div>
+    <div class="col center">
+      <video id="video" muted playsinline preload="metadata">
+        <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
+        Tu navegador no soporta video.
+      </video>
     </div>
 
-    <!-- 25% derecha: UNA sola imagen grande -->
-    <div class="col">
-      <img src="/right.png" alt="Imagen derecha" class="side-img" onerror="this.style.display='none'">
+    <div class="col right">
+      <img src="/right.png" alt="Imagen derecha">
     </div>
   </div>
 
+  <!-- ====== INTERACCIÓN ====== -->
+  <div class="interaction">
+    <div class="bar">
+      <input id="pregunta" type="text" placeholder="Haz tu pregunta aquí..." />
+      <button class="btn" onclick="enviarPregunta()">Enviar</button>
+      <button class="btn" onclick="startListening()">🎤</button>
+    </div>
+    <div id="respuesta">Aquí aparecerá la respuesta...</div>
+  </div>
+
   <script>
-    // ====== CONFIG ======
+    // Endpoints (usa /api/ask; si no existe, intenta /api/preguntar)
+    const ENDPOINTS = ["/api/ask", "/api/preguntar"];
+
+    // CSV por defecto a consultar (dentro de /public/datos/)
     const DEFAULT_FILE = "decimo.csv";
-    const API = q => `/api/ask?q=${encodeURIComponent(q)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
-    const VIDEO_SRC = "https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4";
-    const LONG_THRESHOLD = 800; // si la respuesta total supera esto, el video sigue reproduciéndose
 
-    // cargar video fuente
-    (function(){
-      const v=document.getElementById("videoMain");
-      const s=document.createElement("source");
-      s.src = VIDEO_SRC; s.type="video/mp4";
-      v.appendChild(s);
-      v.load();
-    })();
+    const video = document.getElementById("video");
 
-    // ====== VIDEO ======
-    const vid = () => document.getElementById("videoMain");
-    function playVideo(){ const v=vid(); if(!v) return; v.play().catch(()=>{}); }
-    function pauseVideo(){ const v=vid(); if(!v) return; if(!v.paused) v.pause(); }
+    // ---------- Voz femenina "ejecutiva" en español (México) ----------
+    let chosenVoice = null;
 
-    // ====== TTS (voz femenina es-MX si está) ======
-    let VOICE_ON = true, VOICES=[], VOZ=null, DICTANDO=false, recog=null;
+    // Preferencias por nombre (ajusta si ves otras en tu navegador)
+    const EXEC_PREF = ["sabina", "dalia", "beatriz", "abril", "camila", "lucia"];
+    const FEMALE_HINTS = [
+      "female","mujer","femenina",
+      "sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"
+    ];
+    const MALE_HINTS = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
 
-    function cargarVoces(){
-      return new Promise(resolve=>{
-        const s=window.speechSynthesis; if(!s){resolve([]);return;}
-        let vs=s.getVoices(); if(vs&&vs.length){VOICES=vs;resolve(vs);return;}
-        const once=()=>{vs=s.getVoices(); VOICES=vs; resolve(vs); s.removeEventListener('voiceschanged',once);};
-        s.addEventListener('voiceschanged',once);
-        setTimeout(()=>{vs=s.getVoices(); VOICES=vs; resolve(vs);},1200);
-      });
+    function scoreVoice(v){
+      const name = (v.name||"").toLowerCase();
+      const lang = (v.lang||"").toLowerCase();
+      let s = 0;
+      if (lang.startsWith("es-mx")) s += 100;
+      else if (lang.startsWith("es-419")) s += 60;
+      else if (lang.startsWith("es")) s += 30;
+      if (EXEC_PREF.some(t => name.includes(t))) s += 40;    // preferidas
+      if (FEMALE_HINTS.some(t => name.includes(t))) s += 20; // femenino
+      if (/(neural|natural|online)/i.test(name)) s += 25;     // calidad alta
+      if (MALE_HINTS.some(t => name.includes(t))) s -= 80;    // evita masculino
+      return s;
     }
-    function elegirVoz(voices){
-      const prefer=["Sabina","Paulina","Lupe","Luciana","Conchita","Helena","Google español"];
-      let v=voices.find(v=>/es(-|_)mx/i.test(v.lang)&&prefer.some(n=>v.name.toLowerCase().includes(n.toLowerCase())));
-      if(v) return v;
-      v=voices.find(v=>/es(-|_)mx/i.test(v.lang)); if(v) return v;
-      v=voices.find(v=>/^es/i.test(v.lang)&&prefer.some(n=>v.name.toLowerCase().includes(n.toLowerCase())));
-      return v || voices.find(v=>/^es/i.test(v.lang)) || voices[0] || null;
+
+    function pickExecutiveSpanishFemale(){
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      if (!voices.length) return null;
+
+      // Forzar por query param: ?voice=sabina
+      const forced = new URLSearchParams(location.search).get("voice");
+      if (forced){
+        const v = voices.find(v => (v.name||"").toLowerCase().includes(forced.toLowerCase()));
+        if (v) return v;
+      }
+
+      return voices.slice().sort((a,b) => scoreVoice(b) - scoreVoice(a))[0] || voices[0];
     }
-    async function speak(text){
-      if(!VOICE_ON || !window.speechSynthesis) return;
-      const voices = VOICES.length? VOICES : await cargarVoces();
-      VOZ = VOZ || elegirVoz(voices);
-      const u = new SpeechSynthesisUtterance(String(text||"").replace(/\*/g,""));
-      if(VOZ){ u.voice=VOZ; u.lang=VOZ.lang; } else { u.lang="es-MX"; }
-      u.onstart = ()=> playVideo();
-      u.onend   = ()=>{
-        const t=document.getElementById("texto"), r=document.getElementById("respuesta");
-        const len=(t?.innerText||"").length + (r?.innerText||"").length;
-        if(len>LONG_THRESHOLD) playVideo(); else pauseVideo();
-      };
+
+    function ensureVoiceSelected(){
+      if (!chosenVoice) chosenVoice = pickExecutiveSpanishFemale();
+    }
+
+    // Tono ejecutivo: más ágil y sobrio
+    function speak(text, onStart, onEnd){
+      if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
+      ensureVoiceSelected();
+      const u = new SpeechSynthesisUtterance(text);
+      if (chosenVoice) u.voice = chosenVoice;
+      u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
+      u.rate = 1.12;  // más dinámico
+      u.pitch = 1.02; // tono sobrio
+      u.volume = 1.0;
+      u.onstart = ()=> onStart && onStart();
+      u.onend   = ()=> onEnd && onEnd();
+      u.onerror = ()=> onEnd && onEnd();
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(u);
     }
-    function toggleVoz(){
-      VOICE_ON=!VOICE_ON;
-      document.getElementById("btnSilencio").textContent = VOICE_ON ? "🔊 Silenciar voz" : "🔈 Activar voz";
-      if(!VOICE_ON) detenerVoz();
-    }
-    function detenerVoz(){ try{ window.speechSynthesis.cancel(); pauseVideo(); }catch(e){} }
 
-    // ====== Dictado (start/stop) ======
-    function toggleDictado(){
-      const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-      if(!SR){ alert("Este navegador no soporta dictado por voz."); return; }
-      if(DICTANDO){ try{recog.stop();}catch{} return; }
-      recog=new SR(); recog.lang="es-MX"; recog.interimResults=false; recog.maxAlternatives=1;
-      recog.onresult=(ev)=>{ const txt=ev.results[0][0].transcript||""; const ta=document.getElementById("pregunta"); ta.value=(ta.value?ta.value+" ":"")+txt; enviarPregunta(); };
-      recog.onstart = ()=>{ DICTANDO=true; document.getElementById("btnDictar").textContent="⏹️ Detener dictado"; };
-      recog.onend   = ()=>{ DICTANDO=false; document.getElementById("btnDictar").textContent="🎤 Dictar"; };
-      recog.onerror = ()=>{ DICTANDO=false; document.getElementById("btnDictar").textContent="🎤 Dictar"; };
-      recog.start();
-    }
+    window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
 
-    // ====== UI helpers ======
-    function ocultarTexto(){ const t=document.getElementById("texto"); if(t){ t.style.display="none"; t.textContent=""; } }
-    function mostrarTexto(msg){ const t=document.getElementById("texto"); if(t){ t.style.display=""; t.textContent=msg; } }
-
-    // Tablas/Listas (numerado, sin duplicar texto)
-    function renderTabla(rows, query){
-      ocultarTexto();
-      const cont=document.getElementById("respuesta"); cont.innerHTML="";
-      const headers=Object.keys(rows[0]||{});
-      const normH=h=>String(h).normalize("NFD").replace(/\p{Diacritic}/gu,"").toUpperCase();
-
-      // detectar columnas
-      const nameCol = headers.find(h=>/^(NOMBRE|ESTUDIANTE|ALUMNO)$/i.test(normH(h))) ||
-                      headers.find(h=>/NOMBRE|ESTUDIANTE|ALUMNO/i.test(normH(h))) || headers[0];
-
-      // si backend ya manda # como primera col, respétalo
-      const hasNumHeader = headers.length && /^#$/i.test(headers[0]);
-
-      const table=document.createElement("table");
-      const thead=document.createElement("thead"), trh=document.createElement("tr");
-      const headOrder = hasNumHeader ? headers : ["#", ...headers];
-      headOrder.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
-      thead.appendChild(trh); table.appendChild(thead);
-
-      const tbody=document.createElement("tbody");
-      rows.forEach((r,i)=>{
-        const tr=document.createElement("tr");
-        if(!hasNumHeader){ const tdN=document.createElement("td"); tdN.className="num"; tdN.textContent=String(i+1); tr.appendChild(tdN); }
-        headOrder.filter(h=>h!=="#").forEach(h=>{
-          const td=document.createElement("td"); td.textContent = r[h] ?? (h===nameCol? r[nameCol]??"" : "");
-          tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      cont.appendChild(table);
-    }
-
-    // Exportar
-    function exportarPDF(){
-      const w=window.open("","_blank");
-      const html=`<html><head><title>Exportar PDF</title>
-      <style>body{font-family:Arial;padding:16px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:left}</style>
-      </head><body>${document.getElementById("respuesta").innerHTML}</body></html>`;
-      w.document.write(html); w.document.close(); w.focus(); w.print();
-    }
-    function exportarCSV(){
-      const table=document.querySelector("#respuesta table"); if(!table){ alert("No hay una tabla para exportar."); return; }
-      let csv=""; table.querySelectorAll("tr").forEach(tr=>{
-        const cols=[...tr.children].map(td=>`"${String(td.textContent).replace(/"/g,'""')}"`);
-        csv += cols.join(",")+"\n";
-      });
-      const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a");
-      a.href=URL.createObjectURL(blob); a.download="resultado.csv"; a.click(); URL.revokeObjectURL(a.href);
-    }
-    window.exportarPDF=exportarPDF; window.exportarCSV=exportarCSV; // botones
-
-    function limpiar(){
-      detenerVoz();
-      document.getElementById("pregunta").value="";
-      document.getElementById("respuesta").innerHTML="";
-      mostrarTexto("Listo para una nueva consulta.");
-      pauseVideo();
-    }
-
-    // ====== LÓGICA PRINCIPAL ======
+    // ---------- Enviar pregunta (incluye &file=DEFAULT_FILE) ----------
     async function enviarPregunta(){
-      detenerVoz(); // si estaba hablando
-      const q=(document.getElementById("pregunta").value||"").trim();
-      if(!q) return;
-      document.getElementById("respuesta").innerHTML="";
-      mostrarTexto("Procesando…");
+      const pregunta = document.getElementById("pregunta").value.trim();
+      if (!pregunta) return alert("Escribe una pregunta.");
+      const out = document.getElementById("respuesta");
+      out.textContent = "Consultando...";
 
-      try{
-        const r=await fetch(API(q));
-        let data=null, rawTxt="";
-        try{ data=await r.json(); }catch{ rawTxt=await r.text(); }
-
-        // si hay filas → mostrar tabla numerada
-        if(Array.isArray(data?.rows) && data.rows.length){
-          renderTabla(data.rows, q);
-          speak(data?.speak || `Mostrando ${data.rows.length} resultados.`);
-          return;
-        }
-
-        // no hay filas → mostrar mensaje y hablar
-        const msg = data?.message || rawTxt || "No hay resultados.";
-        mostrarTexto(msg);
-        speak(data?.speak || msg);
-
-      }catch(e){
-        mostrarTexto("Ocurrió un problema al procesar la consulta.");
-        speak("Ocurrió un problema al procesar la consulta.");
+      let data = null, lastErr = null;
+      for (const base of ENDPOINTS){
+        try{
+          const url = `${base}?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}`;
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          data = await resp.json();
+          break;
+        }catch(e){ lastErr = e; }
       }
+      if (!data){
+        out.textContent = "No se pudo contactar al servidor.";
+        console.error(lastErr);
+        return;
+      }
+
+      const texto = data.text || data.respuesta || "No se encontró respuesta.";
+      out.textContent = texto;
+
+      // Reproduce el video durante la voz y pausa al terminar
+      speak(texto, ()=>video?.play(), ()=>video?.pause());
     }
 
-    // Enter = enviar (Shift+Enter = salto)
-    document.getElementById("pregunta").addEventListener("keydown", e=>{
-      if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); enviarPregunta(); }
+    // Enter para enviar
+    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
+      if (e.key === "Enter"){ enviarPregunta(); }
     });
 
-    // Primer gesto: precarga voces y desbloquea video
-    window.addEventListener("click",()=>{ cargarVoces(); const v=vid(); if(v){ v.muted=true; v.play().then(()=>v.pause()).catch(()=>{});} },{once:true});
+    // ---------- Micrófono ----------
+    function startListening(){
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
+      const rec = new SR();
+      rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
+      rec.onresult = e => {
+        const t = e.results[0][0].transcript;
+        document.getElementById("pregunta").value = t;
+        enviarPregunta();
+      };
+      rec.onerror = e => {
+        alert("Error de micrófono: " + e.error + "\nVe al candado del navegador y permite el micrófono para este sitio.");
+      };
+      rec.start();
+    }
   </script>
 </body>
 </html>
