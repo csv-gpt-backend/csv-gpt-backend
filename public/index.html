@@ -41,16 +41,21 @@
     table.data thead th{ position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6; text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap; }
     table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; white-space:nowrap; }
     table.data tbody tr:nth-child(odd){ background:#fafbfc; }
+    table.data .col-num{ text-align:right; color:#4b5563; width:64px; }
 
     .footer-bar{ width:min(95%,1100px); margin:8px auto 28px; display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; }
     .export-hint{ width:min(95%,1100px); margin:-12px auto 8px; color:#374151; font-size:13px; text-align:center; }
 
     #printable{ display:none; }
+
     @media print{
+      @page{ size: A4; margin: 15mm; }
+      body{ margin:0; }
       body *{ visibility:hidden !important; }
-      #printable{ display:block; }
+      #printable{ display:block; margin:0 !important; padding:0 !important; }
       #printable, #printable *{ visibility:visible !important; }
     }
+
     @media (max-width: 900px){ :root{ --header-height: 320px; } }
     @media (max-width: 640px){ :root{ --header-height: 260px; } .header-rail .col.center video{ transform: translateY(8px); } }
   </style>
@@ -167,6 +172,8 @@
       t = t.replace(/\s{2,}/g, " ").trim();
       return t;
     }
+
+    const video = document.getElementById("video");
     function speak(text){
       try{
         if(!window.speechSynthesis) return;
@@ -174,11 +181,17 @@
         if (chosenVoice) u.voice = chosenVoice;
         u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
         u.rate = 1.08; u.pitch = 1.02; u.volume = 1.0;
+        u.onstart = () => { try{ video.currentTime = 0; video.play(); }catch{} };
+        u.onend   = () => { try{ video.pause(); }catch{} };
+        u.onerror = () => { try{ video.pause(); }catch{} };
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(u);
       }catch{}
     }
-    function stopSpeech(){ try{ window.speechSynthesis.cancel(); }catch{} try{ video?.pause(); }catch{} }
+    function stopSpeech(){
+      try{ window.speechSynthesis.cancel(); }catch{}
+      try{ video.pause(); }catch{}
+    }
 
     /* ====== Tabla & parsers ====== */
     const out = document.getElementById("respuesta");
@@ -190,21 +203,41 @@
 
     const escapeHtml = s => String(s ?? "")
       .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+
+    function addRowNumbers(rows){
+      if (!rows || rows.length<2) return rows;
+      const head = rows[0].slice();
+      const first = String(head[0]||"").trim().toLowerCase();
+      const already = /^#|n°|no\.?$/.test(first);
+      const newHead = already ? head : ["#", ...head];
+      const body = rows.slice(1).map((r,i) => already ? r : [String(i+1), ...r]);
+      return [newHead, ...body];
+    }
+
     function renderTable(rows){
-      const [head, ...body] = rows;
+      const withNums = addRowNumbers(rows);
+      const [head, ...body] = withNums;
       let html = '<table class="data"><thead><tr>';
-      for (const h of head) html += `<th>${escapeHtml(h)}</th>`;
+      head.forEach((h,idx)=>{
+        const cls = idx===0 ? ' class="col-num"' : '';
+        html += `<th${cls}>${escapeHtml(h)}</th>`;
+      });
       html += '</tr></thead><tbody>';
       for (const r of body){
         html += '<tr>';
-        for (const c of r) html += `<td>${escapeHtml(c)}</td>`;
+        r.forEach((c,idx)=>{
+          const cls = idx===0 ? ' class="col-num"' : '';
+          html += `<td${cls}>${escapeHtml(c)}</td>`;
+        });
         html += '</tr>';
       }
       html += '</tbody></table>';
       return html;
     }
+
     function rowsToSpeech(rows){
-      const [head, ...body] = rows;
+      const withNums = addRowNumbers(rows);
+      const [head, ...body] = withNums;
       const cols = head.map(h => String(h).trim()).slice(0, 6);
       const parts = [];
       body.slice(0, 30).forEach((r,i)=>{
@@ -213,6 +246,7 @@
       });
       return parts.join(" ");
     }
+
     function pickDelimiter(sampleLines){
       const cands = [",",";","\t","|"];
       let best=",", bestScore=-1;
@@ -258,6 +292,7 @@
       if (document.getElementById("src-emo").checked)  arr.push(SOURCES.emo);
       return arr;
     }
+
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
@@ -291,7 +326,7 @@
             lastText = out.textContent; speak(lastText); exportHint.hidden = false; saveHistory(pregunta, lastText);
             return;
           }
-          lastRows = arr;
+          lastRows = addRowNumbers(arr);
           tablaWrap.innerHTML = renderTable(arr);
           tablaWrap.hidden = false; out.hidden = true;
           speak(rowsToSpeech(arr)); exportHint.hidden = false;
@@ -307,7 +342,7 @@
         const rowsDel = parseDelimited(texto);
         const rows = rowsMd || rowsDel;
         if (rows){
-          lastRows = rows;
+          lastRows = addRowNumbers(rows);
           tablaWrap.innerHTML = renderTable(rows);
           tablaWrap.hidden = false; out.hidden = true;
           speak(rowsToSpeech(rows)); exportHint.hidden = false;
@@ -329,35 +364,43 @@
       if (opt === "doc") return exportWord();
       if (opt === "csv") return exportCSV();
     }
+
     function exportPDF(){
       const qtxt = escapeHtml(document.getElementById("pregunta").value.trim() || "Consulta");
       const when = new Date().toLocaleString();
-      let html = `<div style="font-family:Arial"><h2 style="margin:0">Resultado</h2><div style="color:#374151;margin:4px 0 12px 0">Pregunta: <strong>${qtxt}</strong> — <span>${when}</span></div>`;
+      let html = `<div style="font-family:Arial;margin:0">
+        <h2 style="margin:0 0 6px 0">Resultado</h2>
+        <div style="color:#374151;margin:0 0 12px 0">Pregunta: <strong>${qtxt}</strong> — <span>${when}</span></div>`;
       if (!tablaWrap.hidden){ html += tablaWrap.innerHTML; }
       else { html += `<div style="white-space:pre-wrap">${escapeHtml(lastText||out.textContent||"")}</div>`; }
       html += `</div>`;
       printable.innerHTML = html;
+      window.scrollTo(0,0);
       const after = () => { printable.innerHTML = ""; window.removeEventListener('afterprint', after); };
       window.addEventListener('afterprint', after);
-      setTimeout(after, 3000);
-      window.print();
+      setTimeout(()=>window.print(), 0);
     }
+
     function exportWord(){
       const qtxt = escapeHtml(document.getElementById("pregunta").value.trim() || "Consulta");
       const when = new Date().toLocaleString();
-      let content = `<html><body style="font-family:Arial"><h2>Resultado</h2><div>Pregunta: <b>${qtxt}</b> — ${when}</div>`;
+      let content = `<html><head><meta charset="UTF-8"></head><body style="font-family:Arial;margin:0">
+        <h2 style="margin:0 0 6px 0">Resultado</h2>
+        <div style="margin:0 0 12px 0">Pregunta: <b>${qtxt}</b> — ${when}</div>`;
       if (!tablaWrap.hidden){ content += tablaWrap.innerHTML; }
       else { content += `<pre style="white-space:pre-wrap">${escapeHtml(lastText||out.textContent||"")}</pre>`; }
       content += `</body></html>`;
       const blob = new Blob([content], {type: "application/msword"});
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "reporte.doc"; a.click(); URL.revokeObjectURL(a.href);
     }
+
     function exportCSV(){
       if (!lastRows){
         const blob = new Blob([lastText||out.textContent||""], {type:"text/plain;charset=utf-8"});
         const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "reporte.txt"; a.click(); URL.revokeObjectURL(a.href); return;
       }
-      const rows = lastRows.map(r => r.map(c => {
+      const numRows = addRowNumbers(lastRows);
+      const rows = numRows.map(r => r.map(c => {
         const s = String(c??""); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
       }).join(",")).join("\n");
       const blob = new Blob([rows], {type:"text/csv;charset=utf-8"});
@@ -371,7 +414,6 @@
       out.textContent = ""; out.hidden = false;
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
       printable.innerHTML = ""; exportHint.hidden = true;
-      // memoria NO se borra aquí
     }
     function borrarMemoria(){ clearHistory(); alert("Memoria borrada."); }
 
