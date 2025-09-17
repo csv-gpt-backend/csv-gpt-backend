@@ -1,10 +1,8 @@
-// /api/ask.js
-// Soporta: q=..., src=multi (csv/pdf/url), o file=decimo.csv (fallback).
-// Motor determinista: filtros numéricos (==, >, >=, <, <=, entre) Y ranking/orden por métrica.
-// Extras: seleccionar columnas ("mostrar/desplegar ..."), ordenar ("orden de mayor a menor / asc/desc"),
-// límite ("top 5", "primeros 10"). Si nada aplica, se usa OpenAI para redacción.
-//
-// Requisito: npm i pdf-parse
+// pages/api/ask.js
+// Determinista para filtros (==, >, >=, <, <=, entre) y ranking/orden por métrica.
+// Si no aplica determinista → GPT (con historia de los últimos 10 min).
+// Soporta fuentes: body.src = [csv|pdf|url|/datos/...]. También legacy file=decimo.csv.
+// Requiere: npm i pdf-parse
 
 import pdfParse from "pdf-parse";
 
@@ -17,7 +15,6 @@ const API_KEY =
 const CACHE_MS = 5 * 60 * 1000;
 const cache = new Map(); // url -> { ts, text }
 
-// ---------- Utils ----------
 function norm(s){
   return (s||"").toString()
     .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
@@ -38,7 +35,6 @@ function safeJoinPublic(proto, host, pathLike){
   return `${proto}://${host}/${encodeURI(p)}`;
 }
 
-// cache por URL, con extracción de PDF cuando toca
 async function getTextFromUrl(url){
   const hit = cache.get(url);
   const now = Date.now();
@@ -54,13 +50,12 @@ async function getTextFromUrl(url){
     cache.set(url, { ts: now, text });
     return text;
   }
-
   const text = await r.text();
   cache.set(url, { ts: now, text });
   return text;
 }
 
-// ---------- CSV helpers (determinista) ----------
+// ====== CSV ======
 function bestDelimiter(allText){
   const lines = allText.split(/\r?\n/).filter(l=>l.trim().length);
   const cand = [",",";","\t","|"];
@@ -105,11 +100,12 @@ function num(v){
   return Number.isNaN(n) ? null : n;
 }
 
-// ---------- Intents ----------
+// ====== Intents ======
 const FIELD_MAP = {
   asertividad: ["asertividad","asertivid","asertiv"],
   empatia: ["empatia","empatía","empatia emocional","empatia social","empatia total","empatia_","empatia-"],
   agresion: ["agresion","agresión","agresividad","agresion total","agresion_","agresion-"],
+  liderazgo: ["liderazgo","liderazg","lider"],                 // <== agregado
   autoestima: ["autoestima"],
   tension: ["tension","tensión","manejo de la tension","manejo de la tensión"],
   bienestar: ["bienestar","bienestar fisico","bienestar físico"],
@@ -144,7 +140,6 @@ function parseSimpleFilter(query){
 
   return null;
 }
-
 function parseSelectColumns(query){
   const q = norm(query);
   const cols = new Set();
@@ -159,16 +154,13 @@ function parseSelectColumns(query){
   }
   return Array.from(cols);
 }
-
 function parseOrder(query){
   const q = norm(query);
-  // Dirección
   let dir = "desc";
   if (/\b(asc|ascendente|menor a mayor|de menor a mayor)\b/.test(q)) dir = "asc";
   if (/\b(desc|descendente|mayor a menor|de mayor a menor)\b/.test(q)) dir = "desc";
-  // Campo
   let field = null;
-  const m = q.match(/orden(?:ar)?(?:\s+por)?\s+([a-z0-9 ]+)/); // "ordenar por empatía"
+  const m = q.match(/orden(?:ar)?(?:\s+por)?\s+([a-z0-9 ]+)/);
   if (m) field = m[1].trim();
   if (!field){
     for (const [k,als] of Object.entries(FIELD_MAP)){
@@ -177,7 +169,6 @@ function parseOrder(query){
   }
   return { field, dir };
 }
-
 function parseLimit(query){
   const q = norm(query);
   const m1 = q.match(/\btop\s+(\d{1,3})\b/);
@@ -187,7 +178,7 @@ function parseLimit(query){
   return n ? Number(n) : null;
 }
 
-// ---------- Determinista: filtro numérico ----------
+// ====== Determinista: filtro ======
 function deterministicQuery(query, csvText){
   const intent = parseSimpleFilter(query);
   if (!intent) return null;
@@ -253,7 +244,7 @@ function deterministicQuery(query, csvText){
     }
   }
 
-  // Orden si lo piden
+  // Orden
   const { field:orderFieldHint, dir } = parseOrder(query);
   if (orderFieldHint){
     let idx = headers.findIndex(h => norm(h).includes(norm(orderFieldHint)));
@@ -279,10 +270,10 @@ function deterministicQuery(query, csvText){
   return { items: data };
 }
 
-// ---------- Determinista: ranking/orden por métrica (SIN filtro) ----------
+// ====== Determinista: ranking (sin filtro) ======
 function deterministicRanking(query, csvText){
   const { field, dir } = parseOrder(query);
-  if (!field) return null;                  // no hay métrica a ordenar
+  if (!field) return null;
 
   const rows = parseCSVToRows(csvText);
   if (!(rows && rows.length>=2)) return null;
@@ -314,12 +305,10 @@ function deterministicRanking(query, csvText){
   }
   const selectedIdx = (wantAll ? [] : wanted.map(labelToIdx).filter(i=>i>=0));
 
-  // recolecta filas con número válido en métrica
   let data = [];
   for (let i=1;i<rows.length;i++){
     const r = rows[i];
-    const n = num(r[metricIdx]);
-    if (n==null) continue;
+    const n = num(r[metricIdx]); if (n==null) continue;
 
     const obj = {};
     if (wantAll){
@@ -331,14 +320,12 @@ function deterministicRanking(query, csvText){
         const label = headers[idx] || `Col_${idx+1}`;
         obj[label] = r[idx];
       }
-      // si el usuario no pidió explícito la métrica, igual la incluimos para ranking
       const mlabel = headers[metricIdx] || aliases[0].toUpperCase();
       if (!Object.prototype.hasOwnProperty.call(obj, mlabel)) obj[mlabel] = r[metricIdx];
     }
     data.push(obj);
   }
 
-  // orden estricto por la métrica
   const metricLabel = headers[metricIdx];
   data.sort((a,b)=>{
     const na = num(a[metricLabel]); const nb = num(b[metricLabel]);
@@ -353,18 +340,28 @@ function deterministicRanking(query, csvText){
   return { items: data };
 }
 
-// ---------- OpenAI ----------
+// ====== OpenAI ======
 function systemPromptText(){
   return [
     "Eres una asesora educativa clara y ejecutiva (español México).",
-    "Tendrás varias fuentes (CSV y PDF).",
-    "No inventes datos; si falta info, dilo. Si hay cifras, respétalas.",
-    "Si el usuario pide lista/tabla y no te doy una tabla explícita, responde en texto (el front estructura si hace falta).",
+    "Tendrás varias fuentes (CSV y PDF). No inventes datos.",
+    "Si no hay información en las fuentes, responde con conocimiento general pero acláralo.",
     "Responde breve (~150-180 palabras)."
   ].join(" ");
 }
-function buildUserPrompt(query, sources){
-  const parts = [`PREGUNTA: ${query}`, "", "FUENTES:"];
+function buildUserPrompt(query, sources, history){
+  const parts = [];
+  if (history && history.length){
+    parts.push("CONTEXTO DE LA CONVERSACIÓN (últimos 10 min):");
+    history.slice(-8).forEach(h => {
+      parts.push(`- Usuario: ${h.q}`);
+      parts.push(`  Resumen previo: ${String(h.text).slice(0,400)}`);
+    });
+    parts.push("");
+  }
+  parts.push(`PREGUNTA: ${query}`);
+  parts.push("");
+  parts.push("FUENTES:");
   for (const s of sources){
     if (s.type === "csv"){
       parts.push(`--- CSV: ${s.label} ---`);
@@ -391,16 +388,19 @@ async function callOpenAI(messages){
   return { ok:true, text };
 }
 
-// ---------- Handler ----------
+// ====== Handler ======
 export default async function handler(req, res){
   try{
-    const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
+    const method = req.method || "GET";
+    // Soporta POST JSON o GET query
+    const body = method === "POST" ? (req.body||{}) : {};
+    const q = (body.q || req.query.q || "").toString().trim() || "ping";
 
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host  = req.headers.host;
 
-    // fuentes: src=multi o file=legacy
-    let srcs = req.query.src;
+    // Fuentes
+    let srcs = body.src || req.query.src;
     if (srcs && !Array.isArray(srcs)) srcs = [srcs];
     const sources = [];
 
@@ -422,39 +422,46 @@ export default async function handler(req, res){
       sources.push({ type:"csv", label:file, text: csvText });
     }
 
-    // 1) determinista con filtro
+    // 1) Determinista con filtro
     const firstCsv = sources.find(s => s.type==="csv");
     if (firstCsv){
       const det = deterministicQuery(q, firstCsv.text);
       if (det){
+        if (!det.items.length){
+          return res.status(200).json({ text: "[]", formato:"json", aviso:"" });
+        }
         return res.status(200).json({
           text: JSON.stringify(det.items, null, 2),
-          fuentes: sources.map(s=>({type:s.type,label:s.label})),
-          formato: "json"
+          formato: "json",
+          aviso: ""
         });
       }
-      // 2) determinista ranking/orden por métrica (sin filtro)
+      // 2) Determinista ranking
       const rank = deterministicRanking(q, firstCsv.text);
       if (rank){
+        if (!rank.items.length){
+          return res.status(200).json({ text: "[]", formato:"json", aviso:"" });
+        }
         return res.status(200).json({
           text: JSON.stringify(rank.items, null, 2),
-          fuentes: sources.map(s=>({type:s.type,label:s.label})),
-          formato: "json"
+          formato: "json",
+          aviso: ""
         });
       }
     }
 
-    // 3) Fallback: OpenAI
+    // 3) Fallback GPT (con historia)
+    const history = Array.isArray(body.history) ? body.history : [];
     const messages = [
       { role: "system", content: systemPromptText() },
-      { role: "user", content: buildUserPrompt(q, sources) },
+      { role: "user", content: buildUserPrompt(q, sources, history) },
     ];
     const ai = await callOpenAI(messages);
 
     return res.status(200).json({
       text: ai.text,
-      fuentes: sources.map(s=>({type:s.type,label:s.label})),
-      formato: "texto"
+      formato: "texto",
+      aviso: ""
     });
   }catch(e){
     console.error(e);
