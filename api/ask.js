@@ -1,7 +1,6 @@
-// /api/ask.js
-// Analiza un CSV completo (columnas variables) “tal cual” se sube, sin fijar encabezados.
-// Lee /public/datos/<file>.csv por URL (cache 5 min). Devuelve texto para tu voz,
-// y opcionalmente JSON estructurado si usas ?format=json.
+// /api/ask.js — Modo datos reales: Planner (GPT) + Executor (JS) + Post-Explicación
+// Lee /public/datos/<file>.csv, GPT devuelve un PLAN JSON, aquí se ejecuta sobre el CSV.
+// Devuelve: tabla real (formato:"json") + nota (teoría/explicación). Sin "inventos".
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const API_KEY =
@@ -31,619 +30,297 @@ async function getCSVText(publicUrl) {
   return text;
 }
 
-function detectDelim(line) {
-  if (!line) return ",";
-  if (line.includes(";")) return ";";
-  if (line.includes("\t")) return "\t";
-  if (line.includes("|")) return "|";
-  return ",";
+/* ====== CSV & Estadística ====== */
+function pickDelimiter(sampleLines) {
+  const c = [",",";","\t","|"]; let best=",", score=-1;
+  for (const d of c){ let sc=0; for (const l of sampleLines){ const p=l.split(d); if(p.length>1) sc+=p.length; } if(sc>score){ score=sc; best=d; } }
+  return best;
 }
-
-function systemPromptText() {
-  return [
-    "Eres una asesora educativa clara y ejecutiva (español México).",
-    "Recibirás un CSV completo con columnas variables (no asumas nombres fijos).",
-    "Instrucciones:",
-    "1) Detecta el delimitador (coma/; /tab/|) y analiza la tabla tal cual.",
-    "2) Si preguntan por una persona, localízala por coincidencia del nombre en cualquier columna.",
-    "3) No inventes datos: basar todo en el CSV entregado. Si falta info, dilo.",
-    "4) Responde breve (~150-180 palabras), tono profesional, en español (MX).",
-  ].join(" ");
-}
-
-function userPromptText(query, csvText) {
-  const first = (csvText.split(/\r?\n/)[0] || "").slice(0, 500);
-  const delim = detectDelim(first);
-  return [
-    `PREGUNTA: ${query}`,
-    "",
-    `DELIMITADOR_APROX: ${JSON.stringify(delim)}`,
-    "",
-    "A continuación va el CSV completo entre triple backticks. Analízalo tal cual:",
-    "```csv",
-    csvText,
-    "```",
-  ].join("\n");
-}
-
-function systemPromptJSON() {
-  return [
-    "Eres una asesora educativa clara y ejecutiva (español México).",
-    "Recibirás un CSV completo con columnas variables.",
-    "Objetivo: entregar un RESUMEN ESTRUCTURADO en JSON con estas claves exactas:",
-    'diagnostico (string corto),',
-    'fortalezas (array de strings),',
-    'oportunidades (array de strings),',
-    'recomendaciones_corto_plazo (array de strings),',
-    'recomendaciones_mediano_plazo (array de strings),',
-    'riesgos (array de strings).',
-    "No inventes datos. Si faltan, indícalo de forma explícita.",
-    "Devuelve SOLO el JSON (sin texto adicional).",
-  ].join(" ");
-}
-
-function userPromptJSON(query, csvText) {
-  const first = (csvText.split(/\r?\n/)[0] || "").slice(0, 500);
-  const delim = detectDelim(first);
-  return [
-    `PREGUNTA: ${query}`,
-    `DELIMITADOR_APROX: ${JSON.stringify(delim)}`,
-    "CSV completo entre triple backticks:",
-    "```csv",
-    csvText,
-    "```",
-  ].join("\n");
-}
-
-async function callOpenAI(messages) {
-  if (!API_KEY) {
-    return { ok: false, text: "Falta configurar OPENAI_API_KEY en Vercel." };
-  }
-  const r = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      temperature: 0.35, // más consistente
-    }),
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+  if (lines.length < 2) return { headers: [], rows: [] };
+  const d = pickDelimiter(lines.slice(0,10));
+  const rows = lines.map(l => l.split(d).map(c=>c.trim()));
+  const headers = rows[0];
+  const body = rows.slice(1).map(r => {
+    const o = {}; headers.forEach((h,i)=> o[h] = r[i] ?? ""); return o;
   });
-  const data = await r.json().catch(() => null);
-  const text =
-    data?.choices?.[0]?.message?.content?.trim() ||
-    `No pude consultar OpenAI (HTTP ${r.status}).`;
-  return { ok: true, text };
+  return { headers, rows: body };
+}
+function toNum(v){ const n = parseFloat(String(v??"").replace(/[^0-9.\-]+/g,"")); return Number.isFinite(n)?n:null; }
+function isMostlyNumeric(arr){ const nums=arr.map(toNum).filter(v=>v!==null); return nums.length/arr.length >= 0.6; }
+function percentile(arr, p){
+  const v = arr.map(toNum).filter(x=>x!==null).sort((a,b)=>a-b);
+  if(!v.length) return null;
+  if (p<=0) return v[0]; if (p>=100) return v[v.length-1];
+  const rank=(p/100)*(v.length-1); const lo=Math.floor(rank), hi=Math.ceil(rank), w=rank-lo;
+  return v[lo]*(1-w) + v[hi]*w;
+}
+function mean(arr){ const v=arr.map(toNum).filter(x=>x!==null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
+function corrPearson(xArr,yArr){
+  const x=[],y=[]; for(let i=0;i<xArr.length;i++){ const a=toNum(xArr[i]), b=toNum(yArr[i]); if(a!==null&&b!==null){ x.push(a); y.push(b);} }
+  const n=x.length; if(n<3) return {r:NaN,r2:NaN,n};
+  const mx=mean(x), my=mean(y); let num=0,dx=0,dy=0;
+  for(let i=0;i<n;i++){ const ax=x[i]-mx, by=y[i]-my; num+=ax*by; dx+=ax*ax; dy+=by*by; }
+  const den = Math.sqrt(dx*dy); const r = den? num/den : NaN; return { r, r2: r*r, n };
 }
 
+/* ====== Planner (GPT) ====== */
+function buildSchema(headers, rows){
+  return headers.map(h=>{
+    const col = rows.map(r=>r[h]);
+    return { name:h, type: isMostlyNumeric(col)?"number":"string", sample: Array.from(new Set(col)).slice(0,6) };
+  });
+}
+
+const SYSTEM_PLANNER = `
+Eres un planificador de consultas sobre un CSV. Devuelve SOLO JSON válido:
+
+{
+  "mode": "table" | "correlation",
+  "select": ["colA","colB",...],     // opcional; si falta, usa todas
+  "filters": [{"col":"Col","op":"==|!=|>|>=|<|<=|contains|in","value":any}],
+  "orderBy": [{"col":"Col","dir":"asc|desc"}],
+  "limit": 10,
+  "computed": [ {"as":"IndiceGlobal","op":"mean","cols":[...]} ],
+  "percentileFilters": [ {"col":"Col","op":">=","p":80} ],
+  "quintile": {"col":"Col","index":1..5},
+  "correlation": { "autoTop": 10 }, // o "pairs":[{"x":"ColX","y":"ColY"}]
+  "explanation": "texto breve"
+}
+
+Reglas:
+- Usa SOLO nombres de "schema".
+- “Mejores usando todas las habilidades” → computed mean de TODAS las numéricas (excluye Edad/Curso/Paralelo si existen).
+- “Quintil más alto” → quintile.index = 5 (≥P80).
+- Correlaciones globales → mode:"correlation", correlation.autoTop ~10.
+- Incluye siempre "explanation".`;
+
+async function callPlanner(messages) {
+  if (!API_KEY) throw new Error("Falta OPENAI_API_KEY.");
+  const r = await fetch("https://api.openai.com/v1/chat/completions",{
+    method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${API_KEY}` },
+    body: JSON.stringify({ model: MODEL, temperature: 0, messages })
+  });
+  const data = await r.json().catch(()=>null);
+  return data?.choices?.[0]?.message?.content?.trim() || "";
+}
+
+/* ====== Post-explicación (teoría) ====== */
+async function postExplain({ userQ, mode, plan, meta }) {
+  if (!API_KEY) return "";
+  const sys = `Eres una asesora educativa (es-MX). Escribe una EXPLICACIÓN breve, correcta y didáctica del resultado YA CALCULADO.
+No inventes números nuevos: usa SOLO lo que viene en "meta". Incluye teoría (matemática/estadística, psicometría) e interpretación pedagógica.
+Extensión: 120–180 palabras, tono profesional y claro.`;
+  const user = `Pregunta: ${userQ}
+Modo: ${mode}
+Plan: ${JSON.stringify(plan ?? {}, null, 2)}
+Meta (resumen de lo calculado): ${JSON.stringify(meta ?? {}, null, 2)}
+Recuerda: NO inventes valores. Explica con base en "meta".`;
+  const r = await fetch("https://api.openai.com/v1/chat/completions",{
+    method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${API_KEY}` },
+    body: JSON.stringify({ model: MODEL, temperature: 0.2, messages:[{role:"system",content:sys},{role:"user",content:user}] })
+  });
+  const data = await r.json().catch(()=>null);
+  return data?.choices?.[0]?.message?.content?.trim() || "";
+}
+function buildMetaForExplanation({ mode, plan, headers, rows, table, extra }) {
+  const meta = { filas: rows.length, columnas: headers, select: extra?.selectCols ?? headers };
+  if (mode === "correlation" && extra?.topCorr) meta.topCorrelaciones = extra.topCorr.slice(0,5);
+  if (extra?.quintilInfo) meta.quintil = extra.quintilInfo; // {col,index,Pcut}
+  if (extra?.kpis) meta.kpis = extra.kpis;
+  return meta;
+}
+
+/* ====== Ejecutor de PLAN ====== */
+function normalizeOp(op){ return String(op||"").toLowerCase(); }
+function applyFilters(rows, filters=[]){
+  if(!filters.length) return rows;
+  return rows.filter(row => filters.every(f=>{
+    const v=row[f.col], op=normalizeOp(f.op), val=f.value, n=toNum(v), nv=toNum(val);
+    if(op==="contains") return String(v??"").toLowerCase().includes(String(val??"").toLowerCase());
+    if(op==="in") return Array.isArray(val) ? val.map(String).includes(String(v)) : false;
+    if(n!==null && nv!==null){
+      if(op==="==") return n===nv; if(op==="!=") return n!==nv; if(op===">") return n>nv; if(op===">=") return n>=nv; if(op==="<") return n<nv; if(op==="<=") return n<=nv;
+    }
+    if(op==="==") return String(v)===String(val);
+    if(op==="!=") return String(v)!==String(val);
+    return true;
+  }));
+}
+function applyPercentileFilters(rows, pf=[]){
+  if(!pf.length) return rows;
+  let out=rows;
+  for(const f of pf){
+    const cut = percentile(out.map(r=>r[f.col]), f.p);
+    out = out.filter(r=>{
+      const n=toNum(r[f.col]); if(n===null || cut===null) return false;
+      if(f.op=== ">=") return n>=cut; if(f.op==="<=") return n<=cut; if(f.op===">") return n>cut; if(f.op==="<") return n<cut; if(f.op==="==") return n===cut;
+      return true;
+    });
+  }
+  return out;
+}
+function applyQuintile(rows, qSpec){
+  if(!qSpec || !qSpec.col || !qSpec.index) return rows;
+  const q=Math.max(1,Math.min(5,qSpec.index)); const pLo=(q-1)*20, pHi=q*20;
+  const arr=rows.map(r=>r[qSpec.col]); const cutLo=percentile(arr,pLo), cutHi=percentile(arr,pHi);
+  if(q===5) return rows.filter(r=>{ const n=toNum(r[qSpec.col]); return n!==null && n>=cutLo; });
+  return rows.filter(r=>{ const n=toNum(r[qSpec.col]); return n!==null && n>=cutLo && n<=cutHi; });
+}
+function addComputed(rows, computed=[]){
+  if(!computed.length) return rows;
+  return rows.map(r=>{
+    const o={...r};
+    for(const c of computed){
+      const as=c.as||"computed", cols=Array.isArray(c.cols)?c.cols:[], vals=cols.map(k=>toNum(r[k])).filter(x=>x!==null);
+      if(!vals.length){ o[as]=""; continue; }
+      const op=String(c.op||"").toLowerCase();
+      if(op==="mean"||op==="avg") o[as]=mean(vals);
+      else if(op==="sum") o[as]=vals.reduce((a,b)=>a+b,0);
+      else if(op==="min") o[as]=Math.min(...vals);
+      else if(op==="max") o[as]=Math.max(...vals);
+      else o[as]=mean(vals);
+    }
+    return o;
+  });
+}
+function applyOrderLimit(rows, orderBy=[], limit){
+  let arr=rows.slice();
+  if(orderBy.length){
+    arr.sort((a,b)=>{
+      for(const o of orderBy){
+        const col=o.col, dir=String(o.dir||"asc").toLowerCase();
+        const av=a[col], bv=b[col], an=toNum(av), bn=toNum(bv);
+        let cmp=0; if(an!==null && bn!==null) cmp=an-bn; else cmp=String(av).localeCompare(String(bv));
+        if(cmp!==0) return dir==="desc"? -cmp : cmp;
+      }
+      return 0;
+    });
+  }
+  if(typeof limit==="number" && limit>=0) arr=arr.slice(0,limit);
+  return arr;
+}
+function objectsToArray(headers, objs){
+  const rows=[headers]; for(const o of objs) rows.push(headers.map(h=>(o[h] ?? "").toString())); return rows;
+}
+function computeCorrelations(headers, rows, opt){
+  const numericCols = headers.filter(h => isMostlyNumeric(rows.map(r=>r[h])));
+  const out=[];
+  const top = Math.max(1, Math.min(50, opt?.autoTop ?? 10));
+  for(let i=0;i<numericCols.length;i++){
+    for(let j=i+1;j<numericCols.length;j++){
+      const a=numericCols[i], b=numericCols[j];
+      const {r,r2,n}=corrPearson(rows.map(r=>r[a]), rows.map(r=>r[b]));
+      if(Number.isFinite(r)) out.push({X:a,Y:b,r,R2:r2,n});
+    }
+  }
+  out.sort((u,v)=>Math.abs(v.r)-Math.abs(u.r)); out.splice(top);
+  const hdr=["#","X","Y","r","R² (%)","n"];
+  const arr=out.map((o,i)=>[i+1,o.X,o.Y,o.r.toFixed(3),(o.R2*100).toFixed(1),o.n]);
+  return { table:[hdr,...arr], pairs: out };
+}
+
+/* ====== Handler ====== */
 export default async function handler(req, res) {
-  try {
+  try{
     const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
     const file = safeFileParam(req.query.file || req.query.f || "decimo.csv");
-    const format = (req.query.format || "").toString().toLowerCase(); // "json" | ""
 
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host;
+    const host  = req.headers.host;
     const publicUrl = `${proto}://${host}/datos/${encodeURIComponent(file)}`;
 
+    // 1) CSV
     const csvText = await getCSVText(publicUrl);
-    const lines = csvText.split(/\r?\n/).filter(Boolean).length;
-
-    let messages;
-    if (format === "json") {
-      messages = [
-        { role: "system", content: systemPromptJSON() },
-        { role: "user", content: userPromptJSON(q, csvText) },
-      ];
-    } else {
-      messages = [
-        { role: "system", content: systemPromptText() },
-        { role: "user", content: userPromptText(q, csvText) },
-      ];
+    const { headers, rows } = parseCSV(csvText);
+    if(!headers.length){
+      return res.status(200).json({ text:"CSV vacío o ilegible.", archivo:file, formato:"texto" });
     }
 
-    const ai = await callOpenAI(messages);
-
-    // Para el front: text se usa en pantalla/voz.
-    return res.status(200).json({
-      text: ai.text,
-      archivo: file,
-      filas_aprox: lines,
-      formato: format || "texto",
-    });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ text: "Error interno.", details: String(e) });
-  }
-}
-
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Consulta Educativa</title>
-
-  <style>
-    :root{
-      --header-height: 360px; /* video grande */
-      --video-shift: 10px;
-      --accent:#0078d7;
-    }
-    *{ box-sizing:border-box; }
-    body{
-      margin:0; background:#fff;
-      font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
-      color:#111;
-    }
-
-    /* ====== Encabezado 25/50/25 ====== */
-    .header-rail{
-      display:flex; align-items:center; justify-content:center;
-      width:100%; height:var(--header-height); background:#fff; overflow:hidden;
-    }
-    .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
-    .header-rail .col.left, .header-rail .col.right{ flex:0 0 25%; }
-    .header-rail .col.center{ flex:0 0 50%; position:relative; }
-    .header-rail .col.left img, .header-rail .col.right img{
-      max-height:100%; max-width:100%; height:auto; width:auto; object-fit:contain; display:block;
-    }
-    .header-rail .col.center video{
-      max-height:100%; max-width:100%; height:100%; width:auto; object-fit:contain; display:block;
-      transform: translateY(var(--video-shift));
-    }
-
-    /* ====== Interacción ====== */
-    .interaction{ padding:24px 16px; text-align:center; }
-    .bar{
-      display:flex; gap:8px; justify-content:center; align-items:center;
-      max-width:1100px; margin:0 auto;
-    }
-    .bar input[type="text"]{
-      flex:1 1 800px; padding:12px 14px; font-size:16px;
-      border:1px solid #d0d0d0; border-radius:8px; outline:none;
-    }
-    .btn{
-      padding:12px 16px; border:0; border-radius:8px;
-      background:var(--accent); color:#fff; font-weight:600; cursor:pointer;
-    }
-    .btn:hover{ filter:brightness(0.95); }
-
-    /* Texto por defecto */
-    #respuesta{
-      margin:20px auto 0; width:min(90%,1100px);
-      min-height:64px; padding:14px; background:#f7f7f8;
-      border:1px solid #e5e5e7; border-radius:10px;
-      text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
-    }
-
-    /* ====== Lista vertical ====== */
-    .vlist{ width:min(95%,1100px); margin:16px auto 24px; font-size:13px; }
-    .vitem{
-      border:1px solid #e5e5e7; border-radius:12px;
-      padding:10px 12px; margin:8px 0; background:#fff;
-      display:grid; grid-template-columns:36px 1fr; gap:10px;
-    }
-    .vnum{ font-weight:700; color:#000; display:flex; align-items:flex-start; justify-content:center; padding-top:2px; }
-    .vbody{ display:grid; grid-template-columns:1fr 2fr; gap:6px 12px; align-items:start; }
-    .vkey{ font-weight:600; color:#333; }
-    .vval{ color:#111; word-break:break-word; }
-
-    /* ====== Tabla ====== */
-    .table-wrap{
-      width:min(95%,1100px); margin:16px auto 24px; overflow:auto;
-      border:1px solid #e5e5e7; border-radius:10px; background:#fff;
-    }
-    table.data{ width:100%; border-collapse:collapse; font-size:14px; }
-    table.data thead th{
-      position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6;
-      text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap;
-    }
-    table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; }
-    table.data tbody tr:nth-child(odd){ background:#fafbfc; }
-
-    /* ====== Botones inferiores ====== */
-    .footer-bar{
-      width:min(95%,1100px); margin:4px auto 28px;
-      display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
-    }
-
-    /* Área imprimible: oculta en pantalla, visible solo al imprimir */
-    #printable{
-      position:fixed; left:-10000px; top:-10000px;
-      width:0; height:0; overflow:hidden;
-    }
-    @media print{
-      body *{ visibility:hidden !important; }
-      #printable, #printable *{ visibility:visible !important; }
-      #printable{
-        position:static; left:auto; top:auto;
-        width:auto; height:auto; overflow:visible;
-        margin:0; padding:24px;
-      }
-    }
-
-    /* Responsive */
-    @media (max-width: 900px){ :root{ --header-height: 320px; } }
-    @media (max-width: 640px){
-      :root{ --header-height: 260px; }
-      .header-rail .col.center video{ transform: translateY(8px); }
-      .vbody{ grid-template-columns:1fr; }
-    }
-  </style>
-</head>
-<body>
-
-  <!-- ====== ENCABEZADO ====== -->
-  <div class="header-rail">
-    <div class="col left">
-      <img src="/left.png" alt="Imagen izquierda">
-    </div>
-    <div class="col center">
-      <video id="video" muted playsinline preload="metadata">
-        <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
-        Tu navegador no soporta video.
-      </video>
-    </div>
-    <div class="col right">
-      <img src="/right.png" alt="Imagen derecha">
-    </div>
-  </div>
-
-  <!-- ====== INTERACCIÓN ====== -->
-  <div class="interaction">
-    <div class="bar">
-      <input id="pregunta" type="text" placeholder="Haz tu pregunta aquí..." />
-      <button class="btn" onclick="enviarPregunta()">Enviar</button>
-      <button class="btn" onclick="startListening()">🎤</button>
-    </div>
-
-    <!-- Texto por defecto -->
-    <div id="respuesta">Aquí aparecerá la respuesta...</div>
-
-    <!-- Salidas estructuradas -->
-    <div id="vlist" class="vlist" hidden></div>
-    <div id="tabla" class="table-wrap" hidden></div>
-
-    <!-- Zona imprimible (siempre fuera de pantalla) -->
-    <div id="printable"></div>
-
-    <!-- Botones -->
-    <div class="footer-bar">
-      <button class="btn" onclick="exportPDF()">Exportar PDF</button>
-      <button class="btn" onclick="stopSpeech()">Detener voz</button>
-      <button class="btn" onclick="limpiar()">Limpiar</button>
-    </div>
-  </div>
-
-  <script>
-    /* ====== Config ====== */
-    const ENDPOINTS = ["/api/ask", "/api/preguntar"];
-    const DEFAULT_SOURCES = [
-      "datos/decimo.csv",
-      "https://csv-gpt-backend.vercel.app/lexium.pdf",
-      "https://csv-gpt-backend.vercel.app/evaluaciones.pdf"
+    // 2) Esquema → Planner
+    const schema = buildSchema(headers, rows);
+    const baseMessages = [
+      { role:"system", content: SYSTEM_PLANNER },
+      { role:"user", content: `Pregunta del usuario:\n${q}\n\nschema:\n${JSON.stringify(schema,null,2)}` }
     ];
 
-    const video = document.getElementById("video");
-    const vlistWrap = document.getElementById("vlist");
-    const tablaWrap = document.getElementById("tabla");
-    const out = document.getElementById("respuesta");
-    const printable = document.getElementById("printable");
-    let lastRows = null;
-
-    /* ====== Voz ====== */
-    let chosenVoice = null;
-    const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
-    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
-    const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
-
-    function scoreVoice(v){
-      const name = (v.name||"").toLowerCase();
-      const lang = (v.lang||"").toLowerCase();
-      let s = 0;
-      if (lang.startsWith("es-mx")) s += 100;
-      else if (lang.startsWith("es-419")) s += 60;
-      else if (lang.startsWith("es")) s += 30;
-      if (EXEC_PREF.some(t => name.includes(t))) s += 40;
-      if (FEMALE_HINTS.some(t => name.includes(t))) s += 20;
-      if (/(neural|natural|online)/i.test(name)) s += 25;
-      if (MALE_HINTS.some(t => name.includes(t))) s -= 80;
-      return s;
-    }
-    function pickExecutiveSpanishFemale(){
-      const voices = window.speechSynthesis?.getVoices?.() || [];
-      if (!voices.length) return null;
-      const forced = new URLSearchParams(location.search).get("voice");
-      if (forced){
-        const v = voices.find(v => (v.name||"").toLowerCase().includes(forced.toLowerCase()));
-        if (v) return v;
-      }
-      return voices.slice().sort((a,b) => scoreVoice(b) - scoreVoice(a))[0] || voices[0];
-    }
-    function ensureVoiceSelected(){ if (!chosenVoice) chosenVoice = pickExecutiveSpanishFemale(); }
-
-    function sanitizeForSpeech(text){
-      if (!text) return "";
-      let t = text.replace(/```[\s\S]*?```/g, " "); // no leer bloques
-      t = t.replace(/\*/g, "");                    // no leer asteriscos
-      t = t.replace(/^[#>\-\u2022]\s*/gm, "");     // limpiar bullets/headers
-      t = t.replace(/\s{2,}/g, " ").trim();
-      return t;
-    }
-    function speak(text, onStart, onEnd){
-      if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
-      ensureVoiceSelected();
-      const clean = sanitizeForSpeech(text);
-      if (!clean){ onStart&&onStart(); onEnd&&onEnd(); return; }
-      const u = new SpeechSynthesisUtterance(clean);
-      if (chosenVoice) u.voice = chosenVoice;
-      u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-      u.rate = 1.12; u.pitch = 1.02; u.volume = 1.0;
-      u.onstart = ()=> onStart && onStart();
-      u.onend   = ()=> onEnd && onEnd();
-      u.onerror = ()=> onEnd && onEnd();
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
-    }
-    function stopSpeech(){ try{ window.speechSynthesis.cancel(); }catch{} try{ video?.pause(); }catch{} }
-    window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
-
-    /* ====== Parseo/Render ====== */
-    const escapeHtml = (s) => String(s ?? "")
-      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-
-    function parseMarkdownTableStrict(text){
-      const lines = text.split(/\r?\n/).map(l=>l.trim());
-      const starts = lines.findIndex(l => /^\|.*\|$/.test(l));
-      if (starts === -1) return null;
-      const rows = [];
-      for (let i=starts; i<lines.length; i++){
-        const l = lines[i];
-        if (!/^\|.*\|$/.test(l)) break;
-        rows.push(l);
-      }
-      if (rows.length < 3) return null; // header + sep + 1 row
-      const cells = rows.map(l => l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
-      if (!cells[1].every(c => /^:?-{3,}:?$/.test(c))) return null; // separador
-      cells.splice(1,1);
-      return cells;
-    }
-    function parseJsonTable(text){
-      try{
-        const obj = JSON.parse(text);
-        if (Array.isArray(obj) && obj.length && typeof obj[0] === "object"){
-          const headers = Array.from(
-            obj.reduce((set,row)=>{ Object.keys(row).forEach(k=>set.add(k)); return set; }, new Set())
-          );
-          const rows = [headers, ...obj.map(o => headers.map(h => o[h] ?? ""))];
-          return rows;
-        }
-      }catch{}
-      return null;
-    }
-    function extractCsvBlock(text){
-      const m = text.match(/```(?:csv)?\s*([\s\S]*?)```/i);
-      return m ? m[1].trim() : null;
-    }
-    function parseDelimited(csvText){
-      const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
-      if (lines.length < 2) return null;
-      const cand = [",",";","\t","|"];
-      let best=",", ok=0, cols=0;
-      for (const d of cand){
-        let good=0, c=null;
-        for (const line of lines.slice(0,20)){
-          const p = line.split(d);
-          if (p.length<2) continue;
-          if (c==null) c=p.length;
-          if (p.length===c) good++;
-        }
-        if (good>ok){ ok=good; best=d; cols=c||0; }
-      }
-      if (ok<2 || cols<2) return null;
-      const rows = lines.map(l => l.split(best).map(c=>c.trim()));
-      const max = Math.max(...rows.map(r=>r.length));
-      return rows.map(r => { const a=r.slice(0,max); while(a.length<max)a.push(""); return a; });
+    let planText = await callPlanner(baseMessages);
+    let plan;
+    try { plan = JSON.parse(planText); }
+    catch(e) {
+      // MODO ESTRICTO: sin JSON válido no devolvemos texto
+      return res.status(400).json({ text:"No pude estructurar un plan ejecutable para la consulta.", archivo:file, formato:"texto" });
     }
 
-    function reorderHeaders(headers){
-      const prio = ["nombre","estudiante","alumno","apellidos","nombres"];
-      const idx = headers.map((h,i)=>({h, i, key:String(h||"").toLowerCase()}));
-      idx.sort((a,b)=>{
-        const pa = prio.findIndex(p => a.key.includes(p));
-        const pb = prio.findIndex(p => b.key.includes(p));
-        const sa = pa === -1 ? 999 : pa;
-        const sb = pb === -1 ? 999 : pb;
-        return sa - sb || a.i - b.i;
+    const mode = String(plan?.mode || "table").toLowerCase();
+
+    // 3) Ejecutar plan sobre datos reales
+    let working = rows.slice();
+
+    if (Array.isArray(plan?.computed) && plan.computed.length) {
+      working = addComputed(working, plan.computed);
+    }
+    if (Array.isArray(plan?.filters) && plan.filters.length) {
+      working = applyFilters(working, plan.filters);
+    }
+    if (Array.isArray(plan?.percentileFilters) && plan.percentileFilters.length) {
+      working = applyPercentileFilters(working, plan.percentileFilters);
+    }
+    if (plan?.quintile) {
+      working = applyQuintile(working, plan.quintile);
+    }
+
+    let table, selectCols;
+
+    if (mode === "correlation") {
+      const { table: t, pairs } = computeCorrelations(headers, working, plan.correlation || {});
+      table = t; selectCols = t[0];
+      // 4) Post-explicación
+      const meta = buildMetaForExplanation({
+        mode, plan, headers, rows: working, table, extra: { selectCols, topCorr: pairs }
       });
-      const map = idx.map(x=>x.i);
-      return { newHeaders: idx.map(x=>x.h), map };
-    }
-    function applyHeaderOrder(rows){
-      if (!rows || rows.length < 2) return rows;
-      const [head, ...body] = rows;
-      const {newHeaders, map} = reorderHeaders(head);
-      const remap = body.map(r => map.map(i => r[i] ?? ""));
-      return [newHeaders, ...remap];
-    }
-
-    function renderVerticalList(rows){
-      const [head, ...body] = rows;
-      let html = "";
-      body.forEach((r, idx) => {
-        html += `<div class="vitem"><div class="vnum">#${idx+1}</div><div class="vbody">`;
-        for (let c = 0; c < head.length; c++){
-          html += `<div class="vkey">${escapeHtml(head[c])}</div><div class="vval">${escapeHtml(r[c])}</div>`;
-        }
-        html += `</div></div>`;
+      const nota = await postExplain({ userQ:q, mode, plan, meta });
+      return res.status(200).json({
+        text: JSON.stringify(table),
+        archivo: file,
+        filas_aprox: table.length - 1,
+        formato: "json",
+        nota
       });
-      return html || "<div class='vitem'><div class='vnum'>#1</div><div class='vbody'><div class='vkey'>Mensaje</div><div class='vval'>Sin datos tabulares.</div></div></div>";
-    }
-    function renderTable(rows){
-      const [head, ...body] = rows;
-      let html = '<table class="data"><thead><tr>';
-      for (const h of head) html += `<th>${escapeHtml(h)}</th>`;
-      html += '</tr></thead><tbody>';
-      for (const r of body){
-        html += '<tr>';
-        for (const c of r) html += `<td>${escapeHtml(c)}</td>`;
-        html += '</tr>';
-      }
-      html += '</tbody></table>';
-      return html;
     }
 
-    /* ====== Activadores ====== */
-    function wantsStructured(query){
-      const rx = /\b(lista|listar|listado|enlistar|enlista|tabla|tabular|enumerar|ranking)\b/i;
-      return rx.test(query || "");
-    }
-    function wantsTable(query){
-      const rx = /\b(tabla|tabular)\b/i;
-      return rx.test(query || "");
-    }
+    // Tabla normal
+    selectCols = Array.isArray(plan?.select) && plan.select.length ? plan.select : (headers);
+    working = applyOrderLimit(working, plan?.orderBy || [], plan?.limit);
+    table = objectsToArray(selectCols, working);
 
-    /* ====== Estructurado ====== */
-    function detectRowsFromText(text){
-      let rows = parseJsonTable(text);
-      if (rows) return rows;
-      const csvBlock = extractCsvBlock(text);
-      if (csvBlock){ rows = parseDelimited(csvBlock); if (rows) return rows; }
-      rows = parseMarkdownTableStrict(text);
-      return rows || null;
+    if (table.length <= 1) {
+      return res.status(200).json({ text: "No existe información.", archivo: file, filas_aprox: 0, formato: "texto" });
     }
 
-    function maybeRenderFromText(text, query){
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = ""; // preparamos impresión
-
-      lastRows = null;
-      const rows = detectRowsFromText(text);
-      if (!(rows && rows.length >= 2 && rows[0].length >= 2)) return false;
-
-      const fixed = applyHeaderOrder(rows);
-      lastRows = fixed.slice();
-
-      const showTable = wantsTable(query);
-      if (showTable){
-        const thtml = renderTable(fixed);
-        tablaWrap.innerHTML = thtml;
-        tablaWrap.hidden = false;
-        printable.innerHTML = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${thtml}`;
-      }else{
-        const vhtml = renderVerticalList(fixed);
-        vlistWrap.innerHTML = vhtml;
-        vlistWrap.hidden = false;
-        printable.innerHTML = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${vhtml}`;
-      }
-      return true;
+    // (Opcional) meta extra para quintiles
+    let extra = { selectCols };
+    if (plan?.quintile?.col && plan?.quintile?.index){
+      const col = plan.quintile.col;
+      const pLo = (plan.quintile.index - 1) * 20;
+      const cut = percentile(rows.map(r=>r[col]), pLo);
+      extra.quintilInfo = { col, index: plan.quintile.index, Pcut: cut };
     }
 
-    /* ====== Enviar ====== */
-    async function enviarPregunta(){
-      const pregunta = document.getElementById("pregunta").value.trim();
-      if (!pregunta) return alert("Escribe una pregunta.");
+    // 4) Post-explicación
+    const meta = buildMetaForExplanation({ mode, plan, headers, rows: working, table, extra });
+    const nota = await postExplain({ userQ:q, mode, plan, meta });
 
-      out.hidden = false;
-      out.textContent = "Consultando...";
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = "";
-      lastRows = null;
-
-      const params = new URLSearchParams({ q: pregunta });
-      for (const s of DEFAULT_SOURCES) params.append("src", s);
-
-      let data = null, lastErr = null;
-      for (const base of ENDPOINTS){
-        try{
-          const url = `${base}?${params.toString()}`;
-          const resp = await fetch(url);
-          const txt = await resp.text();
-          try { data = JSON.parse(txt); } catch { data = { text: txt || "" }; }
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          break;
-        }catch(e){ lastErr = e; }
-      }
-      if (!data){
-        out.textContent = `No se pudo contactar al servidor. ${lastErr ? String(lastErr) : ""}`;
-        console.error(lastErr);
-        return;
-      }
-
-      const textoRaw = data.text || data.respuesta || data.answer || "";
-      const shouldTab = wantsStructured(pregunta);
-      let huboEstructura = false;
-
-      if (shouldTab){
-        huboEstructura = maybeRenderFromText(textoRaw, pregunta);
-      }
-
-      if (huboEstructura){
-        out.hidden = true;     // no duplicar
-        stopSpeech();          // no leer tablas/listas
-      }else{
-        const clean = sanitizeForSpeech(textoRaw);
-        out.hidden = false;
-        out.textContent = clean || "No se encontró respuesta.";
-        printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(clean)}</div>`;
-        speak(clean, ()=>video?.play(), ()=>video?.pause());
-      }
-    }
-
-    // Enter para enviar
-    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
-      if (e.key === "Enter"){ enviarPregunta(); }
+    return res.status(200).json({
+      text: JSON.stringify(table),
+      archivo: file,
+      filas_aprox: table.length - 1,
+      formato: "json",
+      nota
     });
-
-    /* ====== Micrófono ====== */
-    function startListening(){
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
-      const rec = new SR();
-      rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
-      rec.onresult = e => {
-        const t = e.results[0][0].transcript;
-        document.getElementById("pregunta").value = t;
-        enviarPregunta();
-      };
-      rec.onerror = e => {
-        alert("Error de micrófono: " + e.error + "\nDa permiso al micrófono en el candado del navegador.");
-      };
-      rec.start();
-    }
-
-    /* ====== Exportar PDF ====== */
-    function exportPDF(){
-      // Si no hay estructura visible, nos aseguramos de tener algo en printable
-      if (!printable.innerHTML.trim()){
-        printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(out.textContent || "")}</div>`;
-      }
-      window.print();
-    }
-
-    /* ====== Limpiar ====== */
-    function limpiar(){
-      stopSpeech();
-      document.getElementById("pregunta").value = "";
-      out.textContent = "";
-      out.hidden = false;
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = "";
-      lastRows = null;
-    }
-
-    // Exponer funciones a la ventana
-    window.startListening = startListening;
-    window.stopSpeech    = stopSpeech;
-    window.exportPDF     = exportPDF;
-    window.limpiar       = limpiar;
-    window.enviarPregunta= enviarPregunta;
-  </script>
-</body>
-</html>
+  }catch(e){
+    console.error(e);
+    return res.status(500).json({ text:"Error interno.", details:String(e) });
+  }
+}
