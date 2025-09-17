@@ -1,6 +1,9 @@
 {
-  "routes": [
-    { "src": "/api/ask", "dest": "/api/ask.js" },
-    { "src": "/ask",     "dest": "/api/ask.js" }
-  ]
+  "functions": {
+    "api/ask.js": {
+      "includeFiles": "data/**",
+      "maxDuration": 10,
+      "memory": 256
+    }
+  }
 }
