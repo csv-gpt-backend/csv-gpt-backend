@@ -1,11 +1,8 @@
 // pages/api/ask.js
-// Determinista para filtros (==, >, >=, <, <=, entre) y ranking/orden por métrica.
-// Si no aplica determinista → GPT (con historia de los últimos 10 min).
-// Soporta fuentes: body.src = [csv|pdf|url|/datos/...]. También legacy file=decimo.csv.
-// Requiere: npm i pdf-parse
-
+// npm i pdf-parse
 import pdfParse from "pdf-parse";
 
+/* ========== Config ========== */
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const API_KEY =
   process.env.OPENAI_API_KEY ||
@@ -15,6 +12,7 @@ const API_KEY =
 const CACHE_MS = 5 * 60 * 1000;
 const cache = new Map(); // url -> { ts, text }
 
+/* ========== Utils base ========== */
 function norm(s){
   return (s||"").toString()
     .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
@@ -34,7 +32,6 @@ function safeJoinPublic(proto, host, pathLike){
   if (!p || p.includes("..") || p.includes("\\")) throw new Error("Ruta insegura.");
   return `${proto}://${host}/${encodeURI(p)}`;
 }
-
 async function getTextFromUrl(url){
   const hit = cache.get(url);
   const now = Date.now();
@@ -55,7 +52,7 @@ async function getTextFromUrl(url){
   return text;
 }
 
-// ====== CSV ======
+/* ========== CSV parsing ========== */
 function bestDelimiter(allText){
   const lines = allText.split(/\r?\n/).filter(l=>l.trim().length);
   const cand = [",",";","\t","|"];
@@ -81,93 +78,272 @@ function parseCSVToRows(csvText){
   const max = Math.max(...rows.map(r=>r.length));
   return rows.map(r => { const a=r.slice(0,max); while(a.length<max)a.push(""); return a; });
 }
-function findCol(headers, aliases){
-  const H = headers.map(h => norm(h));
-  let best = -1, score = -1;
-  for (let i=0;i<H.length;i++){
-    const h = H[i];
-    for (const a of aliases){
-      if (h === a || h.includes(a) || a.includes(h)){
-        const s = (h===a?3:h.includes(a)||a.includes(h)?2:1);
-        if (s>score){ score=s; best=i; }
-      }
-    }
-  }
-  return best;
-}
-function num(v){
-  const n = Number(String(v).replace(/[^\d.-]/g,""));
-  return Number.isNaN(n) ? null : n;
-}
 
-// ====== Intents ======
-const FIELD_MAP = {
-  asertividad: ["asertividad","asertivid","asertiv"],
-  empatia: ["empatia","empatía","empatia emocional","empatia social","empatia total","empatia_","empatia-"],
-  agresion: ["agresion","agresión","agresividad","agresion total","agresion_","agresion-"],
-  liderazgo: ["liderazgo","liderazg","lider"],                 // <== agregado
-  autoestima: ["autoestima"],
-  tension: ["tension","tensión","manejo de la tension","manejo de la tensión"],
-  bienestar: ["bienestar","bienestar fisico","bienestar físico"],
-  promedio: ["promedio","media","avg","average"]
+/* ========== Sinónimos + Fuzzy resolver (evita mapear cientos de columnas) ========== */
+// Puedes mover este objeto a /public/synonyms.json en el futuro y cargarlo dinámicamente.
+let SYNONYMS = {
+  /* Identidad */
+  "nombre": ["nombre","nombres","apellidos","estudiante","alumno","name","nombre del estudiante","estudiantes"],
+  "edad": ["edad"],
+  "curso": ["curso","grado"],
+  "paralelo": ["paralelo","seccion","sección"],
+
+  /* Intraper/interper/vida/IE (según tus encabezados) */
+  "autoestima": ["autoestima"],
+
+  "manejo de la tension": [
+    "manejo de la tension","manejo de la tensión","tension","tensión","manejo tension"
+  ],
+  "bienestar fisico": [
+    "bienestar fisico","bienestar físico","bienestar"
+  ],
+
+  "promedio habilidades intrapersonales": [
+    "promedio de habilidades intrapersonales",
+    "promedio habilidades intrapersonales",
+    "intrapersonales promedio"
+  ],
+
+  "asertividad": ["asertividad","asertivid","asertiv"],
+
+  "conciencia de los demas": [
+    "conciencia de los demas","conciencia de los demás",
+    "conciencia social","conciencia"
+  ],
+
+  "empatia": ["empatia","empatía","empatia emocional","empatia social","empatia total"],
+
+  "promedio habilidades interpersonales": [
+    "promedio de habilidades interpersonales",
+    "promedio  de  habilidades interpersonales", // doble espacio
+    "promedio habilidades interpersonales",
+    "interpersonales promedio"
+  ],
+
+  "motivacion": ["motivacion","motivación"],
+
+  "compromiso": ["compromiso","compromiso academico","compromiso académico","engagement"],
+
+  "administracion del tiempo": [
+    "administracion del tiempo","administración del tiempo",
+    "gestion del tiempo","gestión del tiempo",
+    "manejo del tiempo","planificacion del tiempo","planificación del tiempo",
+    "time management"
+  ],
+
+  "toma de decisiones": ["toma de decisiones","toma decisiones","decision making"],
+
+  "liderazgo": ["liderazgo","lider"],
+
+  "promedio habilidades para la vida": [
+    "promedio de habilidades para la vida",
+    "promedio habilidades para la vida",
+    "life skills promedio","habilidades para la vida promedio"
+  ],
+
+  "promedio inteligencia emocional": [
+    "promedio de inteligencia emocional",
+    "promedio inteligencia emocional",
+    "promedio de iinteligencia emocional", /* typo con doble i */
+    "ie promedio","inteligencia emocional promedio"
+  ],
+
+  /* Conductuales */
+  "agresion": ["agresion","agresión","agresividad"],
+  "timidez": ["timidez"],
+  "propension al cambio": [
+    "propension al cambio","propensión al cambio",
+    "apertura al cambio","apertura al cambio (propension)"
+  ]
 };
 
-function parseSimpleFilter(query){
-  const q = norm(query);
-  let field=null, aliases=null;
-  for (const [k,als] of Object.entries(FIELD_MAP)){
-    if (als.some(a => q.includes(a))){ field=k; aliases=als; break; }
-  }
-  if (!field) return null;
-
-  const mBetween = q.match(/entre\s+(\d+)\s+y\s+(\d+)/);
-  if (mBetween) return { field, aliases, cond:"between", a:+mBetween[1], b:+mBetween[2] };
-
-  const mGe = q.match(/(>=|mayor\s+o\s+igual|igual\s+o\s+mayor)\s+a?\s*(\d+)/);
-  if (mGe) return { field, aliases, cond:">=", x:+mGe[2] };
-
-  const mLe = q.match(/(<=|menor\s+o\s+igual|igual\s+o\s+menor)\s+a?\s*(\d+)/);
-  if (mLe) return { field, aliases, cond:"<=", x:+mLe[2] };
-
-  const mGt = q.match(/(>|mayor)\s+a?\s*(\d+)/);
-  if (mGt) return { field, aliases, cond:">", x:+mGt[2] };
-
-  const mLt = q.match(/(<|menor)\s+a?\s*(\d+)/);
-  if (mLt) return { field, aliases, cond:"<", x:+mLt[2] };
-
-  const mEq = q.match(/(?:igual\s+a\s*)?(\d+)\s*(?:puntos?|pts?)?/);
-  if (mEq) return { field, aliases, cond:"=", x:+mEq[1] };
-
-  return null;
-}
-function parseSelectColumns(query){
-  const q = norm(query);
-  const cols = new Set();
-  const want = (name, arr) => arr.some(a => q.includes(a)) ? cols.add(name) : null;
-  want("Nombre", ["nombre","estudiante","alumno","nombres","apellidos"]);
-  want("Curso", ["curso","grado"]);
-  want("Paralelo", ["paralelo","seccion","sección"]);
-  want("Edad", ["edad"]);
-  for (const [k,als] of Object.entries(FIELD_MAP)){
-    const label = k[0].toUpperCase()+k.slice(1);
-    if (als.some(a => q.includes(a))) cols.add(label);
-  }
-  return Array.from(cols);
-}
-function parseOrder(query){
-  const q = norm(query);
-  let dir = "desc";
-  if (/\b(asc|ascendente|menor a mayor|de menor a mayor)\b/.test(q)) dir = "asc";
-  if (/\b(desc|descendente|mayor a menor|de mayor a menor)\b/.test(q)) dir = "desc";
-  let field = null;
-  const m = q.match(/orden(?:ar)?(?:\s+por)?\s+([a-z0-9 ]+)/);
-  if (m) field = m[1].trim();
-  if (!field){
-    for (const [k,als] of Object.entries(FIELD_MAP)){
-      if (als.some(a => q.includes(a))){ field=k; break; }
+function lev(a,b){
+  a = norm(a); b = norm(b);
+  const m = Array(a.length+1).fill(0).map(()=>Array(b.length+1).fill(0));
+  for(let i=0;i<=a.length;i++) m[i][0]=i;
+  for(let j=0;j<=b.length;j++) m[0][j]=j;
+  for(let i=1;i<=a.length;i++){
+    for(let j=1;j<=b.length;j++){
+      const cost = a[i-1]===b[j-1]?0:1;
+      m[i][j] = Math.min(m[i-1][j]+1, m[i][j-1]+1, m[i-1][j-1]+cost);
     }
   }
-  return { field, dir };
+  return m[a.length][b.length];
+}
+
+function resolveColumn(queryTerm, headers){
+  const q = norm(queryTerm);
+  const H = headers.map(h => ({raw:h, n:norm(h)}));
+
+  // 1) match directo por inclusión
+  for (const {raw,n} of H) if (n.includes(q) || q.includes(n)) return { idx: headers.indexOf(raw), label: raw };
+
+  // 2) sinónimos → candidatos
+  let cand = new Set();
+  for (const [canon, aliases] of Object.entries(SYNONYMS)){
+    if (canon===q || aliases.some(a => q.includes(norm(a)) || norm(a).includes(q))) {
+      aliases.forEach(a => cand.add(norm(a)));
+      cand.add(canon);
+    }
+  }
+  // 3) mejor por Levenshtein entre candidatos
+  if (cand.size){
+    let best = {score: Infinity, idx:-1, label:null};
+    for (const {raw,n} of H){
+      for (const a of cand){
+        const d = lev(a, n);
+        if (d < best.score){ best = {score:d, idx: headers.indexOf(raw), label: raw}; }
+      }
+    }
+    if (best.idx !== -1) return best;
+  }
+  // 4) último recurso: el header más parecido
+  let best = {score: Infinity, idx:-1, label:null};
+  for (const {raw,n} of H){
+    const d = lev(q, n);
+    if (d < best.score){ best = {score:d, idx: headers.indexOf(raw), label: raw}; }
+  }
+  return best.idx !== -1 ? best : { idx:-1, label:null };
+}
+
+function composeName(headers, row){
+  const hNorm = headers.map(norm);
+  const idxNombre = hNorm.findIndex(h => ["nombre","name","estudiante","alumno","nombre del estudiante"].includes(h));
+  if (idxNombre !== -1 && String(row[idxNombre]||"").trim()) return String(row[idxNombre]).trim();
+
+  const iN = hNorm.findIndex(h => ["nombres","nombre s"].includes(h));
+  const iA = hNorm.findIndex(h => ["apellidos","apellido s"].includes(h));
+  const nn = (iN !== -1 ? String(row[iN]||"").trim() : "");
+  const aa = (iA !== -1 ? String(row[iA]||"").trim() : "");
+  const full = [nn,aa].filter(Boolean).join(" ").trim();
+  if (full) return full;
+
+  for (let i=0;i<row.length;i++){
+    const cell = String(row[i]||"").trim();
+    if (cell && /[a-zA-Z]/.test(cell) && !/^\d+(\.\d+)?$/.test(cell)) return cell;
+  }
+  return "";
+}
+
+/* ========== Estadística / Plan executor (determinista) ========== */
+function percentile(values, p){
+  const v = values.map(Number).filter(x => Number.isFinite(x)).sort((a,b)=>a-b);
+  if (!v.length) return null;
+  if (p<=0) return v[0]; if (p>=100) return v[v.length-1];
+  const rank = (p/100)*(v.length-1);
+  const lo = Math.floor(rank), hi = Math.ceil(rank);
+  const w = rank - lo;
+  return v[lo]*(1-w) + v[hi]*w;
+}
+function mean(values){
+  const v = values.map(Number).filter(x => Number.isFinite(x));
+  if (!v.length) return null;
+  return v.reduce((a,b)=>a+b,0)/v.length;
+}
+function stdev(values){
+  const v = values.map(Number).filter(x => Number.isFinite(x));
+  if (!v.length) return null;
+  const m = mean(v);
+  const varsum = v.reduce((s,x)=>s+(x-m)*(x-m),0)/v.length;
+  return Math.sqrt(varsum);
+}
+function zscoreSeries(values){
+  const v = values.map(Number).filter(x => Number.isFinite(x));
+  const m = mean(v), sd = stdev(v)||1e-9;
+  return values.map(x => Number.isFinite(+x) ? (+x - m)/sd : null);
+}
+
+function executePlan(headers, rows, plan){
+  const getIdx = (colName) => {
+    const {idx} = resolveColumn(colName, headers);
+    return idx;
+  };
+
+  let data = rows.slice(1).map(r => r.slice());
+
+  // Filtros numéricos
+  for (const f of (plan.filter||[])){
+    const idx = getIdx(f.col); if (idx<0) continue;
+    const op = (f.op||"=").trim(); const val = +f.value;
+    data = data.filter(r => {
+      const x = +String(r[idx]).replace(/[^\d.-]/g,"");
+      if (!Number.isFinite(x)) return false;
+      return op==="=" ? x===val :
+             op===">="? x>=val :
+             op==="<="? x<=val :
+             op===">" ? x> val :
+             op==="<" ? x< val :
+             op==="between" ? (x>=Math.min(f.a,f.b) && x<=Math.max(f.a,f.b))
+             : false;
+    });
+  }
+
+  // Compute
+  for (const c of (plan.compute||[])){
+    const idx = getIdx(c.col); if (idx<0) continue;
+    const vals = data.map(r => +String(r[idx]).replace(/[^\d.-]/g,"")).filter(Number.isFinite);
+    if (c.op==="percentile"){
+      const p = Number(c.p)||50;
+      const pv = percentile(vals, p);
+      const label = c.as || (`P${p}_${headers[idx]}`);
+      headers.push(label);
+      data.forEach(r => r.push(pv));
+    } else if (c.op==="zscore"){
+      const zs = zscoreSeries(data.map(r => +String(r[idx]).replace(/[^\d.-]/g,"")));
+      const label = c.as || (`Z_${headers[idx]}`);
+      headers.push(label);
+      data.forEach((r,i) => r.push(zs[i]));
+    }
+  }
+
+  // Orden
+  for (const s of (plan.sort||[]).slice().reverse()){
+    const idx = getIdx(s.col); if (idx<0) continue;
+    const dir = (s.dir||"desc").toLowerCase()==="asc" ? 1 : -1;
+    data.sort((a,b)=>{
+      const na = +String(a[idx]).replace(/[^\d.-]/g,"");
+      const nb = +String(b[idx]).replace(/[^\d.-]/g,"");
+      const va = Number.isFinite(na) ? na : -Infinity;
+      const vb = Number.isFinite(nb) ? nb : -Infinity;
+      return dir*(va - vb);
+    });
+  }
+
+  // Limit
+  if (Number.isFinite(+plan.limit) && +plan.limit>0) data = data.slice(0, +plan.limit);
+
+  // Select
+  if (Array.isArray(plan.select) && plan.select.length){
+    const idxs = plan.select.map(getIdx).filter(i=>i>=0);
+    const head = idxs.map(i=>headers[i]);
+    const body = data.map(r => idxs.map(i=>r[i]));
+    return [head, ...body];
+  }
+
+  return [headers, ...data];
+}
+
+/* ========== Parser de intención → Plan ========== */
+function parseNumeric(query){
+  const q = norm(query);
+  const between = q.match(/entre\s+(\d+)\s+y\s+(\d+)/);
+  if (between) return {op:"between", a:+between[1], b:+between[2]};
+  const ge = q.match(/(>=|mayor\s+o\s+igual|igual\s+o\s+mayor)\s+a?\s*(\d+)/);
+  if (ge) return {op:">=", value:+ge[2]};
+  const le = q.match(/(<=|menor\s+o\s+igual|igual\s+o\s+menor)\s+a?\s*(\d+)/);
+  if (le) return {op:"<=", value:+le[2]};
+  const gt = q.match(/(>|mayor)\s+a?\s*(\d+)/);
+  if (gt) return {op:">", value:+gt[2]};
+  const lt = q.match(/(<|menor)\s+a?\s*(\d+)/);
+  if (lt) return {op:"<", value:+lt[2]};
+  const eq = q.match(/(?:igual\s+a\s*)?(\d+)\s*(?:puntos?|pts?)?/);
+  if (eq) return {op:"=", value:+eq[1]};
+  return null;
+}
+function parseOrderDir(query){
+  const q = norm(query);
+  if (/\b(asc|ascendente|menor a mayor|de menor a mayor)\b/.test(q)) return "asc";
+  return "desc";
 }
 function parseLimit(query){
   const q = norm(query);
@@ -177,175 +353,98 @@ function parseLimit(query){
   const n = m1?.[1] || m2?.[1] || m3?.[2];
   return n ? Number(n) : null;
 }
-
-// ====== Determinista: filtro ======
-function deterministicQuery(query, csvText){
-  const intent = parseSimpleFilter(query);
-  if (!intent) return null;
-
-  const rows = parseCSVToRows(csvText);
-  if (!(rows && rows.length>=2)) return null;
-  const headers = rows[0];
-
-  const metricIdx = findCol(headers, intent.aliases);
-  if (metricIdx === -1) return null;
-
-  const nameIdx = findCol(headers, ["nombre","estudiante","alumno","nombres","apellidos","estudiantes","name"]);
-  const cursoIdx = findCol(headers, ["curso","grado"]);
-  const paraIdx  = findCol(headers, ["paralelo","seccion","sección"]);
-  const edadIdx  = findCol(headers, ["edad"]);
-
-  const wanted = parseSelectColumns(query);
-  const wantAll = wanted.length === 0;
-
-  function labelToIdx(label){
-    const lbl = norm(label);
-    if (lbl==="nombre") return nameIdx;
-    if (lbl==="curso")  return cursoIdx;
-    if (lbl==="paralelo") return paraIdx;
-    if (lbl==="edad")   return edadIdx;
-    for (const [k,als] of Object.entries(FIELD_MAP)){
-      const lab = k[0].toUpperCase()+k.slice(1);
-      if (norm(lab)===lbl) return findCol(headers, als);
-    }
-    return headers.findIndex(h => norm(h)===lbl);
+function parseSelect(query){
+  const q = norm(query);
+  const cols = new Set();
+  for (const canon of Object.keys(SYNONYMS)){
+    const aliases = (SYNONYMS[canon]||[]).concat([canon]);
+    if (aliases.some(a => q.includes(norm(a)))) cols.add(canon);
   }
-  const selectedIdx = (wantAll ? [] : wanted.map(labelToIdx).filter(i=>i>=0));
-
-  function passes(v){
-    const n = num(v); if (n==null) return false;
-    switch(intent.cond){
-      case "=":  return n === intent.x;
-      case ">=": return n >= intent.x;
-      case "<=": return n <= intent.x;
-      case ">":  return n >  intent.x;
-      case "<":  return n <  intent.x;
-      case "between": return n >= Math.min(intent.a,intent.b) && n <= Math.max(intent.a,intent.b);
-      default: return false;
+  return Array.from(cols);
+}
+function detectMetric(query){
+  const q = norm(query);
+  let best = null;
+  for (const k of Object.keys(SYNONYMS)){
+    if (SYNONYMS[k].some(a => q.includes(norm(a))) || q.includes(k)) {
+      if (["nombre","curso","paralelo","edad"].includes(k)) continue;
+      best = k; break;
     }
   }
-
-  let data = [];
-  for (let i=1;i<rows.length;i++){
-    const r = rows[i];
-    if (passes(r[metricIdx])){
-      const obj = {};
-      if (wantAll){
-        if (nameIdx !== -1) obj["Nombre"] = r[nameIdx];
-        const metricLabel = headers[metricIdx] || intent.aliases[0].toUpperCase();
-        obj[metricLabel] = r[metricIdx];
-      }else{
-        for (const idx of selectedIdx){
-          const label = headers[idx] || `Col_${idx+1}`;
-          obj[label] = r[idx];
-        }
-      }
-      data.push(obj);
-    }
+  return best;
+}
+function detectPercentileOps(query){
+  const q = norm(query);
+  const ops = [];
+  const rx = /\bp\s*(\d{2})\b/g; // P90, P95 …
+  let m;
+  while ((m = rx.exec(q))){
+    const p = +m[1];
+    if (p>=1 && p<=99) ops.push({op:"percentile", p, as:`P${p}`});
+  }
+  if (/percentil\s+(\d{1,3})/.test(q)){
+    const p = +q.match(/percentil\s+(\d{1,3})/)[1];
+    if (p>=1 && p<=99) ops.push({op:"percentile", p, as:`P${p}`});
+  }
+  if (/\bz\s*score\b/.test(q)) ops.push({op:"zscore"});
+  return ops;
+}
+function extractMetricTermFree(query){
+  const q = norm(query);
+  const pats = [
+    /\bpor\s+([a-z0-9 ñáéíóú]{3,40})\b/,
+    /\ben\s+funcion\s+de\s+([a-z0-9 ñáéíóú]{3,40})\b/,
+    /\btomando\s+en\s+cuenta\s+([a-z0-9 ñáéíóú]{3,40})\b/,
+    /\ben\s+base\s+a\s+([a-z0-9 ñáéíóú]{3,40})\b/
+  ];
+  for (const rx of pats){
+    const m = q.match(rx);
+    if (m && m[1]) return m[1].trim();
+  }
+  return null;
+}
+function buildPlanFromQuery(query, headers){
+  let metric = detectMetric(query);
+  if (!metric){
+    const term = extractMetricTermFree(query);
+    if (term) metric = term; // resolveColumn lo mapeará por fuzzy
   }
 
-  // Orden
-  const { field:orderFieldHint, dir } = parseOrder(query);
-  if (orderFieldHint){
-    let idx = headers.findIndex(h => norm(h).includes(norm(orderFieldHint)));
-    if (idx===-1){
-      for (const [k,als] of Object.entries(FIELD_MAP)){
-        if (als.some(a => norm(orderFieldHint).includes(a))){ idx = findCol(headers, als); break; }
-      }
-    }
-    if (idx!==-1){
-      const label = headers[idx];
-      data.sort((a,b)=>{
-        const na = num(a[label]); const nb = num(b[label]);
-        const va = (na==null? -Infinity : na);
-        const vb = (nb==null? -Infinity : nb);
-        return dir==="asc" ? (va - vb) : (vb - va);
-      });
-    }
+  const cmp = parseNumeric(query);
+  const dir = parseOrderDir(query);
+  const limit = parseLimit(query);
+  const selectWords = parseSelect(query);
+  const compute = detectPercentileOps(query);
+
+  if (!metric && !cmp && !/orden|ranking|mayor|menor/.test(norm(query)) && !selectWords.length && !compute.length){
+    return null;
   }
 
-  const N = parseLimit(query);
-  if (N && N>0) data = data.slice(0, N);
+  // select por defecto
+  let select = selectWords.length ? selectWords.slice() : ["nombre","curso","paralelo"];
+  if (metric && !select.includes(metric)) select.push(metric);
 
-  return { items: data };
+  const plan = {
+    select,
+    filter: [],
+    sort: [],
+    limit: limit || undefined,
+    compute: compute.length ? compute.map(c=>({...c, col: metric||select[select.length-1]})) : []
+  };
+
+  if (metric && cmp) plan.filter.push({ col: metric, ...cmp });
+  if (metric && /orden|ranking|mayor|menor/.test(norm(query))){
+    plan.sort.push({ col: metric, dir });
+  }
+  return plan;
 }
 
-// ====== Determinista: ranking (sin filtro) ======
-function deterministicRanking(query, csvText){
-  const { field, dir } = parseOrder(query);
-  if (!field) return null;
-
-  const rows = parseCSVToRows(csvText);
-  if (!(rows && rows.length>=2)) return null;
-  const headers = rows[0];
-
-  const aliases = FIELD_MAP[field] || [field];
-  const metricIdx = findCol(headers, aliases);
-  if (metricIdx === -1) return null;
-
-  const nameIdx = findCol(headers, ["nombre","estudiante","alumno","nombres","apellidos","estudiantes","name"]);
-  const cursoIdx = findCol(headers, ["curso","grado"]);
-  const paraIdx  = findCol(headers, ["paralelo","seccion","sección"]);
-  const edadIdx  = findCol(headers, ["edad"]);
-
-  const wanted = parseSelectColumns(query);
-  const wantAll = wanted.length === 0;
-
-  function labelToIdx(label){
-    const lbl = norm(label);
-    if (lbl==="nombre") return nameIdx;
-    if (lbl==="curso")  return cursoIdx;
-    if (lbl==="paralelo") return paraIdx;
-    if (lbl==="edad")   return edadIdx;
-    for (const [k,als] of Object.entries(FIELD_MAP)){
-      const lab = k[0].toUpperCase()+k.slice(1);
-      if (norm(lab)===lbl) return findCol(headers, als);
-    }
-    return headers.findIndex(h => norm(h)===lbl);
-  }
-  const selectedIdx = (wantAll ? [] : wanted.map(labelToIdx).filter(i=>i>=0));
-
-  let data = [];
-  for (let i=1;i<rows.length;i++){
-    const r = rows[i];
-    const n = num(r[metricIdx]); if (n==null) continue;
-
-    const obj = {};
-    if (wantAll){
-      if (nameIdx !== -1) obj["Nombre"] = r[nameIdx];
-      const metricLabel = headers[metricIdx] || aliases[0].toUpperCase();
-      obj[metricLabel] = r[metricIdx];
-    }else{
-      for (const idx of selectedIdx){
-        const label = headers[idx] || `Col_${idx+1}`;
-        obj[label] = r[idx];
-      }
-      const mlabel = headers[metricIdx] || aliases[0].toUpperCase();
-      if (!Object.prototype.hasOwnProperty.call(obj, mlabel)) obj[mlabel] = r[metricIdx];
-    }
-    data.push(obj);
-  }
-
-  const metricLabel = headers[metricIdx];
-  data.sort((a,b)=>{
-    const na = num(a[metricLabel]); const nb = num(b[metricLabel]);
-    const va = (na==null? -Infinity : na);
-    const vb = (nb==null? -Infinity : nb);
-    return dir==="asc" ? (va - vb) : (vb - va);
-  });
-
-  const N = parseLimit(query);
-  if (N && N>0) data = data.slice(0, N);
-
-  return { items: data };
-}
-
-// ====== OpenAI ======
+/* ========== OpenAI fallback ========== */
 function systemPromptText(){
   return [
     "Eres una asesora educativa clara y ejecutiva (español México).",
     "Tendrás varias fuentes (CSV y PDF). No inventes datos.",
-    "Si no hay información en las fuentes, responde con conocimiento general pero acláralo.",
+    "Si no hay información en las fuentes, responde con conocimiento general y acláralo.",
     "Responde breve (~150-180 palabras)."
   ].join(" ");
 }
@@ -388,11 +487,10 @@ async function callOpenAI(messages){
   return { ok:true, text };
 }
 
-// ====== Handler ======
+/* ========== Handler ========== */
 export default async function handler(req, res){
   try{
     const method = req.method || "GET";
-    // Soporta POST JSON o GET query
     const body = method === "POST" ? (req.body||{}) : {};
     const q = (body.q || req.query.q || "").toString().trim() || "ping";
 
@@ -403,7 +501,6 @@ export default async function handler(req, res){
     let srcs = body.src || req.query.src;
     if (srcs && !Array.isArray(srcs)) srcs = [srcs];
     const sources = [];
-
     if (Array.isArray(srcs) && srcs.length){
       for (const raw of srcs){
         try{
@@ -422,35 +519,40 @@ export default async function handler(req, res){
       sources.push({ type:"csv", label:file, text: csvText });
     }
 
-    // 1) Determinista con filtro
+    // 1) CSV determinista con PLAN
     const firstCsv = sources.find(s => s.type==="csv");
     if (firstCsv){
-      const det = deterministicQuery(q, firstCsv.text);
-      if (det){
-        if (!det.items.length){
-          return res.status(200).json({ text: "[]", formato:"json", aviso:"" });
+      const rows = parseCSVToRows(firstCsv.text);
+      if (rows && rows.length>=2){
+        const headers = rows[0];
+        const plan = buildPlanFromQuery(q, headers);
+        if (plan){
+          const table = executePlan(headers.slice(), rows, plan);
+          if (!table || table.length<=1){
+            return res.status(200).json({ text:"[]", formato:"json", aviso:"" });
+          }
+          // Asegurar columna "Nombre" si existe pero no fue seleccionada
+          const head = table[0].map(String);
+          const nameIdx = head.findIndex(h => norm(h)==="nombre");
+          if (nameIdx === -1){
+            const h2 = ["Nombre", ...head];
+            const bodyRows = table.slice(1).map(r => [composeName(headers, r), ...r]);
+            return res.status(200).json({
+              text: JSON.stringify([h2, ...bodyRows], null, 2),
+              formato: "json",
+              aviso: ""
+            });
+          }
+          return res.status(200).json({
+            text: JSON.stringify(table, null, 2),
+            formato: "json",
+            aviso: ""
+          });
         }
-        return res.status(200).json({
-          text: JSON.stringify(det.items, null, 2),
-          formato: "json",
-          aviso: ""
-        });
-      }
-      // 2) Determinista ranking
-      const rank = deterministicRanking(q, firstCsv.text);
-      if (rank){
-        if (!rank.items.length){
-          return res.status(200).json({ text: "[]", formato:"json", aviso:"" });
-        }
-        return res.status(200).json({
-          text: JSON.stringify(rank.items, null, 2),
-          formato: "json",
-          aviso: ""
-        });
       }
     }
 
-    // 3) Fallback GPT (con historia)
+    // 2) Fallback GPT (con historia y PDFs)
     const history = Array.isArray(body.history) ? body.history : [];
     const messages = [
       { role: "system", content: systemPromptText() },
