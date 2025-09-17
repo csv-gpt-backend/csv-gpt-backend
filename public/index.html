@@ -13,12 +13,15 @@
     .side-img{width:100%;height:auto;object-fit:contain}
     .video-wrap{width:100%;border-radius:14px;overflow:hidden;background:#000}
     video{width:100%;height:auto;display:block;border:none;outline:none}
+
     textarea{width:100%;min-height:96px;resize:vertical;border:1px solid #d1d5db;border-radius:10px;padding:10px 12px;font-size:1rem}
     .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     button{padding:10px 14px;border-radius:10px;font-size:1rem;cursor:pointer}
     .primary{background:#111;color:#fff;border:1px solid #111}
     .secondary{background:#fff;color:#111;border:1px solid #111}
     #texto{white-space:pre-wrap;margin-top:6px}
+    .muted{color:#6b7280}
+
     table{border-collapse:collapse;width:100%}
     th,td{padding:8px 10px;border-bottom:1px solid #eee;text-align:left}
     th{font-weight:600}
@@ -35,8 +38,7 @@
     <!-- 50% centro: SOLO el video arriba y luego la UI -->
     <div class="col">
       <div class="video-wrap">
-        <video id="videoMain" playsinline muted preload="metadata" poster="/right.png"
-               src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4"></video>
+        <video id="videoMain" playsinline muted preload="metadata" poster="/right.png"></video>
       </div>
 
       <textarea id="pregunta" placeholder="Escribe tu consulta (3 líneas)…&#10;• Puedes dictar con el micrófono.&#10;• Pide listas/rankings/tablas y cálculos."></textarea>
@@ -62,18 +64,29 @@
   </div>
 
   <script>
-    // ===== Config =====
+    // ====== CONFIG ======
     const DEFAULT_FILE = "decimo.csv";
-    const API = (q) => `/api/ask?q=${encodeURIComponent(q)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
-    const LONG_THRESHOLD = 800; // si la respuesta supera esto, el video sigue reproduciéndose
+    const API = q => `/api/ask?q=${encodeURIComponent(q)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
+    const VIDEO_SRC = "https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4";
+    const LONG_THRESHOLD = 800; // si la respuesta total supera esto, el video sigue reproduciéndose
 
-    // ===== Video =====
+    // cargar video fuente
+    (function(){
+      const v=document.getElementById("videoMain");
+      const s=document.createElement("source");
+      s.src = VIDEO_SRC; s.type="video/mp4";
+      v.appendChild(s);
+      v.load();
+    })();
+
+    // ====== VIDEO ======
     const vid = () => document.getElementById("videoMain");
     function playVideo(){ const v=vid(); if(!v) return; v.play().catch(()=>{}); }
     function pauseVideo(){ const v=vid(); if(!v) return; if(!v.paused) v.pause(); }
 
-    // ===== TTS (voz femenina es-MX si está) =====
-    let VOICE_ON = true, VOICES=[], VOZ=null, DICTANDO=false;
+    // ====== TTS (voz femenina es-MX si está) ======
+    let VOICE_ON = true, VOICES=[], VOZ=null, DICTANDO=false, recog=null;
+
     function cargarVoces(){
       return new Promise(resolve=>{
         const s=window.speechSynthesis; if(!s){resolve([]);return;}
@@ -95,12 +108,12 @@
       if(!VOICE_ON || !window.speechSynthesis) return;
       const voices = VOICES.length? VOICES : await cargarVoces();
       VOZ = VOZ || elegirVoz(voices);
-      const u = new SpeechSynthesisUtterance(String(text).replace(/\*/g,""));
+      const u = new SpeechSynthesisUtterance(String(text||"").replace(/\*/g,""));
       if(VOZ){ u.voice=VOZ; u.lang=VOZ.lang; } else { u.lang="es-MX"; }
       u.onstart = ()=> playVideo();
       u.onend   = ()=>{
         const t=document.getElementById("texto"), r=document.getElementById("respuesta");
-        const len=(t?.innerText||"").length+(r?.innerText||"").length;
+        const len=(t?.innerText||"").length + (r?.innerText||"").length;
         if(len>LONG_THRESHOLD) playVideo(); else pauseVideo();
       };
       window.speechSynthesis.cancel();
@@ -113,68 +126,58 @@
     }
     function detenerVoz(){ try{ window.speechSynthesis.cancel(); pauseVideo(); }catch(e){} }
 
-    // ===== Dictado fiable (start/stop) =====
-    let recog=null;
+    // ====== Dictado (start/stop) ======
     function toggleDictado(){
       const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
       if(!SR){ alert("Este navegador no soporta dictado por voz."); return; }
-      if(DICTANDO){ recog.stop(); return; }
-      recog = new SR(); recog.lang="es-MX"; recog.interimResults=false; recog.maxAlternatives=1;
-      recog.onresult = (ev)=>{
-        const txt=ev.results[0][0].transcript||"";
-        const ta=document.getElementById("pregunta");
-        ta.value = (ta.value?ta.value+" ":"") + txt;
-        enviarPregunta();
-      };
+      if(DICTANDO){ try{recog.stop();}catch{} return; }
+      recog=new SR(); recog.lang="es-MX"; recog.interimResults=false; recog.maxAlternatives=1;
+      recog.onresult=(ev)=>{ const txt=ev.results[0][0].transcript||""; const ta=document.getElementById("pregunta"); ta.value=(ta.value?ta.value+" ":"")+txt; enviarPregunta(); };
       recog.onstart = ()=>{ DICTANDO=true; document.getElementById("btnDictar").textContent="⏹️ Detener dictado"; };
       recog.onend   = ()=>{ DICTANDO=false; document.getElementById("btnDictar").textContent="🎤 Dictar"; };
       recog.onerror = ()=>{ DICTANDO=false; document.getElementById("btnDictar").textContent="🎤 Dictar"; };
       recog.start();
     }
 
-    // ===== Render =====
+    // ====== UI helpers ======
     function ocultarTexto(){ const t=document.getElementById("texto"); if(t){ t.style.display="none"; t.textContent=""; } }
     function mostrarTexto(msg){ const t=document.getElementById("texto"); if(t){ t.style.display=""; t.textContent=msg; } }
+
+    // Tablas/Listas (numerado, sin duplicar texto)
     function renderTabla(rows, query){
       ocultarTexto();
       const cont=document.getElementById("respuesta"); cont.innerHTML="";
       const headers=Object.keys(rows[0]||{});
-      const norm=h=>String(h).normalize("NFD").replace(/\p{Diacritic}/gu,"").toUpperCase();
+      const normH=h=>String(h).normalize("NFD").replace(/\p{Diacritic}/gu,"").toUpperCase();
 
-      // Detectar columnas
-      const nameCol = headers.find(h=>/^(NOMBRE|ESTUDIANTE|ALUMNO)$/i.test(norm(h))) ||
-                      headers.find(h=>/NOMBRE|ESTUDIANTE|ALUMNO/i.test(norm(h))) || headers[0];
-      const qn = norm(query||"");
-      const scoreCols = headers.filter(h=>{
-        const H=norm(h);
-        if(/PROMEDIO|NOTA|PUNTAJE|SCORE|CALIFICACION|CALIFICACION|TOTAL/.test(H)) return true;
-        if(/AGRESION|EMPATIA|TIMIDEZ|AUTOESTIMA|FISICO|TENSION|ANSIEDAD/.test(H) && /AGRES|EMPAT|TIMIDEZ|AUTOEST|FISIC|TENSION|ANSIEDAD/.test(qn)) return true;
-        return false;
-      });
-      if(!scoreCols.length){
-        // pick 1-2 numéricas
-        const numeric = headers.filter(h=>rows.some(r=>!isNaN(parseFloat(String(r[h]).replace(",",".")))));
-        scoreCols.push(...numeric.slice(0,2));
-      }
+      // detectar columnas
+      const nameCol = headers.find(h=>/^(NOMBRE|ESTUDIANTE|ALUMNO)$/i.test(normH(h))) ||
+                      headers.find(h=>/NOMBRE|ESTUDIANTE|ALUMNO/i.test(normH(h))) || headers[0];
 
-      // Construir tabla
+      // si backend ya manda # como primera col, respétalo
+      const hasNumHeader = headers.length && /^#$/i.test(headers[0]);
+
       const table=document.createElement("table");
       const thead=document.createElement("thead"), trh=document.createElement("tr");
-      ["#", nameCol, ...scoreCols].forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
+      const headOrder = hasNumHeader ? headers : ["#", ...headers];
+      headOrder.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
       thead.appendChild(trh); table.appendChild(thead);
+
       const tbody=document.createElement("tbody");
       rows.forEach((r,i)=>{
         const tr=document.createElement("tr");
-        const tdN=document.createElement("td"); tdN.className="num"; tdN.textContent=String(i+1); tr.appendChild(tdN);
-        const tdName=document.createElement("td"); tdName.textContent=r[nameCol]??""; tr.appendChild(tdName);
-        for(const c of scoreCols){ const td=document.createElement("td"); td.textContent=r[c]??""; tr.appendChild(td); }
+        if(!hasNumHeader){ const tdN=document.createElement("td"); tdN.className="num"; tdN.textContent=String(i+1); tr.appendChild(tdN); }
+        headOrder.filter(h=>h!=="#").forEach(h=>{
+          const td=document.createElement("td"); td.textContent = r[h] ?? (h===nameCol? r[nameCol]??"" : "");
+          tr.appendChild(td);
+        });
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
       cont.appendChild(table);
     }
 
-    // ===== Exportar =====
+    // Exportar
     function exportarPDF(){
       const w=window.open("","_blank");
       const html=`<html><head><title>Exportar PDF</title>
@@ -191,6 +194,8 @@
       const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a");
       a.href=URL.createObjectURL(blob); a.download="resultado.csv"; a.click(); URL.revokeObjectURL(a.href);
     }
+    window.exportarPDF=exportarPDF; window.exportarCSV=exportarCSV; // botones
+
     function limpiar(){
       detenerVoz();
       document.getElementById("pregunta").value="";
@@ -199,35 +204,30 @@
       pauseVideo();
     }
 
-    // ===== Lógica principal =====
+    // ====== LÓGICA PRINCIPAL ======
     async function enviarPregunta(){
-      detenerVoz(); // por si estaba hablando
+      detenerVoz(); // si estaba hablando
       const q=(document.getElementById("pregunta").value||"").trim();
       if(!q) return;
       document.getElementById("respuesta").innerHTML="";
       mostrarTexto("Procesando…");
 
       try{
-        const r=await fetch(API(q)); let data=null, txt="";
-        try{ data=await r.json(); }catch{ txt=await r.text(); }
+        const r=await fetch(API(q));
+        let data=null, rawTxt="";
+        try{ data=await r.json(); }catch{ rawTxt=await r.text(); }
 
-        if(data && data.error){
-          mostrarTexto("No hay resultados con esos criterios.");
-          speak("No hay resultados con esos criterios.");
+        // si hay filas → mostrar tabla numerada
+        if(Array.isArray(data?.rows) && data.rows.length){
+          renderTabla(data.rows, q);
+          speak(data?.speak || `Mostrando ${data.rows.length} resultados.`);
           return;
         }
 
-        const rows = data?.rows;
-        if(Array.isArray(rows) && rows.length){
-          renderTabla(rows, q);  // tabla numerada sin texto duplicado
-          const phrase = data?.speak || `Mostrando ${rows.length} resultados.`;
-          speak(phrase);
-          return;
-        }
-
-        const msg = data?.speak || txt || "No hay resultados.";
+        // no hay filas → mostrar mensaje y hablar
+        const msg = data?.message || rawTxt || "No hay resultados.";
         mostrarTexto(msg);
-        speak(msg);
+        speak(data?.speak || msg);
 
       }catch(e){
         mostrarTexto("Ocurrió un problema al procesar la consulta.");
@@ -235,12 +235,12 @@
       }
     }
 
-    // Enviar con Enter (Enter = enviar; Shift+Enter = salto)
+    // Enter = enviar (Shift+Enter = salto)
     document.getElementById("pregunta").addEventListener("keydown", e=>{
       if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); enviarPregunta(); }
     });
 
-    // Prime audio/voz tras primer gesto (necesario en algunos navegadores)
+    // Primer gesto: precarga voces y desbloquea video
     window.addEventListener("click",()=>{ cargarVoces(); const v=vid(); if(v){ v.muted=true; v.play().then(()=>v.pause()).catch(()=>{});} },{once:true});
   </script>
 </body>
