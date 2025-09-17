@@ -8,7 +8,7 @@
   <style>
     :root{
       /* Ajustes rápidos */
-      --header-height: 240px;  /* altura del encabezado (sube/baja a gusto) */
+      --header-height: 240px;  /* altura del encabezado */
       --video-shift: 14px;     /* cuánto “baja” el video (0–24px) */
       --accent:#0078d7;
     }
@@ -35,13 +35,13 @@
       display:flex; justify-content:center; align-items:center;
       height:100%;
       overflow:hidden; /* recorta desbordes de imágenes */
-      padding:0 8px;   /* un poco de aire a los lados */
+      padding:0 8px;   /* aire lateral */
     }
     .header-rail .col.left,
     .header-rail .col.right{ flex:0 0 25%; }
     .header-rail .col.center{ flex:0 0 50%; position:relative; }
 
-    /* Logos: limitados al espacio de su columna */
+    /* Logos limitados al espacio de su columna */
     .header-rail .col.left img,
     .header-rail .col.right img{
       max-height:100%;
@@ -130,63 +130,77 @@
   </div>
 
   <script>
-    // ---------- Endpoint: intenta /api/ask y si falla /api/preguntar ----------
+    // Endpoints (usa /api/ask; si no existe, intenta /api/preguntar)
     const ENDPOINTS = ["/api/ask", "/api/preguntar"];
+
+    // CSV por defecto a consultar (dentro de /public/datos/)
+    const DEFAULT_FILE = "decimo.csv";
+
     const video = document.getElementById("video");
 
-    // ---------- Voz femenina español (México) ----------
+    // ---------- Voz femenina "ejecutiva" en español (México) ----------
     let chosenVoice = null;
-    const FEMALE_PREFERRED = ["Microsoft Sabina","Microsoft Dalia","Microsoft Beatriz","Lucia","Soledad","Camila","María","Paola","Valentina","Xochitl"];
-    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","lucia","soledad","camila","maría","paola","xoch","valent"];
-    const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
 
-    function getSpanishVoices(){
-      const voices = window.speechSynthesis?.getVoices?.() || [];
-      const tiers = [
-        v => (v.lang||"").toLowerCase().startsWith("es-mx"),
-        v => (v.lang||"").toLowerCase().startsWith("es-419"),
-        v => (v.lang||"").toLowerCase().startsWith("es-es"),
-        v => (v.lang||"").toLowerCase().startsWith("es")
-      ];
-      for (const f of tiers){ const g = voices.filter(f); if (g.length) return g; }
-      return voices;
+    // Preferencias por nombre (ajusta si ves otras en tu navegador)
+    const EXEC_PREF = ["sabina", "dalia", "beatriz", "abril", "camila", "lucia"];
+    const FEMALE_HINTS = [
+      "female","mujer","femenina",
+      "sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"
+    ];
+    const MALE_HINTS = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
+
+    function scoreVoice(v){
+      const name = (v.name||"").toLowerCase();
+      const lang = (v.lang||"").toLowerCase();
+      let s = 0;
+      if (lang.startsWith("es-mx")) s += 100;
+      else if (lang.startsWith("es-419")) s += 60;
+      else if (lang.startsWith("es")) s += 30;
+      if (EXEC_PREF.some(t => name.includes(t))) s += 40;    // preferidas
+      if (FEMALE_HINTS.some(t => name.includes(t))) s += 20; // femenino
+      if (/(neural|natural|online)/i.test(name)) s += 25;     // calidad alta
+      if (MALE_HINTS.some(t => name.includes(t))) s -= 80;    // evita masculino
+      return s;
     }
-    function pickFemaleSpanishVoice(){
-      const voices = getSpanishVoices();
+
+    function pickExecutiveSpanishFemale(){
+      const voices = window.speechSynthesis?.getVoices?.() || [];
       if (!voices.length) return null;
-      for (const pref of FEMALE_PREFERRED){
-        const v = voices.find(x => (x.name||"").toLowerCase().includes(pref.toLowerCase()));
+
+      // Forzar por query param: ?voice=sabina
+      const forced = new URLSearchParams(location.search).get("voice");
+      if (forced){
+        const v = voices.find(v => (v.name||"").toLowerCase().includes(forced.toLowerCase()));
         if (v) return v;
       }
-      const fem = voices.find(v=>{
-        const n=(v.name||"").toLowerCase();
-        const hasFem=FEMALE_HINTS.some(h=>n.includes(h));
-        const hasMale=MALE_HINTS.some(h=>n.includes(h));
-        return hasFem && !hasMale;
-      });
-      if (fem) return fem;
-      const notMale = voices.find(v => !MALE_HINTS.some(h => (v.name||"").toLowerCase().includes(h)));
-      return notMale || voices[0];
+
+      return voices.slice().sort((a,b) => scoreVoice(b) - scoreVoice(a))[0] || voices[0];
     }
+
     function ensureVoiceSelected(){
-      if (!chosenVoice){ chosenVoice = pickFemaleSpanishVoice(); }
+      if (!chosenVoice) chosenVoice = pickExecutiveSpanishFemale();
     }
-    function speak(text,onStart,onEnd){
+
+    // Tono ejecutivo: más ágil y sobrio
+    function speak(text, onStart, onEnd){
       if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
       ensureVoiceSelected();
       const u = new SpeechSynthesisUtterance(text);
       if (chosenVoice) u.voice = chosenVoice;
       u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-      u.rate = 1.0; u.pitch = 1.05; u.volume = 1.0;
-      u.onstart = ()=> onStart&&onStart();
-      u.onend   = ()=> onEnd&&onEnd();
-      u.onerror = ()=> onEnd&&onEnd();
+      u.rate = 1.12;  // más dinámico
+      u.pitch = 1.02; // tono sobrio
+      u.volume = 1.0;
+      u.onstart = ()=> onStart && onStart();
+      u.onend   = ()=> onEnd && onEnd();
+      u.onerror = ()=> onEnd && onEnd();
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(u);
     }
-    window.speechSynthesis.onvoiceschanged = ()=>{ chosenVoice=null; ensureVoiceSelected(); };
 
-    // ---------- Enviar pregunta ----------
+    window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
+
+    // ---------- Enviar pregunta (incluye &file=DEFAULT_FILE) ----------
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
@@ -196,7 +210,8 @@
       let data = null, lastErr = null;
       for (const base of ENDPOINTS){
         try{
-          const resp = await fetch(`${base}?q=${encodeURIComponent(pregunta)}`);
+          const url = `${base}?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}`;
+          const resp = await fetch(url);
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           data = await resp.json();
           break;
@@ -207,6 +222,7 @@
         console.error(lastErr);
         return;
       }
+
       const texto = data.text || data.respuesta || "No se encontró respuesta.";
       out.textContent = texto;
 
