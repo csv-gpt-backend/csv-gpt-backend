@@ -1,0 +1,10 @@
+{
+  "name": "csv-gpt-backend",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "openai": "^4.60.0",
+    "papaparse": "^5.4.1",
+    "pdf-parse": "^1.1.1"
+  }
+}
