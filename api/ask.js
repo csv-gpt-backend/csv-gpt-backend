@@ -1,308 +1,235 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Asistente (Wix + Vercel)</title>
-  <style>
-    :root{ --bg:#0b0c0f; --card:#12141a; --muted:#7f8ba3; --text:#e6e9f2; --accent:#3da9fc; --ok:#35c46a; --warn:#f7b801; --err:#ff6b6b; }
-    html,body{ height:100%; margin:0; background:var(--bg); color:var(--text); font:400 14px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif; }
-    *{ box-sizing:border-box }
-    .wrap{ width:100%; max-width:980px; margin:0 auto; padding:12px; }
+// /api/ask.js — Vercel Serverless Function (Node). "Fast lane" para preguntas de métricas
+// Responde en ~30–80 ms para cosas como: "promedio de AUTOESTIMA",
+// evitando llamar a GPT. Mantiene compatibilidad con ?q=… y agrega ?source=…
+// Fuentes esperadas:
+//  - data/import1.csv  (Décimo A)
+//  - data/import2.csv  (Décimo B)
+// Columna ejemplo: AUTOESTIMA (y otras). Números con coma o punto.
 
-    .card{ background:var(--card); border-radius:12px; padding:12px; box-shadow:0 4px 14px rgba(0,0,0,.35); }
-    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    label{ color:var(--muted); font-size:12px; }
-    input[type="text"], textarea, select{
-      width:100%; background:#0d0f14; color:var(--text); border:1px solid #1e2230; border-radius:10px; padding:10px 12px; outline:none;
-    }
-    textarea{ min-height:84px; resize:vertical }
-    .btn{ appearance:none; border:1px solid #1e2230; background:#0f1219; color:var(--text); padding:10px 14px; border-radius:10px; cursor:pointer; white-space:nowrap; }
-    .btn:hover{ border-color:#2a3247 }
-    .btn[disabled]{ opacity:.55; cursor:not-allowed }
-    .btn.primary{ border-color:transparent; background:linear-gradient(180deg,#2f94ff,#1677d8); }
-    .btn.ok{ background:linear-gradient(180deg,#3fd37a,#299d58); border-color:transparent }
-    .btn.stop{ background:linear-gradient(180deg,#ff7676,#e63946); border-color:transparent }
+import fs from 'fs';
+import path from 'path';
 
-    .hint{ color:var(--muted); font-size:12px; }
+// ====== CONFIG ======
+const DATA_DIR = path.join(process.cwd(), 'data');
+const FILES = { import1: 'import1.csv', import2: 'import2.csv' };
+const DEFAULT_SOURCE = 'ambos'; // import1 | import2 | ambos
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
-    .status{ margin-top:8px; font-size:13px; }
-    .status.ok{ color:var(--ok) }
-    .status.warn{ color:var(--warn) }
-    .status.err{ color:var(--err) }
+// ====== CACHE simple en memoria ======
+const mem = {
+  csv: new Map(),      // key: import1/import2  -> { rows, headers, loadedAt }
+  result: new Map()    // key: JSON({source, metric, op}) -> { value, createdAt }
+};
 
-    .answer{ margin-top:12px; background:#0d0f14; border:1px solid #1e2230; border-radius:12px; padding:12px; min-height:120px; overflow:auto; }
-    .answer p{ margin:0 0 .6em }
-    .answer code, .answer pre{ background:#0c0f14; border:1px solid #1e2230; padding:2px 6px; border-radius:6px; }
-
-    .toolbar{ display:flex; gap:8px; flex-wrap:wrap; }
-    .grow{ flex:1 1 auto }
-
-    .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
-
-    #overlayFix{ display:none; position:static; pointer-events:none; z-index:auto; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1 class="sr-only">Asistente de preguntas con voz</h1>
-
-    <div class="card" aria-label="Conexión">
-      <div class="row">
-        <div class="grow">
-          <label for="endpoint">Endpoint</label>
-          <input id="endpoint" type="text" value="https://csv-gpt-backend.vercel.app/api/ask" spellcheck="false" />
-        </div>
-        <div>
-          <label><input id="debug" type="checkbox" /> &nbsp;debug=1</label>
-        </div>
-      </div>
-      <div class="hint">Atajos: <kbd>Enter</kbd> = Preguntar • <kbd>Ctrl</kbd>+<kbd>M</kbd> = Mic on/off</div>
-    </div>
-
-    <div class="card" style="margin-top:10px" aria-label="Pregunta">
-      <div class="row">
-        <textarea id="q" placeholder="Escribe o dicta tu pregunta…"></textarea>
-      </div>
-      <div class="row toolbar" style="margin-top:8px">
-        <div class="grow"></div>
-        <button id="askBtn" class="btn primary">Enviar</button>
-        <button id="micStartBtn" class="btn ok">🎙️ Dictar</button>
-        <button id="micStopBtn" class="btn stop" disabled>Detener</button>
-        <button id="clearBtn" class="btn">Limpiar</button>
-        <button id="copyBtn" class="btn">Copiar</button>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <div class="grow">
-          <label for="voiceSelect">Voz TTS</label>
-          <select id="voiceSelect"></select>
-        </div>
-        <div style="width:220px">
-          <label for="sourceSelect">Fuente</label>
-          <select id="sourceSelect">
-            <option value="ambos" selected>Ambos</option>
-            <option value="import1">Décimo A</option>
-            <option value="import2">Décimo B</option>
-          </select>
-        </div>
-      </div>
-
-      <div id="status" class="status" role="status" aria-live="polite"></div>
-      <div id="answer" class="answer" aria-live="polite"></div>
-    </div>
-
-    <div id="overlayFix"></div>
-  </div>
-
-<script>
-(() => {
-  const $ = (s, p=document) => p.querySelector(s);
-  const endpoint = $('#endpoint');
-  const debug = $('#debug');
-  const q = $('#q');
-  const answer = $('#answer');
-  const statusEl = $('#status');
-  const askBtn = $('#askBtn');
-  const micStartBtn = $('#micStartBtn'); 
-  const micStopBtn = $('#micStopBtn');
-  const copyBtn = $('#copyBtn');
-  const clearBtn = $('#clearBtn');
-  const sourceSelect = $('#sourceSelect');
-  const voiceSelect = $('#voiceSelect');
-
-  // ===== Utilidades UI =====
-  const setStatus = (msg, type='') => {
-    statusEl.className = 'status ' + (type||'');
-    statusEl.textContent = msg || '';
-  };
-  const renderText = (txt) => {
-    const safe = String(txt).replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[m]));
-    const blocks = safe.split(/\n{2,}/).map(b => `<p>${b.replace(/\n/g,'<br>')}</p>`).join('');
-    answer.innerHTML = blocks || '<p class="hint">(sin contenido)</p>';
-    answer.scrollTop = answer.scrollHeight;
-  };
-
-  // ===== Abort de peticiones =====
-  let currentController = null;
-  const abortInFlight = () => { try { currentController?.abort(); } catch(_e){} };
-
-  // ===== TTS (con selector) =====
-  let chosenVoice = null;
-  function loadVoices(){
-    const voices = (speechSynthesis.getVoices && speechSynthesis.getVoices()) || [];
-    voiceSelect.innerHTML = '';
-    const frag = document.createDocumentFragment();
-    const makeOpt = (v, idx) => {
-      const o = document.createElement('option');
-      o.value = String(idx);
-      o.textContent = `${v.name} — ${v.lang}`;
-      return o;
-    };
-    // Orden: español primero
-    const es = voices.filter(v => (v.lang||'').toLowerCase().startsWith('es'));
-    const others = voices.filter(v => !(v.lang||'').toLowerCase().startsWith('es'));
-    const list = [...es, ...others];
-    list.forEach((v, i) => frag.appendChild(makeOpt(v, i)));
-    voiceSelect.appendChild(frag);
-
-    // Elegir voz femenina/español si existe
-    let bestIdx = 0;
-    for (let i=0;i<list.length;i++){
-      const v = list[i];
-      if (/(female|mujer|sabina|lola|helena|lucia|paulina|laura|monica)/i.test(v.name)) { bestIdx = i; break; }
-    }
-    voiceSelect.selectedIndex = bestIdx;
-    chosenVoice = list[bestIdx] || voices[0] || null;
-  }
-  function speak(text) {
-    if (!('speechSynthesis' in window)) return;
-    const voices = (speechSynthesis.getVoices && speechSynthesis.getVoices()) || [];
-    const idx = Number(voiceSelect.value);
-    const list = [...voices.filter(v => (v.lang||'').toLowerCase().startsWith('es')), ...voices.filter(v => !(v.lang||'').toLowerCase().startsWith('es'))];
-    chosenVoice = list[idx] || list[0] || null;
-
-    const utt = new SpeechSynthesisUtterance(String(text));
-    if (chosenVoice) { utt.voice = chosenVoice; utt.lang = chosenVoice.lang; } else { utt.lang = 'es-ES'; }
-    utt.rate = 1.0; utt.pitch = 1.0;
-    try { speechSynthesis.cancel(); } catch(_){}
-    speechSynthesis.speak(utt);
-  }
-  if ('speechSynthesis' in window) {
-    try { window.speechSynthesis.onvoiceschanged = loadVoices; } catch(_){}
-    setTimeout(loadVoices, 50);
+// ====== Utilidades ======
+function now(){ return Date.now(); }
+function hasFresh(entry, ttl=CACHE_TTL_MS){ return entry && (now() - entry.createdAt) < ttl; }
+function stripBOM(s=''){ return s.replace(/^\uFEFF/, ''); }
+function detectSep(line=''){
+  const commas = (line.match(/,/g)||[]).length;
+  const semis  = (line.match(/;/g)||[]).length;
+  const tabs   = (line.match(/\t/g)||[]).length;
+  if (semis >= commas && semis >= tabs) return ';';
+  if (commas >= semis && commas >= tabs) return ',';
+  return '\t';
+}
+function toAsciiUpperNoAccents(s=''){
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+}
+function toNumber(v){
+  if (v == null) return NaN;
+  const s = String(v).trim().replace(/\s+/g,' ');
+  if (!s) return NaN;
+  // admitir decimales con coma
+  const n = parseFloat(s.replace(/,/g,'.'));
+  return Number.isFinite(n) ? n : NaN;
+}
+function quantile(sortedNums, q){
+  if (!sortedNums.length) return NaN;
+  const pos = (sortedNums.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sortedNums[base+1] !== undefined) {
+    return sortedNums[base] + rest * (sortedNums[base+1] - sortedNums[base]);
   } else {
-    voiceSelect.disabled = true;
+    return sortedNums[base];
   }
+}
 
-  // ===== Speech Recognition =====
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null;
-  let recActive = false;
-  function initSR(){
-    if (!SR) return null;
-    const r = new SR();
-    r.lang = 'es-ES';
-    r.interimResults = true;
-    r.continuous = true;
-    let base = q.value;
-    r.onstart = () => { base = q.value; recActive = true; micStartBtn.disabled = true; micStopBtn.disabled = false; setStatus('Dictando… (habla y verás el texto en tiempo real)', 'ok'); };
-    r.onerror = (ev) => { setStatus('Error de micrófono: ' + (ev.error||'desconocido'), 'err'); };
-    r.onend = () => { recActive = false; micStartBtn.disabled = false; micStopBtn.disabled = true; setStatus('Dictado detenido.',''); };
-    r.onresult = (ev) => {
-      let finalTxt = '';
-      let interim = '';
-      for (let i = ev.resultIndex; i < ev.results.length; i++){
-        const res = ev.results[i];
-        if (res.isFinal) finalTxt += res[0].transcript;
-        else interim += res[0].transcript;
-      }
-      q.value = (base + ' ' + finalTxt + ' ' + interim).trim();
-    };
-    return r;
-  }
-  if (SR) {
-    rec = initSR();
-  } else {
-    micStartBtn.disabled = true;
-    micStopBtn.disabled = true;
-    micStartBtn.title = 'El dictado no está disponible en este navegador';
-    setStatus('Dictado no disponible. Usa Chrome de escritorio si es posible.', 'warn');
-  }
+function readCSVOnce(key){
+  const hit = mem.csv.get(key);
+  if (hit && hasFresh(hit, CACHE_TTL_MS*6)) return hit; // datos raramente cambian
 
-  function startMic(){ if (!rec) return; try { rec.start(); } catch(_){} }
-  function stopMic(){ try { rec?.stop(); } catch(_){} }
+  const file = FILES[key];
+  if (!file) throw new Error(`Fuente desconocida: ${key}`);
+  const full = path.join(DATA_DIR, file);
+  const raw = stripBOM(fs.readFileSync(full, 'utf8'));
+  const [headerLine, ...lines] = raw.split(/\r?\n/).filter(Boolean);
+  const sep = detectSep(headerLine);
+  const headers = headerLine.split(sep).map(h => h.trim());
+  const headersNorm = headers.map(h => toAsciiUpperNoAccents(h));
 
-  // ===== Helper: detectar "promedio de X" en el texto para forzar fast lane =====
-  function parseMeanMetricFromText(txt){
-    const s = String(txt||'').toLowerCase();
-    if (!/(promedio|media|average)/i.test(s)) return null;
-    const m = s.match(/promedio\s+de\s+([a-záéíóúñ_\s-]+)/i) || s.match(/de\s+([a-záéíóúñ_\s-]+)/i);
-    if (m && m[1]){
-      return m[1].trim().replace(/\s+/g,' ').toUpperCase();
+  const rows = lines.map(line => {
+    const cols = line.split(sep);
+    const obj = {};
+    for (let i=0;i<headers.length;i++){
+      obj[headers[i]] = (cols[i] ?? '').trim();
+      obj[headersNorm[i]] = obj[headers[i]]; // duplicado normalizado
     }
-    return null;
-  }
-
-  // ===== Llamada al backend =====
-  async function ask(){
-    const query = q.value.trim();
-    if (!query) { setStatus('Escribe o dicta una pregunta primero.','warn'); return; }
-    abortInFlight();
-    const ctl = new AbortController();
-    currentController = ctl;
-
-    const base = (endpoint.value||'').trim().replace(/\/$/, '');
-    let url = '';
-    try {
-      const u = new URL(base);
-      u.searchParams.set('q', query);
-      const src = (sourceSelect.value||'ambos');
-      if (src) u.searchParams.set('source', src);
-      const metricAuto = parseMeanMetricFromText(query);
-      if (metricAuto){ u.searchParams.set('metric', metricAuto); u.searchParams.set('op','mean'); }
-      if (debug.checked) u.searchParams.set('debug', '1');
-      url = u.toString();
-    } catch {
-      const parts = [ base + '?q=' + encodeURIComponent(query) ];
-      const src = (sourceSelect.value||'ambos');
-      if (src) parts.push('source=' + encodeURIComponent(src));
-      const metricAuto = parseMeanMetricFromText(query);
-      if (metricAuto){ parts.push('metric=' + encodeURIComponent(metricAuto)); parts.push('op=mean'); }
-      if (debug.checked) parts.push('debug=1');
-      url = parts.join('&');
-    }
-
-    setStatus('Consultando…', '');
-    askBtn.disabled = true;
-
-    let resp, data, text;
-    try {
-      resp = await fetch(url, { signal: ctl.signal, headers: { 'Accept':'application/json' } });
-      const ct = resp.headers.get('content-type')||'';
-      if (ct.includes('application/json')) data = await resp.json(); else text = await resp.text();
-      if (!resp.ok){
-        const body = data ? JSON.stringify(data).slice(0,800) : String(text||'').slice(0,800);
-        setStatus(`Error ${resp.status}`, 'err');
-        renderText(body || '(sin detalle)');
-        return;
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') { setStatus('Consulta cancelada','warn'); return; }
-      setStatus('Fallo de red: ' + (err.message||'desconocido'), 'err');
-      return;
-    } finally { askBtn.disabled = false; }
-
-    const out = parseBackendPayload({data, text});
-    renderText(out.view);
-    if (out.toSpeak) speak(out.toSpeak);
-    setStatus('Listo ✓','ok');
-  }
-
-  function parseBackendPayload({data, text}){
-    if (typeof data === 'string') return { view: data, toSpeak: data };
-    if (text && !data) return { view: text, toSpeak: text };
-    let ans = '';
-    if (data) { ans = data.answer || data.text || data.result || data.message || ''; if (!ans) ans = JSON.stringify(data, null, 2); }
-    const toSpeak = (typeof ans === 'string' ? ans : '');
-    return { view: ans, toSpeak };
-  }
-
-  // ===== Eventos =====
-  askBtn.addEventListener('click', ask);
-  clearBtn.addEventListener('click', () => { q.value=''; answer.innerHTML=''; setStatus('',''); });
-  copyBtn.addEventListener('click', async () => {
-    const tmp = answer.innerText.trim();
-    if (!tmp) { setStatus('Nada para copiar.','warn'); return; }
-    try { await navigator.clipboard.writeText(tmp); setStatus('Respuesta copiada.','ok'); } catch { setStatus('No se pudo copiar.','warn'); }
+    return obj;
   });
 
-  micStartBtn.addEventListener('click', startMic);
-  micStopBtn.addEventListener('click', stopMic);
-  q.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } });
-  document.addEventListener('keydown', (e) => { if (e.ctrlKey && String(e.key).toLowerCase() === 'm'){ if (recActive) stopMic(); else startMic(); } });
+  const out = { rows, headers, headersNorm, loadedAt: now() };
+  mem.csv.set(key, out);
+  return out;
+}
 
-  const overlay = document.getElementById('overlayFix'); if (overlay){ overlay.style.display='none'; overlay.style.pointerEvents='none'; overlay.style.zIndex='auto'; }
-})();
-</script>
-</body>
-</html>
+function pickSources(source){
+  const s = String(source||DEFAULT_SOURCE).toLowerCase();
+  if (s === 'import1' || s === 'a' || s === 'decimo a') return ['import1'];
+  if (s === 'import2' || s === 'b' || s === 'decimo b') return ['import2'];
+  // ambos por defecto
+  return ['import1','import2'];
+}
+
+function collectColumnNumbers(sourceList, metric){
+  const MET = toAsciiUpperNoAccents(metric);
+  const numsBySource = {};
+  let all = [];
+  for (const key of sourceList){
+    const { rows } = readCSVOnce(key);
+    const arr = [];
+    for (const r of rows){
+      const v = r[MET];
+      const n = toNumber(v);
+      if (Number.isFinite(n)) arr.push(n);
+    }
+    arr.sort((a,b)=>a-b);
+    numsBySource[key] = arr;
+    all = all.concat(arr);
+  }
+  all.sort((a,b)=>a-b);
+  return { all, numsBySource };
+}
+
+function statsFromArray(arr){
+  const n = arr.length;
+  if (!n) return { n:0, mean:NaN, min:NaN, max:NaN, p50:NaN, p90:NaN };
+  let sum = 0; let min = arr[0]; let max = arr[arr.length-1];
+  for (const x of arr) sum += x;
+  const mean = sum / n;
+  const p50 = quantile(arr, 0.5);
+  const p90 = quantile(arr, 0.9);
+  return { n, mean, min, max, p50, p90 };
+}
+
+function formatNumber(n){
+  if (!Number.isFinite(n)) return 'NaN';
+  return new Intl.NumberFormat('es-EC', { maximumFractionDigits: 2 }).format(n);
+}
+
+function humanSourceName(keys){
+  const set = new Set(keys);
+  if (set.size === 2) return 'Ambos';
+  if (set.has('import1')) return 'Décimo A';
+  if (set.has('import2')) return 'Décimo B';
+  return 'Desconocido';
+}
+
+function buildAnswer({ metric, sourceKeys, globalStats, perSource }){
+  const srcName = humanSourceName(sourceKeys);
+  const lines = [];
+  lines.push(`Promedio de ${metric.toUpperCase()} — ${srcName}: ${formatNumber(globalStats.mean)} (n=${globalStats.n}).`);
+  lines.push(`Min=${formatNumber(globalStats.min)} · Mediana=${formatNumber(globalStats.p50)} · P90=${formatNumber(globalStats.p90)} · Max=${formatNumber(globalStats.max)}`);
+  if (sourceKeys.length>1){
+    const a = perSource['import1'];
+    const b = perSource['import2'];
+    if (a) lines.push(`Décimo A → n=${a.n}, promedio=${formatNumber(a.mean)}`);
+    if (b) lines.push(`Décimo B → n=${b.n}, promedio=${formatNumber(b.mean)}`);
+  }
+  return lines.join('\n');
+}
+
+function tryParseFastNL(q){
+  // Reconocer: "promedio de AUTOESTIMA" / "dime el promedio de autoestima" / "media autoestima"
+  const s = (q||'').toString().toLowerCase();
+  // op mean
+  if (/(promedio|media|average)/i.test(s)){
+    const m = s.match(/de\s+([a-záéíóúñ\s_]+)/i) || s.match(/\b([a-záéíóúñ_]+)\b\s*(?:\?)?$/i);
+    if (m && m[1]){
+      const metric = m[1].trim();
+      return { op:'mean', metric };
+    }
+  }
+  return null;
+}
+
+function ok(res, data){
+  cors(res);
+  res.statusCode = 200;
+  res.setHeader('Content-Type','application/json; charset=utf-8');
+  res.end(JSON.stringify(data));
+}
+function bad(res, code, message){
+  cors(res);
+  res.statusCode = code;
+  res.setHeader('Content-Type','application/json; charset=utf-8');
+  res.end(JSON.stringify({ error: message }));
+}
+function cors(res){
+  res.setHeader('Access-Control-Allow-Origin','*');
+  res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers','*');
+}
+
+export default async function handler(req, res){
+  if (req.method === 'OPTIONS'){ cors(res); res.statusCode=204; return res.end(); }
+  if (req.method !== 'GET'){ return bad(res, 405, 'Use GET'); }
+
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    const q = url.searchParams.get('q') || '';
+    const metricParam = url.searchParams.get('metric');
+    const opParam = url.searchParams.get('op'); // mean (por ahora)
+    const source = url.searchParams.get('source') || DEFAULT_SOURCE;
+    const sourceKeys = pickSources(source);
+
+    let fast = null;
+    if (metricParam && (opParam||'mean')==='mean') fast = { op:'mean', metric:metricParam };
+    else fast = tryParseFastNL(q);
+
+    if (fast && fast.metric){
+      const cacheKey = JSON.stringify({ source: sourceKeys.join('+'), metric: toAsciiUpperNoAccents(fast.metric), op:'mean' });
+      const hit = mem.result.get(cacheKey);
+      if (hasFresh(hit)) return ok(res, { ...hit.value, _cache:true });
+
+      const { all, numsBySource } = collectColumnNumbers(sourceKeys, fast.metric);
+      const globalStats = statsFromArray(all);
+      const perSource = {};
+      for (const k of Object.keys(numsBySource)) perSource[k] = statsFromArray(numsBySource[k]);
+
+      const answer = buildAnswer({ metric: fast.metric, sourceKeys, globalStats, perSource });
+      const payload = { answer, metric: fast.metric, op:'mean', source: humanSourceName(sourceKeys), stats: { global: globalStats, porFuente: perSource }, _fast:true };
+      mem.result.set(cacheKey, { value: payload, createdAt: now() });
+      return ok(res, payload);
+    }
+
+    // ===== Fallback (tu lógica GPT existente) =====
+    // Aquí puedes llamar a tu pipeline LLM sólo si no hay fast path.
+    // Para mantener este snippet autocontenido, devolvemos guía.
+    return ok(res, {
+      answer: 'No reconocí una métrica directa. Intenta: "promedio de AUTOESTIMA" o usa ?metric=AUTOESTIMA&op=mean&source=ambos',
+      _fast:false
+    });
+
+  } catch (err) {
+    console.error(err);
+    return bad(res, 500, 'Error interno: ' + (err.message||'desconocido'));
+  }
+}
+
+// === vercel.json sugerido ===
+// {
+//   "functions": { "api/ask.js": { "maxDuration": 10, "memory": 256 } },
+//   "regions": ["gru1", "iad1"]
+// }
