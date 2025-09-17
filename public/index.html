@@ -7,10 +7,12 @@
 
   <style>
     :root{
+      /* Ajustes rápidos */
+      --header-height: 240px;  /* altura del encabezado (sube/baja a gusto) */
+      --video-shift: 14px;     /* cuánto “baja” el video (0–24px) */
       --accent:#0078d7;
-      /* mueve el video hacia ABAJO cambiando este valor */
-      --video-shift: 18px; /* prueba 10–26px según te guste */
     }
+
     *{ box-sizing:border-box; }
     body{
       margin:0;
@@ -25,36 +27,35 @@
       align-items:center;
       justify-content:center;
       width:100%;
-      height:clamp(180px, 28vh, 260px);
+      height:var(--header-height);
       background:#fff;
-      overflow:hidden;
+      overflow:hidden; /* evita que algo se salga del header */
     }
     .header-rail .col{
       display:flex; justify-content:center; align-items:center;
       height:100%;
+      overflow:hidden; /* recorta desbordes de imágenes */
+      padding:0 8px;   /* un poco de aire a los lados */
     }
     .header-rail .col.left,
     .header-rail .col.right{ flex:0 0 25%; }
     .header-rail .col.center{ flex:0 0 50%; position:relative; }
 
-    .header-rail img,
-    .header-rail video{
-      height:100%;
-      width:auto;
-      object-fit:contain;
-      display:block;
-      border:0; outline:0;
+    /* Logos: limitados al espacio de su columna */
+    .header-rail .col.left img,
+    .header-rail .col.right img{
+      max-height:100%;
+      max-width:100%;
+      height:auto; width:auto;
+      object-fit:contain; display:block;
     }
 
-    /* ↓↓↓ DESPLAZA SOLO EL VIDEO HACIA ABAJO ↓↓↓ */
+    /* Video centrado y con desplazamiento hacia abajo */
     .header-rail .col.center video{
-      transform: translateY(var(--video-shift)) !important;
-      max-width:100%; max-height:100%;
-    }
-    @media (max-width:640px){
-      .header-rail .col.center video{
-        transform: translateY(10px) !important;
-      }
+      max-height:100%; max-width:100%;
+      height:100%; width:auto;
+      object-fit:contain; display:block;
+      transform: translateY(var(--video-shift));
     }
 
     /* ====== Interacción ====== */
@@ -86,6 +87,15 @@
       border-radius:10px;
       text-align:left; line-height:1.45;
     }
+
+    /* Responsive */
+    @media (max-width: 900px){
+      :root{ --header-height: 220px; }
+    }
+    @media (max-width: 640px){
+      :root{ --header-height: 200px; }
+      .header-rail .col.center video{ transform: translateY(8px); }
+    }
   </style>
 </head>
 <body>
@@ -93,7 +103,7 @@
   <!-- ====== ENCABEZADO (25 / 50 / 25) ====== -->
   <div class="header-rail">
     <div class="col left">
-      <!-- Ojo: como este archivo está en /public, las rutas son /left.png y /right.png -->
+      <!-- Como este archivo está en /public, las rutas son /left.png y /right.png -->
       <img src="/left.png" alt="Imagen izquierda">
     </div>
 
