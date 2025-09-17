@@ -7,15 +7,15 @@
 
   <style>
     :root{
-      --header-height: 240px;
-      --video-shift: 14px;
+      /* VIDEO MÁS GRANDE */
+      --header-height: 360px;   /* antes 240px */
+      --video-shift: 10px;
       --accent:#0078d7;
     }
 
     *{ box-sizing:border-box; }
     body{
-      margin:0;
-      background:#fff;
+      margin:0; background:#fff;
       font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
       color:#111;
     }
@@ -39,12 +39,11 @@
       height:auto; width:auto; object-fit:contain; display:block;
     }
 
-    /* 15% más grande */
+    /* Más grande SIN recortar: crecer por altura, sin scale */
     .header-rail .col.center video{
       max-height:100%; max-width:100%;
       height:100%; width:auto; object-fit:contain; display:block;
-      transform: translateY(var(--video-shift)) scale(1.15);
-      transform-origin:center center;
+      transform: translateY(var(--video-shift));
     }
 
     /* ====== Interacción ====== */
@@ -95,7 +94,7 @@
     table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; }
     table.data tbody tr:nth-child(odd){ background:#fafbfc; }
 
-    /* ====== Barra inferior (botones) ====== */
+    /* ====== Botones inferiores ====== */
     .footer-bar{
       width:min(95%,1100px); margin:4px auto 28px;
       display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
@@ -109,10 +108,10 @@
     }
 
     /* Responsive */
-    @media (max-width: 900px){ :root{ --header-height: 220px; } }
+    @media (max-width: 900px){ :root{ --header-height: 320px; } }
     @media (max-width: 640px){
-      :root{ --header-height: 200px; }
-      .header-rail .col.center video{ transform: translateY(8px) scale(1.12); }
+      :root{ --header-height: 260px; }
+      .header-rail .col.center video{ transform: translateY(8px); }
       .vbody{ grid-template-columns:1fr; } /* clave encima del valor */
     }
   </style>
@@ -174,7 +173,6 @@
     const out = document.getElementById("respuesta");
     const printable = document.getElementById("printable");
 
-    // Guardamos la última matriz de filas detectadas para exportar
     let lastRows = null;
 
     // ---------- Voz (es-MX) ----------
@@ -210,13 +208,10 @@
 
     function sanitizeForSpeech(text){
       if (!text) return "";
-      // No leer tablas ni código
+      // No leer tablas/código ni asteriscos
       let t = text.replace(/```[\s\S]*?```/g, " ");
-      // Quitar asteriscos
       t = t.replace(/\*/g, "");
-      // Quitar encabezados markdown y viñetas típicas
       t = t.replace(/^[#>\-\u2022]\s*/gm, "");
-      // Colapsar espacios
       t = t.replace(/\s{2,}/g, " ").trim();
       return t;
     }
@@ -246,31 +241,24 @@
     const escapeHtml = (s) => String(s ?? "")
       .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 
-    function pickDelimiter(sampleLines){
-      const cands = [",",";","\t","|"];
-      let best = ",", bestScore = -1;
-      for (const d of cands){
-        let score = 0;
-        for (const line of sampleLines){
-          const parts = line.split(d);
-          if (parts.length > 1) score += parts.length;
-        }
-        if (score > bestScore){ bestScore = score; best = d; }
-      }
-      return best;
-    }
-
-    function parseMarkdownTable(text){
+    function parseMarkdownTableStrict(text){
+      // Solo acepta tablas Markdown con fila separadora --- (evita falsos positivos)
       const lines = text.split(/\r?\n/).map(l=>l.trim());
-      const md = lines.filter(l => /^\|.*\|$/.test(l));
-      if (md.length < 2) return null;
-      const rows = md.map(l=>{
-        const cells = l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim());
-        return cells;
-      });
-      const sepIdx = rows.findIndex(r => r.every(c => /^:?-{3,}:?$/.test(c)));
-      if (sepIdx >= 0) rows.splice(sepIdx,1);
-      return rows.length >= 2 ? rows : null;
+      const starts = lines.findIndex(l => /^\|.*\|$/.test(l));
+      if (starts === -1) return null;
+      const rows = [];
+      for (let i=starts; i<lines.length; i++){
+        const l = lines[i];
+        if (!/^\|.*\|$/.test(l)) break;
+        rows.push(l);
+      }
+      if (rows.length < 3) return null; // header + separator + 1 row
+      const cells = rows.map(l => l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
+      // fila separadora
+      if (!cells[1].every(c => /^:?-{3,}:?$/.test(c))) return null;
+      // quitar separadora
+      cells.splice(1,1);
+      return cells;
     }
 
     function parseJsonTable(text){
@@ -292,20 +280,31 @@
       return m ? m[1].trim() : null;
     }
 
-    function parseDelimited(text){
-      const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+    function parseDelimited(csvText){
+      const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
       if (lines.length < 2) return null;
-      const sample = lines.slice(0, 10);
-      const d = pickDelimiter(sample);
-      const rows = lines.map(l => l.split(d).map(c => c.trim()));
+      // detectar separador simple por cuenta de columnas
+      const cand = [",",";","\t","|"];
+      let best=",", bestCols=0, ok=0;
+      for (const d of cand){
+        let cols = null, good=0;
+        for (const line of lines.slice(0,20)){
+          const parts = line.split(d);
+          if (parts.length<2) continue;
+          if (cols==null) cols = parts.length;
+          if (parts.length===cols) good++;
+        }
+        if (good>ok){ ok=good; best=d; bestCols=cols||0; }
+      }
+      if (ok<2 || bestCols<2) return null;
+      const rows = lines.map(l => l.split(best).map(c=>c.trim()));
       const maxCols = Math.max(...rows.map(r => r.length));
       const normalized = rows.map(r => {
         const copy = r.slice(0, maxCols);
         while (copy.length < maxCols) copy.push("");
         return copy;
       });
-      if (maxCols < 2 || normalized.length < 2) return null;
-      return normalized;
+      return normalized.length>=2 && maxCols>=2 ? normalized : null;
     }
 
     // Prioriza nombre/estudiante/alumno
@@ -358,42 +357,51 @@
       return html;
     }
 
+    /* === Detección MÁS ESTRICTA
+       Solo tabulamos si:
+       - La respuesta es JSON de objetos, o
+       - Trae un bloque ```csv ...```, o
+       - Es una tabla Markdown con separador ---.
+       (El texto normal JAMÁS se convierte en tabla) */
     function detectRowsFromText(text){
+      // 1) JSON
       let rows = parseJsonTable(text);
-      if (!rows){
-        const csvBlock = extractCsvBlock(text);
-        if (csvBlock) rows = parseDelimited(csvBlock);
+      if (rows) return rows;
+
+      // 2) bloque csv explícito
+      const csvBlock = extractCsvBlock(text);
+      if (csvBlock){
+        rows = parseDelimited(csvBlock);
+        if (rows) return rows;
       }
-      if (!rows) rows = parseMarkdownTable(text);
-      if (!rows) rows = parseDelimited(text);
-      return rows;
+
+      // 3) tabla Markdown estricta
+      rows = parseMarkdownTableStrict(text);
+      if (rows) return rows;
+
+      return null; // <- texto normal
     }
 
     function maybeRenderFromText(text){
       vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
       printable.hidden = true; printable.innerHTML = "";
-
       lastRows = null;
 
-      let rows = detectRowsFromText(text);
+      const rows = detectRowsFromText(text);
       if (rows && rows.length >= 2 && rows[0].length >= 2){
-        rows = applyHeaderOrder(rows);
-        lastRows = rows.slice(); // guardar para exportar
+        const fixed = applyHeaderOrder(rows);
+        lastRows = fixed.slice();
 
-        // Vista principal: vertical
-        const vhtml = renderVerticalList(rows);
+        const vhtml = renderVerticalList(fixed);
         vlistWrap.innerHTML = vhtml;
         vlistWrap.hidden = false;
 
-        // Fallback tabla (oculta)
-        tablaWrap.innerHTML = renderTable(rows);
+        tablaWrap.innerHTML = renderTable(fixed);
 
-        // Para imprimir: usamos la lista vertical
         printable.innerHTML = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${vhtml}`;
         printable.hidden = false;
-
-        return true; // hubo datos tabulares
+        return true;
       }
       return false;
     }
@@ -432,9 +440,8 @@
       if (huboTabla){
         // No duplicar: ocultar texto si hay datos tabulares
         out.hidden = true;
-        stopSpeech(); // no leer tablas
+        stopSpeech();
       }else{
-        // Mostrar y leer texto (sin asteriscos)
         const clean = sanitizeForSpeech(textoRaw);
         out.hidden = false;
         out.textContent = clean || "No se encontró respuesta.";
@@ -474,11 +481,7 @@
     }
 
     function exportPDF(){
-      // Imprime solo la zona de resultados (printable).
-      if (printable.hidden){
-        alert("No hay resultados para exportar.");
-        return;
-      }
+      if (printable.hidden){ alert("No hay resultados para exportar."); return; }
       window.print();
     }
 
@@ -487,11 +490,8 @@
         alert("No hay resultados para exportar.");
         return;
       }
-      // Generar una tabla HTML compatible con Excel (.xls)
       const tableHTML = renderTable(lastRows);
-      const html = `
-        <html><head><meta charset="UTF-8"></head>
-        <body>${tableHTML}</body></html>`;
+      const html = `<html><head><meta charset="UTF-8"></head><body>${tableHTML}</body></html>`;
       const blob = new Blob([html], { type: "application/vnd.ms-excel" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -505,14 +505,14 @@
       stopSpeech();
       document.getElementById("pregunta").value = "";
       out.textContent = "";
-      out.hidden = false; // mostramos contenedor vacío por consistencia
+      out.hidden = false;
       vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
       printable.hidden = true; printable.innerHTML = "";
       lastRows = null;
     }
 
-    // Exponer botones al ámbito global
+    // Exponer botones
     window.startListening = startListening;
     window.stopSpeech = stopSpeech;
     window.exportPDF = exportPDF;
