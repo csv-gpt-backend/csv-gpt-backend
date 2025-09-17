@@ -1,7 +1,0 @@
-{
-  "functions": { "api/*.js": { "runtime": "nodejs18.x" } },
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "^/$", "dest": "/index.html" }
-  ]
-}
