@@ -7,8 +7,7 @@
 
   <style>
     :root{
-      /* Video grande */
-      --header-height: 360px;
+      --header-height: 360px; /* video más grande */
       --video-shift: 10px;
       --accent:#0078d7;
     }
@@ -51,7 +50,7 @@
     }
     .btn:hover{ filter:brightness(0.95); }
 
-    /* Texto de respuesta (por defecto) */
+    /* Texto por defecto */
     #respuesta{
       margin:20px auto 0; width:min(90%,1100px);
       min-height:64px; padding:14px; background:#f7f7f8;
@@ -59,7 +58,7 @@
       text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
     }
 
-    /* ====== Lista vertical enumerada (solo cuando se pide) ====== */
+    /* ====== Lista vertical enumerada (solo si se pide) ====== */
     .vlist{ width:min(95%,1100px); margin:16px auto 24px; font-size:13px; }
     .vitem{
       border:1px solid #e5e5e7; border-radius:12px;
@@ -151,14 +150,14 @@
   </div>
 
   <script>
-    // Endpoints
+    // ====== Endpoints ======
     const ENDPOINTS = ["/api/ask", "/api/preguntar"];
 
-    // FUENTES POR DEFECTO: CSV + 2 PDFs (rutas bajo /public/)
+    // 🔗 Fuentes por defecto: CSV + TUS 2 PDFs (URLs absolutas)
     const DEFAULT_SOURCES = [
       "datos/decimo.csv",
-      "documentos/EVALUACIONES EXAMENES 1.CON HABILIDADES Y DEFINICION TIEMPO.pdf",
-      "documentos/LEXIUM .pdf"
+      "https://csv-gpt-backend.vercel.app/lexium.pdf",
+      "https://csv-gpt-backend.vercel.app/evaluaciones.pdf"
     ];
 
     const video = document.getElementById("video");
@@ -166,7 +165,6 @@
     const tablaWrap = document.getElementById("tabla");
     const out = document.getElementById("respuesta");
     const printable = document.getElementById("printable");
-
     let lastRows = null;
 
     // ====== Voz (es-MX) ======
@@ -226,7 +224,7 @@
     function stopSpeech(){ try{ window.speechSynthesis.cancel(); }catch{} try{ video?.pause(); }catch{} }
     window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
 
-    // ====== Helpers de parseo estrictos (para cuando se pida lista/tabla) ======
+    // ====== Helpers de parseo (estrictos) ======
     const escapeHtml = (s) => String(s ?? "")
       .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 
@@ -332,14 +330,13 @@
       return html;
     }
 
-    // ====== Lógica: SOLO tabular si el usuario lo pide ======
+    // ====== SOLO tabular si el usuario lo pide ======
     function wantsStructured(query){
-      const rx = /\b(lista|listar|listado|enlistar|enlista|tabla|tabular)\b/i;
+      const rx = /\b(lista|listar|listado|enlistar|enlista|tabla|tabular|enumerar|ranking)\b/i;
       return rx.test(query || "");
     }
-
     function detectRowsFromText(text){
-      // Solo se usa si wantsStructured() == true
+      // solo se usa si wantsStructured() == true
       let rows = parseJsonTable(text);
       if (rows) return rows;
       const csvBlock = extractCsvBlock(text);
@@ -347,7 +344,6 @@
       rows = parseMarkdownTableStrict(text);
       return rows || null;
     }
-
     function maybeRenderFromText(text){
       vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
@@ -364,7 +360,6 @@
         vlistWrap.hidden = false;
 
         tablaWrap.innerHTML = renderTable(fixed);
-
         printable.innerHTML = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${vhtml}`;
         printable.hidden = false;
         return true;
@@ -384,22 +379,24 @@
       printable.hidden = true; printable.innerHTML = "";
       lastRows = null;
 
-      // Construir query con múltiples fuentes
+      // construir query con múltiples fuentes
       const params = new URLSearchParams({ q: pregunta });
       for (const s of DEFAULT_SOURCES) params.append("src", s);
 
-      let data = null, lastErr = null;
+      let data = null, lastErr = null, lastStatus = null;
       for (const base of ENDPOINTS){
         try{
           const url = `${base}?${params.toString()}`;
           const resp = await fetch(url);
+          lastStatus = resp.status;
+          const txt = await resp.text();
+          try { data = JSON.parse(txt); } catch { data = { text: txt || "" }; }
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          data = await resp.json();
           break;
         }catch(e){ lastErr = e; }
       }
       if (!data){
-        out.textContent = "No se pudo contactar al servidor.";
+        out.textContent = `No se pudo contactar al servidor. ${lastErr ? String(lastErr) : ""}`;
         console.error(lastErr);
         return;
       }
@@ -413,14 +410,12 @@
       }
 
       if (huboTabla){
-        // No duplicar texto si hay datos tabulares
-        out.hidden = true;
-        stopSpeech();
+        out.hidden = true; // no duplicar
+        stopSpeech();      // no leer tablas
       }else{
         const clean = sanitizeForSpeech(textoRaw);
         out.hidden = false;
         out.textContent = clean || "No se encontró respuesta.";
-        // preparar printable con texto
         printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(clean)}</div>`;
         printable.hidden = false;
         speak(clean, ()=>video?.play(), ()=>video?.pause());
@@ -451,7 +446,6 @@
 
     // ====== Exportar PDF (siempre activo) ======
     function exportPDF(){
-      // Si hay lista, ya está en #printable; si no, usamos el texto.
       if (vlistWrap.hidden){
         printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(out.textContent || "")}</div>`;
         printable.hidden = false;
