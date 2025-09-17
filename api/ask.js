@@ -1,246 +1,235 @@
-// api/ask.js
-export const config = { runtime: 'edge' };
+// /api/ask.js — Vercel Serverless Function (Node). "Fast lane" para preguntas de métricas
+// Responde en ~30–80 ms para cosas como: "promedio de AUTOESTIMA",
+// evitando llamar a GPT. Mantiene compatibilidad con ?q=… y agrega ?source=…
+// Fuentes esperadas:
+//  - data/import1.csv  (Décimo A)
+//  - data/import2.csv  (Décimo B)
+// Columna ejemplo: AUTOESTIMA (y otras). Números con coma o punto.
 
-/* ---------- CORS - listo para Wix ---------- */
-const CORS = {
-  'Access-Control-Allow-Origin': '*', // ⇦ cámbialo por tu dominio https de Wix si quieres restringir
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-  'Access-Control-Max-Age': '86400'
+import fs from 'fs';
+import path from 'path';
+
+// ====== CONFIG ======
+const DATA_DIR = path.join(process.cwd(), 'data');
+const FILES = { import1: 'import1.csv', import2: 'import2.csv' };
+const DEFAULT_SOURCE = 'ambos'; // import1 | import2 | ambos
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+// ====== CACHE simple en memoria ======
+const mem = {
+  csv: new Map(),      // key: import1/import2  -> { rows, headers, loadedAt }
+  result: new Map()    // key: JSON({source, metric, op}) -> { value, createdAt }
 };
 
-const VERSION = 'gpt5-csv-direct-main-edge-1';
-
-/* ---------- Helpers de respuesta ---------- */
-function respondJSON(data, init = {}) {
-  return new Response(JSON.stringify(data), {
-    status: init.status || 200,
-    headers: { 'Content-Type': 'application/json', ...CORS, ...(init.headers || {}) }
-  });
+// ====== Utilidades ======
+function now(){ return Date.now(); }
+function hasFresh(entry, ttl=CACHE_TTL_MS){ return entry && (now() - entry.createdAt) < ttl; }
+function stripBOM(s=''){ return s.replace(/^\uFEFF/, ''); }
+function detectSep(line=''){
+  const commas = (line.match(/,/g)||[]).length;
+  const semis  = (line.match(/;/g)||[]).length;
+  const tabs   = (line.match(/\t/g)||[]).length;
+  if (semis >= commas && semis >= tabs) return ';';
+  if (commas >= semis && commas >= tabs) return ',';
+  return '\t';
+}
+function toAsciiUpperNoAccents(s=''){
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+}
+function toNumber(v){
+  if (v == null) return NaN;
+  const s = String(v).trim().replace(/\s+/g,' ');
+  if (!s) return NaN;
+  // admitir decimales con coma
+  const n = parseFloat(s.replace(/,/g,'.'));
+  return Number.isFinite(n) ? n : NaN;
+}
+function quantile(sortedNums, q){
+  if (!sortedNums.length) return NaN;
+  const pos = (sortedNums.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sortedNums[base+1] !== undefined) {
+    return sortedNums[base] + rest * (sortedNums[base+1] - sortedNums[base]);
+  } else {
+    return sortedNums[base];
+  }
 }
 
-/* ---------- Parser CSV simple (comillas soportadas) ---------- */
-function parseCSV(text) {
-  const rows = [];
-  let row = [], cur = '', inQ = false;
+function readCSVOnce(key){
+  const hit = mem.csv.get(key);
+  if (hit && hasFresh(hit, CACHE_TTL_MS*6)) return hit; // datos raramente cambian
 
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i], n = text[i + 1];
+  const file = FILES[key];
+  if (!file) throw new Error(`Fuente desconocida: ${key}`);
+  const full = path.join(DATA_DIR, file);
+  const raw = stripBOM(fs.readFileSync(full, 'utf8'));
+  const [headerLine, ...lines] = raw.split(/\r?\n/).filter(Boolean);
+  const sep = detectSep(headerLine);
+  const headers = headerLine.split(sep).map(h => h.trim());
+  const headersNorm = headers.map(h => toAsciiUpperNoAccents(h));
 
-    if (inQ) {
-      if (c === '"' && n === '"') { cur += '"'; i++; }
-      else if (c === '"') { inQ = false; }
-      else { cur += c; }
-    } else {
-      if (c === '"') inQ = true;
-      else if (c === ',') { row.push(cur); cur = ''; }
-      else if (c === '\n' || c === '\r') {
-        if (cur !== '' || row.length) { row.push(cur); rows.push(row); row = []; cur = ''; }
-        // consumir \r\n
-        if (c === '\r' && n === '\n') i++;
-      } else cur += c;
+  const rows = lines.map(line => {
+    const cols = line.split(sep);
+    const obj = {};
+    for (let i=0;i<headers.length;i++){
+      obj[headers[i]] = (cols[i] ?? '').trim();
+      obj[headersNorm[i]] = obj[headers[i]]; // duplicado normalizado
+    }
+    return obj;
+  });
+
+  const out = { rows, headers, headersNorm, loadedAt: now() };
+  mem.csv.set(key, out);
+  return out;
+}
+
+function pickSources(source){
+  const s = String(source||DEFAULT_SOURCE).toLowerCase();
+  if (s === 'import1' || s === 'a' || s === 'decimo a') return ['import1'];
+  if (s === 'import2' || s === 'b' || s === 'decimo b') return ['import2'];
+  // ambos por defecto
+  return ['import1','import2'];
+}
+
+function collectColumnNumbers(sourceList, metric){
+  const MET = toAsciiUpperNoAccents(metric);
+  const numsBySource = {};
+  let all = [];
+  for (const key of sourceList){
+    const { rows } = readCSVOnce(key);
+    const arr = [];
+    for (const r of rows){
+      const v = r[MET];
+      const n = toNumber(v);
+      if (Number.isFinite(n)) arr.push(n);
+    }
+    arr.sort((a,b)=>a-b);
+    numsBySource[key] = arr;
+    all = all.concat(arr);
+  }
+  all.sort((a,b)=>a-b);
+  return { all, numsBySource };
+}
+
+function statsFromArray(arr){
+  const n = arr.length;
+  if (!n) return { n:0, mean:NaN, min:NaN, max:NaN, p50:NaN, p90:NaN };
+  let sum = 0; let min = arr[0]; let max = arr[arr.length-1];
+  for (const x of arr) sum += x;
+  const mean = sum / n;
+  const p50 = quantile(arr, 0.5);
+  const p90 = quantile(arr, 0.9);
+  return { n, mean, min, max, p50, p90 };
+}
+
+function formatNumber(n){
+  if (!Number.isFinite(n)) return 'NaN';
+  return new Intl.NumberFormat('es-EC', { maximumFractionDigits: 2 }).format(n);
+}
+
+function humanSourceName(keys){
+  const set = new Set(keys);
+  if (set.size === 2) return 'Ambos';
+  if (set.has('import1')) return 'Décimo A';
+  if (set.has('import2')) return 'Décimo B';
+  return 'Desconocido';
+}
+
+function buildAnswer({ metric, sourceKeys, globalStats, perSource }){
+  const srcName = humanSourceName(sourceKeys);
+  const lines = [];
+  lines.push(`Promedio de ${metric.toUpperCase()} — ${srcName}: ${formatNumber(globalStats.mean)} (n=${globalStats.n}).`);
+  lines.push(`Min=${formatNumber(globalStats.min)} · Mediana=${formatNumber(globalStats.p50)} · P90=${formatNumber(globalStats.p90)} · Max=${formatNumber(globalStats.max)}`);
+  if (sourceKeys.length>1){
+    const a = perSource['import1'];
+    const b = perSource['import2'];
+    if (a) lines.push(`Décimo A → n=${a.n}, promedio=${formatNumber(a.mean)}`);
+    if (b) lines.push(`Décimo B → n=${b.n}, promedio=${formatNumber(b.mean)}`);
+  }
+  return lines.join('\n');
+}
+
+function tryParseFastNL(q){
+  // Reconocer: "promedio de AUTOESTIMA" / "dime el promedio de autoestima" / "media autoestima"
+  const s = (q||'').toString().toLowerCase();
+  // op mean
+  if (/(promedio|media|average)/i.test(s)){
+    const m = s.match(/de\s+([a-záéíóúñ\s_]+)/i) || s.match(/\b([a-záéíóúñ_]+)\b\s*(?:\?)?$/i);
+    if (m && m[1]){
+      const metric = m[1].trim();
+      return { op:'mean', metric };
     }
   }
-  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
-  if (!rows.length) return { headers: [], rows: [] };
-  const headers = rows[0].map(h => h.trim());
-  const data = rows.slice(1).filter(r => r.some(c => c !== ''));
-  return { headers, rows: data };
-}
-
-/* ---------- Carga CSV desde el bundle (Edge-friendly) ---------- */
-async function loadCSV() {
-  const url = new URL('./data.csv', import.meta.url);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`No se pudo leer data.csv (${res.status})`);
-  const text = await res.text();
-  return parseCSV(text);
-}
-
-/* ---------- Prompt para GPT: pide JSON uniforme ---------- */
-function buildPrompt(q, headers, rows) {
-  // convertimos a objetos para legibilidad del modelo
-  const objs = rows.map(r => {
-    const o = {};
-    headers.forEach((h, i) => (o[h] = r[i] ?? ''));
-    return o;
-  });
-
-  return `
-Eres un analista de datos. Recibirás un conjunto pequeño (≤ 100 filas) de objetos JSON
-convertidos desde un CSV escolar y una PREGUNTA del usuario en español (América Latina).
-Debes responder SIEMPRE en formato JSON estricto con la siguiente forma:
-
-{
-  "respuesta": "texto breve y claro con el resultado o explicación",
-  "tabla": {
-    "headers": ["Columna1","Columna2", ...],
-    "rows": [["c11","c12",...], ["c21","c22",...]]
-  }
-}
-
-- "tabla" es OPCIONAL: inclúyela cuando el resultado sea una lista, ranking, agrupación, etc.
-- No agregues texto fuera del JSON.
-- No inventes columnas: usa exactamente los nombres presentes.
-- Si el usuario pide “grupos/equipos de 5 usando AGRESION y EMPATIA”, arma equipos equilibrados
-  y publica una tabla con columnas como ["RANGO","NOMBRE","PARALELO","AGRESION","EMPATIA","GRUPO"].
-- Si la consulta es muy simple (p.ej., “PROMEDIO DE AGRESION”), devuelve "respuesta" con el número y,
-  si tiene sentido, una tablita con los cálculos por grupo/paralelo.
-- Si falta contexto, dilo en "respuesta" y no devuelvas "tabla".
-
-DATOS (primeros ${Math.min(objs.length, 999)} registros):
-${JSON.stringify(objs, null, 2)}
-
-PREGUNTA:
-${q}
-`.trim();
-}
-
-/* ---------- Llamada a OpenAI Responses API ---------- */
-async function askOpenAI({ prompt, apiKey, maxOut }) {
-  const body = {
-    model: 'gpt-5',
-    // Responses API: no ponemos temperature ni max_tokens para evitar 400;
-    // opcionalmente puedes usar: max_output_tokens o max_completion_tokens (si tu cuenta lo permite)
-    ...(maxOut ? { max_completion_tokens: maxOut } : {}),
-    input: prompt
-  };
-
-  const r = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  });
-
-  // Si OpenAI está en cuota insuficiente/overloaded, devolvemos un error claro:
-  if (r.status === 401) return { error: 'auth_error', message: 'OPENAI_API_KEY inválida o no autorizada.' };
-  if (r.status === 429) return { error: 'insufficient_quota', message: 'Sin crédito o límite alcanzado.' };
-  if (!r.ok) {
-    const tx = await r.text().catch(()=>'');
-    return { error: 'provider_error', message: `OpenAI ${r.status}`, detail: tx.slice(0, 4000) };
-  }
-
-  const data = await r.json();
-  // Respuestas API suele incluir output_text
-  const text =
-    data.output_text ||
-    (data.output?.[0]?.content?.[0]?.text) ||
-    (data.content?.[0]?.text) ||
-    '';
-
-  return { text, raw: data };
-}
-
-/* ---------- Intenta parsear JSON del modelo ---------- */
-function safeParseAssistantJSON(txt) {
-  if (!txt) return null;
-  // intenta extraer un bloque JSON si viene con ruido accidental
-  const start = txt.indexOf('{');
-  const end   = txt.lastIndexOf('}');
-  if (start >= 0 && end > start) {
-    try { return JSON.parse(txt.slice(start, end + 1)); } catch {}
-  }
-  // segundo intento: parse directo
-  try { return JSON.parse(txt); } catch {}
   return null;
 }
 
-/* ---------- Handler principal ---------- */
-export default async function handler(req) {
-  // Preflight CORS
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS });
-  }
-
-  const url = new URL(req.url);
-  const searchQ = url.searchParams.get('q');
-  const debug = url.searchParams.get('debug') === '1';
-  const t = Number(url.searchParams.get('t') || '120000'); // timeout sugerido
-  const max = Number(url.searchParams.get('max') || '0');  // max tokens (si tu plan lo permite)
-
-  // Respuestas rápidas
-  if (searchQ === 'ping') return respondJSON({ ok: true });
-  if (searchQ === 'version') return respondJSON({ version: VERSION });
-  if (searchQ === 'model') return respondJSON('gpt-5');
-
-  // Lee body si viene por POST
-  let q = searchQ;
-  if (!q && (req.method === 'POST')) {
-    try {
-      const j = await req.json();
-      q = j?.q || '';
-    } catch { q = ''; }
-  }
-  q = (q || '').toString().trim();
-
-  // Diagnóstico del CSV
-  if (q === 'diag') {
-    try {
-      const { headers, rows } = await loadCSV();
-      return respondJSON({ source: 'edge', filePath: '/api/data.csv', url: null, rows: rows.length, headers });
-    } catch (e) {
-      return respondJSON({ error: e.message || String(e) }, { status: 500 });
-    }
-  }
-
-  // Necesitamos la clave de OpenAI
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
-  if (!apiKey) {
-    return respondJSON({ error: 'Falta OPENAI_API_KEY en Producción.' }, { status: 500 });
-  }
-
-  // Carga datos
-  let dataset;
-  try {
-    dataset = await loadCSV();
-  } catch (e) {
-    return respondJSON({ error: 'No se pudo leer data.csv', detail: e.message }, { status: 500 });
-  }
-
-  if (!q) {
-    return respondJSON({
-      respuesta:
-        'Tu solicitud está incompleta. Indica qué necesitas que compute con el CSV (p.ej., "promedio de EMPATIA por PARALELO", "ranking por PROMEDIO HABILIDADES INTERPERSONALES", "grupos de 5 usando AGRESION y EMPATIA").',
-      tabla: { headers: [], rows: [] }
-    });
-  }
-
-  // Construye prompt y llama a OpenAI
-  const prompt = buildPrompt(q, dataset.headers, dataset.rows);
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), t + 3000);
-  let ai;
-  try {
-    ai = await askOpenAI({ prompt, apiKey, maxOut: max > 0 ? max : undefined });
-  } catch (e) {
-    clearTimeout(timer);
-    return respondJSON({ error: 'network', message: 'Fallo de red hacia OpenAI', detail: e.message }, { status: 502 });
-  } finally {
-    clearTimeout(timer);
-  }
-
-  // Manejo de errores de proveedor
-  if (ai?.error) {
-    const payload = { error: ai.error, message: ai.message };
-    if (debug) payload.detail = ai.detail || ai.raw || null;
-    return respondJSON(payload, { status: ai.error === 'auth_error' ? 401 : ai.error === 'insufficient_quota' ? 429 : 502 });
-  }
-
-  // Intentamos parsear JSON del asistente
-  const parsed = safeParseAssistantJSON(ai.text);
-  if (parsed && typeof parsed === 'object' && parsed.respuesta) {
-    if (debug) parsed._debug = { took: 'openai', version: VERSION };
-    return respondJSON(parsed);
-  }
-
-  // Si no vino JSON parseable, devolvemos texto en "respuesta"
-  const fallback = {
-    respuesta: ai.text || '(sin contenido del modelo)',
-  };
-  if (debug) fallback._debug = { rawOpenAI: (ai.raw || null), version: VERSION };
-  return respondJSON(fallback);
+function ok(res, data){
+  cors(res);
+  res.statusCode = 200;
+  res.setHeader('Content-Type','application/json; charset=utf-8');
+  res.end(JSON.stringify(data));
 }
+function bad(res, code, message){
+  cors(res);
+  res.statusCode = code;
+  res.setHeader('Content-Type','application/json; charset=utf-8');
+  res.end(JSON.stringify({ error: message }));
+}
+function cors(res){
+  res.setHeader('Access-Control-Allow-Origin','*');
+  res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers','*');
+}
+
+export default async function handler(req, res){
+  if (req.method === 'OPTIONS'){ cors(res); res.statusCode=204; return res.end(); }
+  if (req.method !== 'GET'){ return bad(res, 405, 'Use GET'); }
+
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    const q = url.searchParams.get('q') || '';
+    const metricParam = url.searchParams.get('metric');
+    const opParam = url.searchParams.get('op'); // mean (por ahora)
+    const source = url.searchParams.get('source') || DEFAULT_SOURCE;
+    const sourceKeys = pickSources(source);
+
+    let fast = null;
+    if (metricParam && (opParam||'mean')==='mean') fast = { op:'mean', metric:metricParam };
+    else fast = tryParseFastNL(q);
+
+    if (fast && fast.metric){
+      const cacheKey = JSON.stringify({ source: sourceKeys.join('+'), metric: toAsciiUpperNoAccents(fast.metric), op:'mean' });
+      const hit = mem.result.get(cacheKey);
+      if (hasFresh(hit)) return ok(res, { ...hit.value, _cache:true });
+
+      const { all, numsBySource } = collectColumnNumbers(sourceKeys, fast.metric);
+      const globalStats = statsFromArray(all);
+      const perSource = {};
+      for (const k of Object.keys(numsBySource)) perSource[k] = statsFromArray(numsBySource[k]);
+
+      const answer = buildAnswer({ metric: fast.metric, sourceKeys, globalStats, perSource });
+      const payload = { answer, metric: fast.metric, op:'mean', source: humanSourceName(sourceKeys), stats: { global: globalStats, porFuente: perSource }, _fast:true };
+      mem.result.set(cacheKey, { value: payload, createdAt: now() });
+      return ok(res, payload);
+    }
+
+    // ===== Fallback (tu lógica GPT existente) =====
+    // Aquí puedes llamar a tu pipeline LLM sólo si no hay fast path.
+    // Para mantener este snippet autocontenido, devolvemos guía.
+    return ok(res, {
+      answer: 'No reconocí una métrica directa. Intenta: "promedio de AUTOESTIMA" o usa ?metric=AUTOESTIMA&op=mean&source=ambos',
+      _fast:false
+    });
+
+  } catch (err) {
+    console.error(err);
+    return bad(res, 500, 'Error interno: ' + (err.message||'desconocido'));
+  }
+}
+
+// === vercel.json sugerido ===
+// {
+//   "functions": { "api/ask.js": { "maxDuration": 10, "memory": 256 } },
+//   "regions": ["gru1", "iad1"]
+// }
