@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+  
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Consulta Educativa</title>
@@ -18,6 +19,43 @@
     button:hover{background:#005a9e}
     #respuesta{margin:20px auto 0;width:80%;min-height:60px;padding:14px;background:#f8f8f8;border:1px solid #ddd;border-radius:6px;text-align:left}
   </style>
+
+  <!-- === ENCABEZADO 25% / 50% / 25% === -->
+<style>
+  .header-rail{
+    display:flex; align-items:center; justify-content:center;
+    width:100%; height:250px; background:#fff;
+  }
+  .header-rail .col{ display:flex; justify-content:center; align-items:center; }
+  .header-rail .col.left, .header-rail .col.right { flex:0 0 25%; }
+  .header-rail .col.center { flex:0 0 50%; }
+
+  /* Asegura tamaño controlado y sin “pantalla completa” */
+  .header-rail img, .header-rail video{
+    height:100%; width:auto; object-fit:contain; display:block; border:0; outline:0;
+  }
+  /* Evita que alguna regla global rompa el layout */
+  video#video{ max-width:100%; max-height:100%; }
+</style>
+
+<div class="header-rail">
+  <div class="col left">
+    <!-- IMPORTANTE: estando el index en /public, las rutas son /left.png y /right.png -->
+    <img src="/left.png" alt="Imagen izquierda" />
+  </div>
+
+  <div class="col center">
+    <video id="video" muted playsinline preload="metadata">
+      <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
+      Tu navegador no soporta video.
+    </video>
+  </div>
+
+  <div class="col right">
+    <img src="/right.png" alt="Imagen derecha" />
+  </div>
+</div>
+
 </head>
 <body>
 
