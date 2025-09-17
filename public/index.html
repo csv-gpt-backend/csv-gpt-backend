@@ -1,16 +1,28 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+  <head>
+  ...
+  <style>
+    /* --- tus estilos existentes --- */
+    .header-rail{ ... }
+    .header-rail .col{ ... }
+    .header-rail img, .header-rail video{ ... }
+    /* etc. */
+
+    /* === BAJAR SOLO EL VIDEO (Opción A) === */
+    .header-rail .col.center video{
+      transform: translateY(14px); /* ajusta 8–24px a tu gusto */
+    }
+    @media (max-width: 640px){
+      .header-rail .col.center video{ transform: translateY(8px); }
+    }
+  </style>
+</head>
+
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Consulta Educativa</title>
-/* Bajar un poco el video del centro */
-.header-rail .col.center video{
-  transform: translateY(14px); /* ajusta 8–24px a tu gusto */
-}
-@media (max-width: 640px){
-  .header-rail .col.center video{ transform: translateY(8px); }
-}
 
   <!-- ===== Encabezado 25% / 50% / 25% (imágenes a los lados y video al centro) ===== -->
   <style>
