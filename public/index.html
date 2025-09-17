@@ -89,19 +89,12 @@
       display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
     }
 
-    /* Área imprimible: oculta en pantalla, visible solo al imprimir */
-    #printable{
-      position:fixed; left:-10000px; top:-10000px;
-      width:0; height:0; overflow:hidden;
-    }
+    /* ====== Área imprimible ====== */
+    #printable{ display:none; }            /* Nunca visible en pantalla */
     @media print{
       body *{ visibility:hidden !important; }
+      #printable{ display:block; }         /* Solo aparece al imprimir */
       #printable, #printable *{ visibility:visible !important; }
-      #printable{
-        position:static; left:auto; top:auto;
-        width:auto; height:auto; overflow:visible;
-        margin:0; padding:24px;
-      }
     }
 
     /* Responsive */
@@ -146,7 +139,7 @@
     <div id="vlist" class="vlist" hidden></div>
     <div id="tabla" class="table-wrap" hidden></div>
 
-    <!-- Zona imprimible (siempre fuera de pantalla) -->
+    <!-- Zona imprimible (vacía salvo al imprimir) -->
     <div id="printable"></div>
 
     <!-- Botones -->
@@ -358,9 +351,8 @@
     function maybeRenderFromText(text, query){
       vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = ""; // preparamos impresión
-
       lastRows = null;
+
       const rows = detectRowsFromText(text);
       if (!(rows && rows.length >= 2 && rows[0].length >= 2)) return false;
 
@@ -369,15 +361,11 @@
 
       const showTable = wantsTable(query);
       if (showTable){
-        const thtml = renderTable(fixed);
-        tablaWrap.innerHTML = thtml;
+        tablaWrap.innerHTML = renderTable(fixed);
         tablaWrap.hidden = false;
-        printable.innerHTML = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${thtml}`;
       }else{
-        const vhtml = renderVerticalList(fixed);
-        vlistWrap.innerHTML = vhtml;
+        vlistWrap.innerHTML = renderVerticalList(fixed);
         vlistWrap.hidden = false;
-        printable.innerHTML = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${vhtml}`;
       }
       return true;
     }
@@ -391,7 +379,7 @@
       out.textContent = "Consultando...";
       vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = "";
+      printable.innerHTML = "";   // vaciamos por si quedó algo de una impresión previa
       lastRows = null;
 
       const params = new URLSearchParams({ q: pregunta });
@@ -429,7 +417,6 @@
         const clean = sanitizeForSpeech(textoRaw);
         out.hidden = false;
         out.textContent = clean || "No se encontró respuesta.";
-        printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(clean)}</div>`;
         speak(clean, ()=>video?.play(), ()=>video?.pause());
       }
     }
@@ -458,10 +445,22 @@
 
     /* ====== Exportar PDF ====== */
     function exportPDF(){
-      // Si no hay estructura visible, nos aseguramos de tener algo en printable
-      if (!printable.innerHTML.trim()){
-        printable.innerHTML = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(out.textContent || "")}</div>`;
+      // Construir el contenido imprimible EN ESTE MOMENTO (nunca antes)
+      let html = "";
+      if (!vlistWrap.hidden){
+        html = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${vlistWrap.innerHTML}`;
+      } else if (!tablaWrap.hidden){
+        html = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${tablaWrap.innerHTML}`;
+      } else {
+        const text = out.textContent || "";
+        html = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(text)}</div>`;
       }
+      printable.innerHTML = html;
+
+      // Imprimir y luego limpiar para evitar cualquier fuga visual
+      const after = () => { printable.innerHTML = ""; window.removeEventListener('afterprint', after); };
+      window.addEventListener('afterprint', after);
+      setTimeout(after, 3000); // respaldo por si el evento no dispara
       window.print();
     }
 
@@ -477,7 +476,7 @@
       lastRows = null;
     }
 
-    // Exponer funciones a la ventana
+    // Exponer funciones
     window.startListening = startListening;
     window.stopSpeech    = stopSpeech;
     window.exportPDF     = exportPDF;
