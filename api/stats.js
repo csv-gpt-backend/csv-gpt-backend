@@ -2,7 +2,6 @@
 const fs = require("fs").promises;
 const path = require("path");
 
-// --- Utilidades CSV (auto-delimitador y comillas) ---
 function detectDelimiter(line) {
   const cands = [",", ";", "\t", "|"];
   let best = { d: ",", n: 0 };
@@ -12,7 +11,6 @@ function detectDelimiter(line) {
   }
   return best.d;
 }
-
 function splitCSVLine(line, d) {
   const out = [];
   let cur = "", inQuotes = false;
@@ -28,7 +26,6 @@ function splitCSVLine(line, d) {
   out.push(cur);
   return out.map(s => s.trim());
 }
-
 function parseCSV(text) {
   const lines = text.replace(/\r/g, "").split("\n").filter(l => l.length > 0);
   if (!lines.length) return { headers: [], rows: [], delimiter: "," };
@@ -44,18 +41,15 @@ function parseCSV(text) {
   return { headers, rows, delimiter };
 }
 
-// --- Números y estadísticas ---
 function toNum(v) {
   if (v === null || v === undefined) return null;
   if (typeof v === "number") return isFinite(v) ? v : null;
   let s = String(v).trim();
   if (s === "" || s.toLowerCase() === "na" || s.toLowerCase() === "null") return null;
-  // Intento decimal con coma si no hay punto
   let n = Number(s);
   if (Number.isNaN(n) && s.includes(",") && !s.includes(".")) n = Number(s.replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
-
 function basicStats(arr) {
   const a = arr.filter(v => v !== null && Number.isFinite(v)).sort((x, y) => x - y);
   const n = a.length;
@@ -72,7 +66,6 @@ function basicStats(arr) {
   };
   return { n, min, max, mean, p50: pct(0.5), p90: pct(0.9), p99: pct(0.99) };
 }
-
 function pearson(xs, ys) {
   const pairs = [];
   for (let i = 0; i < xs.length; i++) {
@@ -94,7 +87,6 @@ function pearson(xs, ys) {
   return { r, n_pairs: n };
 }
 
-// --- Handler ---
 module.exports = async (req, res) => {
   try {
     const { file = "decimo.csv", x = "AGRESIVIDAD", y = "EMPATIA", group_by } = req.query || {};
@@ -102,31 +94,22 @@ module.exports = async (req, res) => {
     const raw = await fs.readFile(csvPath, "utf8");
     const { headers, rows, delimiter } = parseCSV(raw);
 
-    // Normaliza acceso a columnas (case-insensitive)
-    const keyMap = {};
-    for (const h of headers) keyMap[h.toLowerCase()] = h;
+    const keyMap = {}; headers.forEach(h => keyMap[h.toLowerCase()] = h);
     const kx = keyMap[String(x).toLowerCase()] ?? x;
     const ky = keyMap[String(y).toLowerCase()] ?? y;
     const kg = group_by ? (keyMap[String(group_by).toLowerCase()] ?? group_by) : null;
 
-    // Extrae columnas numéricas
     const X = rows.map(r => toNum(r[kx]));
     const Y = rows.map(r => toNum(r[ky]));
-    const overall = {
-      x: basicStats(X),
-      y: basicStats(Y),
-      ...pearson(X, Y)
-    };
+    const overall = { x: basicStats(X), y: basicStats(Y), ...pearson(X, Y) };
 
-    // Por grupos (si se pide)
     const groups = {};
     if (kg) {
       const by = {};
       for (let i = 0; i < rows.length; i++) {
         const g = (rows[i][kg] ?? "SinGrupo") || "SinGrupo";
         if (!by[g]) by[g] = { X: [], Y: [] };
-        by[g].X.push(X[i]);
-        by[g].Y.push(Y[i]);
+        by[g].X.push(X[i]); by[g].Y.push(Y[i]);
       }
       for (const g of Object.keys(by)) {
         const xg = by[g].X, yg = by[g].Y;
