@@ -63,7 +63,6 @@ function getCol(headers, ...aliases){
   for (const a of aliases){
     const k = cmap[a.toLowerCase()]; if (k) return k;
   }
-  // búsqueda por contiene (normalizada)
   for (const h of headers){
     const H = normalize(h);
     if (aliases.some(a => H.includes(normalize(a)))) return h;
@@ -147,7 +146,6 @@ module.exports = async (req, res) => {
     }
 
     // Feature específica (insensible a tildes) p.ej. AGRESIÓN, EMPATÍA, TIMIDEZ, etc.
-    const cmap = caseMap(headers);
     const featureMatch = qlow.match(/\b(agresividad|agresi[oó]n|empat[ií]a|timidez|f[ií]sico|autoestima|tensi[oó]n|ansiedad|promedio|nota|puntaje)\b/);
     if (featureMatch){
       const featNorm = normalize(featureMatch[1]);
