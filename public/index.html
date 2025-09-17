@@ -1,110 +1,136 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Consulta Educativa</title>
+
+  <!-- ===== Encabezado 25% / 50% / 25% (imágenes a los lados y video al centro) ===== -->
   <style>
-    body{margin:0;background:#fff;font-family:Arial,system-ui,-apple-system,Segoe UI,Roboto}
-    /* Encabezado: 25% img - 50% video - 25% img */
-    .media-container{display:flex;align-items:center;justify-content:center;width:100%;height:250px;background:#fff}
-    .side-image{width:25%;text-align:center}
-    .center-video{width:50%;display:flex;justify-content:center}
-    .media-container img,.media-container video{height:100%;object-fit:contain}
-    /* Interacción */
-    .interaction{padding:20px;text-align:center}
-    input[type="text"]{width:60%;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:6px}
-    button{padding:10px 14px;margin-left:6px;font-size:16px;border:0;border-radius:6px;background:#0078d7;color:#fff;cursor:pointer}
-    button:hover{background:#005a9e}
-    #respuesta{margin:20px auto 0;width:80%;min-height:60px;padding:14px;background:#f8f8f8;border:1px solid #ddd;border-radius:6px;text-align:left}
+    :root { --accent:#0078d7; }
+    * { box-sizing: border-box; }
+    body{
+      margin:0;
+      background:#fff;
+      font-family: Arial, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
+      color:#111;
+    }
+
+    /* Header con dos imágenes (25%/25%) y video al centro (50%) */
+    .header-rail{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      width:100%;
+      height:clamp(180px, 28vh, 260px); /* mejor en móvil */
+      background:#fff;
+      overflow:hidden;
+    }
+    .header-rail .col{
+      display:flex; justify-content:center; align-items:center;
+    }
+    .header-rail .col.left,
+    .header-rail .col.right { flex:0 0 25%; }
+    .header-rail .col.center    { flex:0 0 50%; }
+
+    .header-rail img,
+    .header-rail video{
+      height:100%;
+      width:auto;
+      object-fit:contain;
+      display:block;
+      border:0;
+      outline:0;
+    }
+    video#video{ max-width:100%; max-height:100%; }
+
+    /* Sección de interacción */
+    .interaction{
+      padding:24px 16px;
+      text-align:center;
+    }
+    .bar{
+      display:flex; gap:8px; justify-content:center; align-items:center;
+      max-width:1100px; margin:0 auto;
+    }
+    .bar input[type="text"]{
+      flex:1 1 800px;
+      padding:12px 14px;
+      font-size:16px;
+      border:1px solid #d0d0d0;
+      border-radius:8px;
+      outline:none;
+    }
+    .btn{
+      padding:12px 16px; border:0; border-radius:8px;
+      background:var(--accent); color:#fff; font-weight:600;
+      cursor:pointer;
+    }
+    .btn:hover{ filter:brightness(0.95); }
+    #respuesta{
+      margin:20px auto 0;
+      width:min(90%, 1100px);
+      min-height:64px;
+      padding:14px;
+      background:#f7f7f8;
+      border:1px solid #e5e5e7;
+      border-radius:10px;
+      text-align:left;
+      line-height:1.45;
+    }
   </style>
-
-  <!-- === ENCABEZADO 25% / 50% / 25% === -->
-<style>
-  .header-rail{
-    display:flex; align-items:center; justify-content:center;
-    width:100%; height:250px; background:#fff;
-  }
-  .header-rail .col{ display:flex; justify-content:center; align-items:center; }
-  .header-rail .col.left, .header-rail .col.right { flex:0 0 25%; }
-  .header-rail .col.center { flex:0 0 50%; }
-
-  /* Asegura tamaño controlado y sin “pantalla completa” */
-  .header-rail img, .header-rail video{
-    height:100%; width:auto; object-fit:contain; display:block; border:0; outline:0;
-  }
-  /* Evita que alguna regla global rompa el layout */
-  video#video{ max-width:100%; max-height:100%; }
-</style>
-
-<div class="header-rail">
-  <div class="col left">
-    <!-- IMPORTANTE: estando el index en /public, las rutas son /left.png y /right.png -->
-    <img src="/left.png" alt="Imagen izquierda" />
-  </div>
-
-  <div class="col center">
-    <video id="video" muted playsinline preload="metadata">
-      <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
-      Tu navegador no soporta video.
-    </video>
-  </div>
-
-  <div class="col right">
-    <img src="/right.png" alt="Imagen derecha" />
-  </div>
-</div>
-
 </head>
 <body>
 
-  <!-- 25% / 50% / 25% -->
-  <div class="media-container">
-    <div class="side-image">
-      <img src="/public/left.png" alt="Imagen izquierda">
+  <!-- ====== ENCABEZADO ====== -->
+  <div class="header-rail">
+    <div class="col left">
+      <!-- IMPORTANTE: con index en /public, las rutas son /left.png y /right.png -->
+      <img src="/left.png" alt="Imagen izquierda">
     </div>
 
-    <div class="center-video">
+    <div class="col center">
       <video id="video" muted playsinline preload="metadata">
         <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
         Tu navegador no soporta video.
       </video>
     </div>
 
-    <div class="side-image">
-      <img src="/public/right.png" alt="Imagen derecha">
+    <div class="col right">
+      <img src="/right.png" alt="Imagen derecha">
     </div>
   </div>
 
-  <!-- Interacción -->
+  <!-- ====== INTERACCIÓN ====== -->
   <div class="interaction">
-    <input id="pregunta" type="text" placeholder="Haz tu pregunta aquí...">
-    <button onclick="enviarPregunta()">Enviar</button>
-    <button onclick="startListening()">🎤</button>
+    <div class="bar">
+      <input id="pregunta" type="text" placeholder="Haz tu pregunta aquí..." />
+      <button class="btn" onclick="enviarPregunta()">Enviar</button>
+      <button class="btn" onclick="startListening()">🎤</button>
+    </div>
     <div id="respuesta">Aquí aparecerá la respuesta...</div>
   </div>
 
   <script>
-    // ---------- Endpoint (prueba /api/ask y si falla /api/preguntar) ----------
+    // ---------- Endpoint: intenta /api/ask y si falla /api/preguntar ----------
     const ENDPOINTS = ["/api/ask", "/api/preguntar"];
     const video = document.getElementById("video");
-    let chosenVoice = null;
 
-    // ---------- Selección robusta de voz femenina es-MX ----------
+    // ---------- Voz femenina español (México) ----------
+    let chosenVoice = null;
     const FEMALE_PREFERRED = ["Microsoft Sabina","Microsoft Dalia","Microsoft Beatriz","Lucia","Soledad","Camila","María","Paola","Valentina","Xochitl"];
     const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","lucia","soledad","camila","maría","paola","xoch","valent"];
     const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
 
     function getSpanishVoices(){
       const voices = window.speechSynthesis?.getVoices?.() || [];
-      const groups = [
+      const tiers = [
         v => (v.lang||"").toLowerCase().startsWith("es-mx"),
         v => (v.lang||"").toLowerCase().startsWith("es-419"),
         v => (v.lang||"").toLowerCase().startsWith("es-es"),
         v => (v.lang||"").toLowerCase().startsWith("es")
       ];
-      for (const f of groups){ const g = voices.filter(f); if (g.length) return g; }
+      for (const f of tiers){ const g = voices.filter(f); if (g.length) return g; }
       return voices;
     }
     function pickFemaleSpanishVoice(){
@@ -127,7 +153,6 @@
     function ensureVoiceSelected(){
       if (!chosenVoice){
         chosenVoice = pickFemaleSpanishVoice();
-        try{ console.info("Voz seleccionada:", chosenVoice?.name, chosenVoice?.lang); }catch{}
       }
     }
     function speak(text,onStart,onEnd){
@@ -149,7 +174,8 @@
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
-      document.getElementById("respuesta").innerText = "Consultando...";
+      const out = document.getElementById("respuesta");
+      out.textContent = "Consultando...";
 
       let data = null, lastErr = null;
       for (const base of ENDPOINTS){
@@ -161,15 +187,21 @@
         }catch(e){ lastErr = e; }
       }
       if (!data){
-        document.getElementById("respuesta").innerText = "No se pudo contactar al servidor.";
+        out.textContent = "No se pudo contactar al servidor.";
         console.error(lastErr);
         return;
       }
       const texto = data.text || data.respuesta || "No se encontró respuesta.";
-      document.getElementById("respuesta").innerText = texto;
-      // Reproducir mientras habla, pausar al terminar
+      out.textContent = texto;
+
+      // Reproducir video durante la voz y pausar al terminar
       speak(texto, ()=>video?.play(), ()=>video?.pause());
     }
+
+    // Enter para enviar
+    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
+      if (e.key === "Enter"){ enviarPregunta(); }
+    });
 
     // ---------- Micrófono ----------
     function startListening(){
@@ -182,7 +214,9 @@
         document.getElementById("pregunta").value = t;
         enviarPregunta();
       };
-      rec.onerror = e => alert("Error de micrófono: " + e.error);
+      rec.onerror = e => {
+        alert("Error de micrófono: " + e.error + "\nVe al candado del navegador y permite el micrófono para este sitio.");
+      };
       rec.start();
     }
   </script>
