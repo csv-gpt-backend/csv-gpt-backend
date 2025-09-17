@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Consulta Educativa</title>
+  <style>
+    body{margin:0;background:#fff;font-family:Arial,system-ui,-apple-system,Segoe UI,Roboto}
+    .media-container{display:flex;width:100%;height:250px;align-items:center;justify-content:center}
+    .media-container img,.media-container video{height:100%;object-fit:contain}
+    .side-image{width:25%;text-align:center}
+    .center-video{width:50%;display:flex;justify-content:center}
+    .interaction{padding:20px;text-align:center}
+    input[type="text"]{width:60%;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:6px}
+    button{padding:10px 14px;margin-left:6px;font-size:16px;border:0;border-radius:6px;background:#0078d7;color:#fff;cursor:pointer}
+    button:hover{background:#005a9e}
+    #respuesta{margin:20px auto 0;width:80%;min-height:60px;padding:14px;background:#f8f8f8;border:1px solid #ddd;border-radius:6px;text-align:left}
+  </style>
+</head>
+<body>
+
+  <!-- Encabezado con imágenes 25% - video 50% - imagen 25% -->
+  <div class="media-container">
+    <div class="side-image">
+      <img src="/left.png" alt="Imagen izquierda">
+    </div>
+    <div class="center-video">
+      <video id="video" muted>
+        <source src="/video.mp4" type="video/mp4">
+        Tu navegador no soporta video.
+      </video>
+    </div>
+    <div class="side-image">
+      <img src="/right.png" alt="Imagen derecha">
+    </div>
+  </div>
+
+  <!-- Interacción -->
+  <div class="interaction">
+    <input id="pregunta" type="text" placeholder="Haz tu pregunta aquí...">
+    <button onclick="enviarPregunta()">Enviar</button>
+    <button onclick="startListening()">🎤</button>
+    <div id="respuesta">Aquí aparecerá la respuesta...</div>
+  </div>
+
+  <script>
+    // Usa la función que ya tienes en Vercel (según tu panel: /api/preguntar)
+    const API_URL = "/api/preguntar";
+
+    const video = document.getElementById("video");
+    let chosenVoice = null;
+
+    // ==== Selección robusta de voz femenina es-MX ====
+    const FEMALE_PREFERRED = ["Microsoft Sabina","Microsoft Dalia","Microsoft Beatriz","Lucia","Soledad","Camila","María","Paola","Valentina","Xochitl"];
+    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","lucia","soledad","camila","maría","paola","xoch","valent"];
+    const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
+
+    function getSpanishVoices(){
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      const groups = [
+        v => (v.lang||"").toLowerCase().startsWith("es-mx"),
+        v => (v.lang||"").toLowerCase().startsWith("es-419"),
+        v => (v.lang||"").toLowerCase().startsWith("es-es"),
+        v => (v.lang||"").toLowerCase().startsWith("es")
+      ];
+      for (const f of groups){ const g = voices.filter(f); if (g.length) return g; }
+      return voices;
+    }
+    function pickFemaleSpanishVoice(){
+      const voices = getSpanishVoices();
+      if (!voices.length) return null;
+      for (const pref of FEMALE_PREFERRED){
+        const v = voices.find(x => (x.name||"").toLowerCase().includes(pref.toLowerCase()));
+        if (v) return v;
+      }
+      const fem = voices.find(v=>{
+        const n=(v.name||"").toLowerCase();
+        const hasFem=FEMALE_HINTS.some(h=>n.includes(h));
+        const hasMale=MALE_HINTS.some(h=>n.includes(h));
+        return hasFem && !hasMale;
+      });
+      if (fem) return fem;
+      const notMale = voices.find(v => !MALE_HINTS.some(h => (v.name||"").toLowerCase().includes(h)));
+      return notMale || voices[0];
+    }
+    function ensureVoiceSelected(){
+      if (!chosenVoice){
+        chosenVoice = pickFemaleSpanishVoice();
+        try{ console.info("Voz seleccionada:", chosenVoice?.name, chosenVoice?.lang); }catch{}
+      }
+    }
+    function speak(text,onStart,onEnd){
+      if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
+      ensureVoiceSelected();
+      const u = new SpeechSynthesisUtterance(text);
+      if (chosenVoice) u.voice = chosenVoice;
+      u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
+      u.rate = 1.0; u.pitch = 1.05; u.volume = 1.0;
+      u.onstart = ()=> onStart&&onStart();
+      u.onend   = ()=> onEnd&&onEnd();
+      u.onerror = ()=> onEnd&&onEnd();
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    }
+    window.speechSynthesis.onvoiceschanged = ()=>{ chosenVoice=null; ensureVoiceSelected(); };
+
+    // ==== Envío de preguntas ====
+    async function enviarPregunta(){
+      const pregunta = document.getElementById("pregunta").value.trim();
+      if (!pregunta) return alert("Escribe una pregunta.");
+      document.getElementById("respuesta").innerText = "Consultando...";
+
+      try{
+        const resp = await fetch(`${API_URL}?q=${encodeURIComponent(pregunta)}`);
+        const data = await resp.json();
+        const texto = data.text || data.respuesta || "No se encontró respuesta.";
+        document.getElementById("respuesta").innerText = texto;
+
+        // Reproducir video mientras habla y pausar al terminar
+        speak(texto, ()=>video.play(), ()=>video.pause());
+      }catch(e){
+        console.error(e);
+        document.getElementById("respuesta").innerText = "Error al consultar el servidor.";
+      }
+    }
+
+    // ==== Micrófono ====
+    function startListening(){
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
+      const rec = new SR();
+      rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
+      rec.onresult = e => { 
+        const t = e.results[0][0].transcript;
+        document.getElementById("pregunta").value = t;
+        enviarPregunta();
+      };
+      rec.onerror = e => alert("Error de micrófono: " + e.error);
+      rec.start();
+    }
+  </script>
+</body>
+</html>
