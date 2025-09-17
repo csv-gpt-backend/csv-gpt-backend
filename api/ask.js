@@ -2,7 +2,7 @@
 const fs = require("fs").promises;
 const path = require("path");
 
-// --- CSV helpers (delimitador + comillas) ---
+// -------- CSV helpers --------
 function detectDelimiter(line) {
   const cands = [",", ";", "\t", "|"];
   let best = { d: ",", n: 0 };
@@ -13,16 +13,14 @@ function detectDelimiter(line) {
   return best.d;
 }
 function splitCSVLine(line, d) {
-  const out = [];
-  let cur = "", inQuotes = false;
+  const out = []; let cur = "", inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (ch === '"') {
       if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
       else inQuotes = !inQuotes;
-    } else if (ch === d && !inQuotes) {
-      out.push(cur); cur = "";
-    } else cur += ch;
+    } else if (ch === d && !inQuotes) { out.push(cur); cur = ""; }
+    else cur += ch;
   }
   out.push(cur);
   return out.map(s => s.trim());
@@ -52,129 +50,145 @@ function toNum(v) {
 }
 function firstNumericKey(obj) {
   if (!obj) return null;
-  for (const k of Object.keys(obj)) {
-    if (toNum(obj[k]) !== null) return k;
+  for (const k of Object.keys(obj)) if (toNum(obj[k]) !== null) return k;
+  return null;
+}
+const normalize = s => String(s ?? "")
+  .normalize("NFD").replace(/\p{Diacritic}/gu, "")
+  .toUpperCase().trim();
+
+function caseMap(headers){ const m = {}; headers.forEach(h => m[h.toLowerCase()] = h); return m; }
+function getCol(headers, ...aliases){
+  const cmap = caseMap(headers);
+  for (const a of aliases){
+    const k = cmap[a.toLowerCase()]; if (k) return k;
+  }
+  // búsqueda por contiene
+  for (const h of headers){
+    const H = normalize(h);
+    if (aliases.some(a => H.includes(normalize(a)))) return h;
   }
   return null;
 }
-function caseMap(headers){ const m = {}; headers.forEach(h => m[h.toLowerCase()] = h); return m; }
 
-// --- Handler ---
+// -------- Handler --------
 module.exports = async (req, res) => {
   try {
     const {
       q = "",
       file = "decimo.csv",
       format = "json",
-      limit,           // opcional: ?limit=50
-      columns,         // opcional: ?columns=Nombre,Promedio,Paralelo (case-insensitive)
-      sort_by,         // opcional: ?sort_by=Promedio (desc)
-      filter_key,      // opcional: ?filter_key=Paralelo&filter_val=A
+      limit,
+      columns,
+      sort_by,
+      filter_key,
       filter_val
     } = req.query || {};
 
     const csvPath = path.join(process.cwd(), "public", "datos", file);
     const raw = await fs.readFile(csvPath, "utf8");
     const { headers, rows } = parseCSV(raw);
-    const cmap = caseMap(headers);
 
-    // Proyección de columnas (si se pidieron)
+    // Columnas típicas
+    const colNombre   = getCol(headers, "Nombre", "Estudiante", "Alumno");
+    const colParalelo = getCol(headers, "Paralelo", "Sección", "Seccion", "Grupo");
+    const colCurso    = getCol(headers, "Curso", "Grado", "Nivel");
+
+    // -------- Proyección de columnas (opcional) --------
     let data = rows.map(r => ({ ...r }));
     if (columns) {
+      const cmap = caseMap(headers);
       const want = String(columns).split(",").map(s => s.trim()).filter(Boolean);
-      const actual = want.map(k => cmap[k.toLowerCase()] ?? k);
-      data = data.map(r => {
-        const o = {};
-        actual.forEach(k => { o[k] = r[k]; });
-        return o;
-      });
+      const actual = want.map(k => cmap[k.toLowerCase()] ?? getCol(headers, k) ?? k);
+      data = data.map(r => { const o = {}; actual.forEach(k => o[k] = r[k]); return o; });
     }
 
-    // Filtro simple (key=val)
+    // -------- Filtro simple (?filter_key=Paralelo&filter_val=A) --------
     if (filter_key && filter_val !== undefined){
-      const k = cmap[String(filter_key).toLowerCase()] ?? filter_key;
-      data = data.filter(r => String(r[k]).toLowerCase() === String(filter_val).toLowerCase());
+      const k = getCol(headers, filter_key) ?? filter_key;
+      data = data.filter(r => normalize(r[k]) === normalize(filter_val));
     }
 
-    // Heurísticas por texto de la pregunta
+    // -------- Heurísticas por texto natural --------
     const qlow = q.toLowerCase();
-    const wantsList = /lista|listado|mostrar|ver|despliega/.test(qlow);
-    const wantsRanking = /ranking|mayor a menor|ordenar|top|rank/.test(qlow);
-    const metricHints = ["calificación","calificacion","promedio","nota","puntaje","score","total"];
-    let metric = null;
 
-    // Si piden “timidez/agresividad/empatía/…” mostramos al menos esas columnas + nombre
-    const featureMatch = qlow.match(/\b(agresividad|empat[ií]a|timidez|f[ií]sico|autoestima|tensi[oó]n|ansiedad)\b/);
+    // ¿Piden lista/ranking?
+    const wantsList = /(^|\s)(lista|listado|mostrar|ver|despliega)(\s|$)/.test(qlow);
+    const wantsRanking = /(ranking|mayor a menor|ordenar|top|rank)/.test(qlow);
+
+    // Detecta “décimo a/b”, “paralelo a/b”, “sección a/b”
+    let filtroCurso = null, filtroPar = null;
+    if (/(decimo|d[eé]cimo)/.test(qlow)) filtroCurso = "DECIMO"; // lo comparamos normalizado
+    const mPar1 = qlow.match(/(paralelo|secci[oó]n|grupo)\s*([ab])/i);
+    const mPar2 = qlow.match(/d[eé]cimo\s*([ab])\b/i);
+    if (mPar1) filtroPar = mPar1[2].toUpperCase();
+    else if (mPar2) filtroPar = mPar2[1].toUpperCase();
+
+    if (filtroCurso && colCurso){
+      data = data.filter(r => normalize(r[colCurso]).includes(filtroCurso));
+    }
+    if (filtroPar && colParalelo){
+      data = data.filter(r => normalize(r[colParalelo]) === filtroPar);
+    }
+
+    // Si pidieron “timidez/agresividad/empatía/…”, devuelve al menos esas columnas + nombre + paralelo
+    const cmap = caseMap(headers);
+    const featureMatch = qlow.match(/\b(agresividad|empat[ií]a|timidez|f[ií]sico|autoestima|tensi[oó]n|ansiedad|promedio|nota|puntaje)\b/);
     if (featureMatch){
       const feat = featureMatch[1];
-      const kf = Object.keys(cmap).find(k => k.includes(feat)); // case-insensitive contain
-      const kn = Object.keys(cmap).find(k => k.includes("nombre")||k.includes("alumno")||k.includes("estudiante"));
+      const kf = Object.keys(cmap).find(k => k.includes(feat)); // nombre lógico
       if (kf){
-        data = rows.map(r => {
+        const Kf = cmap[kf];
+        data = data.map(r => {
           const o = {};
-          if (kn) o[cmap[kn]] = r[cmap[kn]];
-          o[cmap[kf]] = r[cmap[kf]];
-          // Incluimos “Paralelo/Curso” si existen
-          const kp = Object.keys(cmap).find(k => k.includes("paralelo"));
-          if (kp) o[cmap[kp]] = r[cmap[kp]];
-          const kc = Object.keys(cmap).find(k => k.includes("curso"));
-          if (kc) o[cmap[kc]] = r[cmap[kc]];
+          if (colNombre)   o[colNombre] = r[colNombre];
+          o[Kf] = r[Kf];
+          if (colParalelo) o[colParalelo] = r[colParalelo];
+          if (colCurso)    o[colCurso]    = r[colCurso];
           return o;
         });
       }
     }
 
-    // Ranking si lo piden (detecta métrica probable)
+    // Ranking si procede (elige métrica razonable)
     if (wantsRanking){
-      const sample = data[0] || rows[0];
-      // preferidas
-      for (const h of headers){
-        if (metricHints.some(w => h.toLowerCase().includes(w))) { metric = h; break; }
-      }
-      if (!metric) metric = firstNumericKey(sample);
+      const hints = ["Calificación","CALIFICACION","Calificacion","Promedio","Nota","Puntaje","Score","Total"];
+      let metric = headers.find(h => hints.some(w => normalize(h).includes(normalize(w))));
+      if (!metric) metric = firstNumericKey(data[0] || rows[0]);
       if (metric){
         data = [...data].sort((a,b)=>(toNum(b[metric])||-Infinity)-(toNum(a[metric])||-Infinity));
       }
     }
 
-    // Orden personalizado (?sort_by=Promedio)
+    // Orden explícito (?sort_by=Promedio)
     if (sort_by){
-      const key = cmap[String(sort_by).toLowerCase()] ?? sort_by;
+      const key = getCol(headers, sort_by) ?? sort_by;
       data = [...data].sort((a,b)=>(toNum(b[key])||-Infinity)-(toNum(a[key])||-Infinity));
     }
 
-    // Límite de filas
+    // Límite
     let n = Number(limit);
     if (!Number.isFinite(n) || n <= 0) n = data.length;
     data = data.slice(0, n);
 
-    // Regla: si pidieron lista/ranking/columna → devolvemos filas
-    if (wantsList || wantsRanking || featureMatch || columns || filter_key || sort_by){
+    // Si pidieron lista/columna/ranking o JSON → devolvemos filas
+    if (wantsList || wantsRanking || featureMatch || columns || filter_key || sort_by || String(format).toLowerCase()==="json"){
       res.setHeader("Content-Type", "application/json; charset=utf-8");
       return res.status(200).json({ rows: data });
     }
 
-    // Si el front pide format=json devolvemos filas por defecto (seguro)
-    if (String(format).toLowerCase() === "json"){
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      return res.status(200).json({ rows: data });
-    }
-
-    // Texto plano (no recomendado). Devolvemos algo simple.
-    const kn = Object.keys(cmap).find(k => k.includes("nombre")||k.includes("alumno")||k.includes("estudiante"));
-    const kp = Object.keys(cmap).find(k => k.includes("paralelo"));
-    const km = headers.find(h => metricHints.some(w => h.toLowerCase().includes(w))) || firstNumericKey(rows[0]);
+    // Texto (opcional, normalmente no usado por tu front)
     const lines = data.slice(0, 20).map((r,i)=>{
-      const nombre = kn ? r[cmap[kn]] : `Fila ${i+1}`;
-      const par = kp ? `, Paralelo: ${r[cmap[kp]]}` : "";
-      const mv = km ? `, ${km}: ${r[km]}` : "";
-      return `${i+1}. ${nombre}${par}${mv}`;
+      const nom = colNombre ? r[colNombre] : `Fila ${i+1}`;
+      const par = colParalelo ? `, Paralelo: ${r[colParalelo]}` : "";
+      return `${i+1}. ${nom}${par}`;
     });
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     return res.status(200).send(lines.join("\n"));
 
   } catch (err) {
-    console.error(err);
-    res.status(200).json({ answer: "No se encontró respuesta, revisa el archivo CSV o el parámetro 'file'." });
+    console.error("ask.js error:", err);
+    // Mantenemos 200 para no romper el front, pero explicamos
+    res.status(200).json({ answer: "No se encontró respuesta (ver consola del server). Verifica que el CSV exista en /public/datos y el nombre de archivo." });
   }
 };
