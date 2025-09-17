@@ -7,9 +7,8 @@
 
   <style>
     :root{
-      /* Ajustes rápidos */
-      --header-height: 240px;  /* altura del encabezado */
-      --video-shift: 14px;     /* cuánto “baja” el video (0–24px) */
+      --header-height: 240px;
+      --video-shift: 14px;
       --accent:#0078d7;
     }
 
@@ -21,41 +20,31 @@
       color:#111;
     }
 
-    /* ====== Encabezado: 25% (img) / 50% (video) / 25% (img) ====== */
+    /* ====== Encabezado: 25 / 50 / 25 ====== */
     .header-rail{
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      width:100%;
-      height:var(--header-height);
-      background:#fff;
-      overflow:hidden;
+      display:flex; align-items:center; justify-content:center;
+      width:100%; height:var(--header-height);
+      background:#fff; overflow:hidden;
     }
     .header-rail .col{
       display:flex; justify-content:center; align-items:center;
-      height:100%;
-      overflow:hidden;
-      padding:0 8px;
+      height:100%; overflow:hidden; padding:0 8px;
     }
-    .header-rail .col.left,
-    .header-rail .col.right{ flex:0 0 25%; }
+    .header-rail .col.left, .header-rail .col.right{ flex:0 0 25%; }
     .header-rail .col.center{ flex:0 0 50%; position:relative; }
 
-    /* Logos limitados al espacio de su columna */
     .header-rail .col.left img,
     .header-rail .col.right img{
-      max-height:100%;
-      max-width:100%;
-      height:auto; width:auto;
-      object-fit:contain; display:block;
+      max-height:100%; max-width:100%;
+      height:auto; width:auto; object-fit:contain; display:block;
     }
 
-    /* Video centrado y con desplazamiento hacia abajo */
+    /* 15% más grande */
     .header-rail .col.center video{
       max-height:100%; max-width:100%;
-      height:100%; width:auto;
-      object-fit:contain; display:block;
-      transform: translateY(var(--video-shift));
+      height:100%; width:auto; object-fit:contain; display:block;
+      transform: translateY(var(--video-shift)) scale(1.15);
+      transform-origin:center center;
     }
 
     /* ====== Interacción ====== */
@@ -65,12 +54,8 @@
       max-width:1100px; margin:0 auto;
     }
     .bar input[type="text"]{
-      flex:1 1 800px;
-      padding:12px 14px;
-      font-size:16px;
-      border:1px solid #d0d0d0;
-      border-radius:8px;
-      outline:none;
+      flex:1 1 800px; padding:12px 14px; font-size:16px;
+      border:1px solid #d0d0d0; border-radius:8px; outline:none;
     }
     .btn{
       padding:12px 16px; border:0; border-radius:8px;
@@ -79,87 +64,56 @@
     .btn:hover{ filter:brightness(0.95); }
 
     #respuesta{
-      margin:20px auto 0;
-      width:min(90%,1100px);
-      min-height:64px;
-      padding:14px;
-      background:#f7f7f8;
-      border:1px solid #e5e5e7;
-      border-radius:10px;
-      text-align:left; line-height:1.45;
-      white-space:pre-wrap;
-      font-size:15px;
+      margin:20px auto 0; width:min(90%,1100px);
+      min-height:64px; padding:14px; background:#f7f7f8;
+      border:1px solid #e5e5e7; border-radius:10px;
+      text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
     }
 
     /* ====== Lista vertical enumerada ====== */
-    .vlist{
-      width:min(95%,1100px);
-      margin:16px auto 24px;
-      font-size:13px;          /* letra pequeña */
-    }
+    .vlist{ width:min(95%,1100px); margin:16px auto 24px; font-size:13px; }
     .vitem{
-      border:1px solid #e5e5e7;
-      border-radius:12px;
-      padding:10px 12px;
-      margin:8px 0;
-      background:#fff;
-      display:grid;
-      grid-template-columns: 36px 1fr;  /* número | contenido */
-      gap:10px;
+      border:1px solid #e5e5e7; border-radius:12px;
+      padding:10px 12px; margin:8px 0; background:#fff;
+      display:grid; grid-template-columns:36px 1fr; gap:10px;
     }
-    .vnum{
-      font-weight:700;
-      color:#000;
-      display:flex; align-items:flex-start; justify-content:center;
-      padding-top:2px;
-    }
-    .vbody{
-      display:grid;
-      grid-template-columns: 1fr 2fr;   /* clave | valor */
-      gap:6px 12px;
-      align-items:start;
-    }
+    .vnum{ font-weight:700; color:#000; display:flex; align-items:flex-start; justify-content:center; padding-top:2px; }
+    .vbody{ display:grid; grid-template-columns:1fr 2fr; gap:6px 12px; align-items:start; }
     .vkey{ font-weight:600; color:#333; }
     .vval{ color:#111; word-break:break-word; }
 
-    /* ====== Tabla (fallback opcional) ====== */
+    /* ====== Tabla (fallback oculto) ====== */
     .table-wrap{
-      width:min(95%,1100px);
-      margin:16px auto 24px;
-      overflow:auto;
-      border:1px solid #e5e5e7;
-      border-radius:10px;
-      background:#fff;
+      width:min(95%,1100px); margin:16px auto 24px; overflow:auto;
+      border:1px solid #e5e5e7; border-radius:10px; background:#fff;
     }
-    table.data{
-      width:100%;
-      border-collapse:collapse;
-      font-size:14px;
-    }
+    table.data{ width:100%; border-collapse:collapse; font-size:14px; }
     table.data thead th{
-      position:sticky; top:0;
-      background:#f3f5f7;
-      border-bottom:1px solid #dee1e6;
-      text-align:left;
-      padding:10px 8px;
-      font-weight:700;
-      white-space:nowrap;
+      position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6;
+      text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap;
     }
-    table.data tbody td{
-      border-top:1px solid #f0f2f5;
-      padding:8px 8px;
-      vertical-align:top;
-    }
+    table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; }
     table.data tbody tr:nth-child(odd){ background:#fafbfc; }
 
-    /* Responsive */
-    @media (max-width: 900px){
-      :root{ --header-height: 220px; }
+    /* ====== Barra inferior (botones) ====== */
+    .footer-bar{
+      width:min(95%,1100px); margin:4px auto 28px;
+      display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
     }
+
+    /* Print: solo resultados */
+    @media print{
+      body *{ visibility:hidden !important; }
+      #printable, #printable *{ visibility:visible !important; }
+      #printable{ position:fixed; inset:0 0 auto 0; margin:0; }
+    }
+
+    /* Responsive */
+    @media (max-width: 900px){ :root{ --header-height: 220px; } }
     @media (max-width: 640px){
       :root{ --header-height: 200px; }
-      .header-rail .col.center video{ transform: translateY(8px); }
-      .vbody{ grid-template-columns: 1fr; } /* en móvil, clave encima del valor */
+      .header-rail .col.center video{ transform: translateY(8px) scale(1.12); }
+      .vbody{ grid-template-columns:1fr; } /* clave encima del valor */
     }
   </style>
 </head>
@@ -168,7 +122,6 @@
   <!-- ====== ENCABEZADO (25 / 50 / 25) ====== -->
   <div class="header-rail">
     <div class="col left">
-      <!-- Como este archivo está en /public, las rutas son /left.png y /right.png -->
       <img src="/left.png" alt="Imagen izquierda">
     </div>
 
@@ -191,27 +144,40 @@
       <button class="btn" onclick="enviarPregunta()">Enviar</button>
       <button class="btn" onclick="startListening()">🎤</button>
     </div>
+
+    <!-- El texto se oculta automáticamente si hay datos tabulares -->
     <div id="respuesta">Aquí aparecerá la respuesta...</div>
 
-    <!-- Vista por defecto: lista vertical enumerada -->
+    <!-- Resultados -->
     <div id="vlist" class="vlist" hidden></div>
-
-    <!-- Fallback opcional: tabla clásica (si prefieres, puedes ocultarla siempre) -->
     <div id="tabla" class="table-wrap" hidden></div>
+
+    <!-- Zona imprimible -->
+    <div id="printable" hidden></div>
+
+    <!-- ====== Botones inferiores en una sola línea ====== -->
+    <div class="footer-bar">
+      <button class="btn" onclick="exportPDF()">Exportar PDF</button>
+      <button class="btn" onclick="exportExcel()">Exportar Excel</button>
+      <button class="btn" onclick="stopSpeech()">Detener voz</button>
+      <button class="btn" onclick="limpiar()">Limpiar</button>
+    </div>
   </div>
 
   <script>
-    // Endpoints (usa /api/ask; si no existe, intenta /api/preguntar)
     const ENDPOINTS = ["/api/ask", "/api/preguntar"];
-
-    // CSV por defecto a consultar (dentro de /public/datos/)
     const DEFAULT_FILE = "decimo.csv";
 
     const video = document.getElementById("video");
     const vlistWrap = document.getElementById("vlist");
     const tablaWrap = document.getElementById("tabla");
+    const out = document.getElementById("respuesta");
+    const printable = document.getElementById("printable");
 
-    // ---------- Voz femenina "ejecutiva" en español (México) ----------
+    // Guardamos la última matriz de filas detectadas para exportar
+    let lastRows = null;
+
+    // ---------- Voz (es-MX) ----------
     let chosenVoice = null;
     const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
     const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
@@ -240,13 +206,27 @@
       }
       return voices.slice().sort((a,b) => scoreVoice(b) - scoreVoice(a))[0] || voices[0];
     }
-    function ensureVoiceSelected(){
-      if (!chosenVoice) chosenVoice = pickExecutiveSpanishFemale();
+    function ensureVoiceSelected(){ if (!chosenVoice) chosenVoice = pickExecutiveSpanishFemale(); }
+
+    function sanitizeForSpeech(text){
+      if (!text) return "";
+      // No leer tablas ni código
+      let t = text.replace(/```[\s\S]*?```/g, " ");
+      // Quitar asteriscos
+      t = t.replace(/\*/g, "");
+      // Quitar encabezados markdown y viñetas típicas
+      t = t.replace(/^[#>\-\u2022]\s*/gm, "");
+      // Colapsar espacios
+      t = t.replace(/\s{2,}/g, " ").trim();
+      return t;
     }
+
     function speak(text, onStart, onEnd){
       if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
       ensureVoiceSelected();
-      const u = new SpeechSynthesisUtterance(text);
+      const clean = sanitizeForSpeech(text);
+      if (!clean){ onStart&&onStart(); onEnd&&onEnd(); return; }
+      const u = new SpeechSynthesisUtterance(clean);
       if (chosenVoice) u.voice = chosenVoice;
       u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
       u.rate = 1.12; u.pitch = 1.02; u.volume = 1.0;
@@ -256,12 +236,15 @@
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(u);
     }
+    function stopSpeech(){
+      try{ window.speechSynthesis.cancel(); }catch{}
+      try{ video?.pause(); }catch{}
+    }
     window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
 
-    // ---------- Helpers comunes ----------
-    const escapeHtml = (s) =>
-      String(s ?? "")
-        .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+    // ---------- Helpers tabla ----------
+    const escapeHtml = (s) => String(s ?? "")
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 
     function pickDelimiter(sampleLines){
       const cands = [",",";","\t","|"];
@@ -285,7 +268,6 @@
         const cells = l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim());
         return cells;
       });
-      // quitar fila separadora si existe
       const sepIdx = rows.findIndex(r => r.every(c => /^:?-{3,}:?$/.test(c)));
       if (sepIdx >= 0) rows.splice(sepIdx,1);
       return rows.length >= 2 ? rows : null;
@@ -326,7 +308,7 @@
       return normalized;
     }
 
-    // ---------- Reordenar cabeceras: prioriza "nombre"/"estudiante"/"alumno" ----------
+    // Prioriza nombre/estudiante/alumno
     function reorderHeaders(headers){
       const prio = ["nombre","estudiante","alumno","apellidos","nombres"];
       const idx = headers.map((h,i)=>({h, i, key:String(h||"").toLowerCase()}));
@@ -335,7 +317,7 @@
         const pb = prio.findIndex(p => b.key.includes(p));
         const sa = pa === -1 ? 999 : pa;
         const sb = pb === -1 ? 999 : pb;
-        return sa - sb || a.i - b.i; // misma prioridad -> orden original
+        return sa - sb || a.i - b.i;
       });
       const map = idx.map(x=>x.i);
       const newHeaders = idx.map(x=>x.h);
@@ -349,25 +331,19 @@
       return [newHeaders, ...remap];
     }
 
-    // ---------- Render: Lista Vertical (#) ----------
+    // Render
     function renderVerticalList(rows){
       const [head, ...body] = rows;
       let html = "";
       body.forEach((r, idx) => {
-        html += `<div class="vitem">
-          <div class="vnum">#${idx+1}</div>
-          <div class="vbody">`;
+        html += `<div class="vitem"><div class="vnum">#${idx+1}</div><div class="vbody">`;
         for (let c = 0; c < head.length; c++){
-          const key = escapeHtml(head[c]);
-          const val = escapeHtml(r[c]);
-          html += `<div class="vkey">${key}</div><div class="vval">${val}</div>`;
+          html += `<div class="vkey">${escapeHtml(head[c])}</div><div class="vval">${escapeHtml(r[c])}</div>`;
         }
         html += `</div></div>`;
       });
       return html || "<div class='vitem'><div class='vnum'>#1</div><div class='vbody'><div class='vkey'>Mensaje</div><div class='vval'>Sin datos tabulares.</div></div></div>";
     }
-
-    // ---------- Render: Tabla (opcional) ----------
     function renderTable(rows){
       const [head, ...body] = rows;
       let html = '<table class="data"><thead><tr>';
@@ -382,46 +358,57 @@
       return html;
     }
 
-    // ---------- Autodetección de datos y pintado (preferencia: vertical) ----------
-    function maybeRenderFromText(text){
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-
-      // 1) JSON array de objetos
+    function detectRowsFromText(text){
       let rows = parseJsonTable(text);
-
-      // 2) bloque ```csv``` explícito
       if (!rows){
         const csvBlock = extractCsvBlock(text);
         if (csvBlock) rows = parseDelimited(csvBlock);
       }
-
-      // 3) tabla Markdown
       if (!rows) rows = parseMarkdownTable(text);
-
-      // 4) heurística de separadores en todo el texto
       if (!rows) rows = parseDelimited(text);
-
-      if (rows && rows.length >= 2 && rows[0].length >= 2){
-        rows = applyHeaderOrder(rows); // prioriza columna nombre
-        // Vista predeterminada: vertical enumerada
-        vlistWrap.innerHTML = renderVerticalList(rows);
-        vlistWrap.hidden = false;
-
-        // (Opcional) también dejamos la tabla lista, por si luego quieres un toggle
-        tablaWrap.innerHTML = renderTable(rows);
-        // tablaWrap.hidden = false; // déjalo oculto por ahora
-      }
+      return rows;
     }
 
-    // ---------- Enviar pregunta (incluye &file=DEFAULT_FILE) ----------
+    function maybeRenderFromText(text){
+      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
+      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+      printable.hidden = true; printable.innerHTML = "";
+
+      lastRows = null;
+
+      let rows = detectRowsFromText(text);
+      if (rows && rows.length >= 2 && rows[0].length >= 2){
+        rows = applyHeaderOrder(rows);
+        lastRows = rows.slice(); // guardar para exportar
+
+        // Vista principal: vertical
+        const vhtml = renderVerticalList(rows);
+        vlistWrap.innerHTML = vhtml;
+        vlistWrap.hidden = false;
+
+        // Fallback tabla (oculta)
+        tablaWrap.innerHTML = renderTable(rows);
+
+        // Para imprimir: usamos la lista vertical
+        printable.innerHTML = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${vhtml}`;
+        printable.hidden = false;
+
+        return true; // hubo datos tabulares
+      }
+      return false;
+    }
+
+    // ---------- Enviar ----------
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
-      const out = document.getElementById("respuesta");
+
+      out.hidden = false;
       out.textContent = "Consultando...";
       vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+      printable.hidden = true; printable.innerHTML = "";
+      lastRows = null;
 
       let data = null, lastErr = null;
       for (const base of ENDPOINTS){
@@ -439,14 +426,20 @@
         return;
       }
 
-      const texto = data.text || data.respuesta || data.answer || "No se encontró respuesta.";
-      out.textContent = texto;
+      const textoRaw = data.text || data.respuesta || data.answer || "";
+      const huboTabla = maybeRenderFromText(textoRaw);
 
-      // Si el texto contiene datos tabulares, muéstralos en vertical enumerado
-      maybeRenderFromText(texto);
-
-      // Reproduce el video durante la voz y pausa al terminar
-      speak(texto, ()=>video?.play(), ()=>video?.pause());
+      if (huboTabla){
+        // No duplicar: ocultar texto si hay datos tabulares
+        out.hidden = true;
+        stopSpeech(); // no leer tablas
+      }else{
+        // Mostrar y leer texto (sin asteriscos)
+        const clean = sanitizeForSpeech(textoRaw);
+        out.hidden = false;
+        out.textContent = clean || "No se encontró respuesta.";
+        speak(clean, ()=>video?.play(), ()=>video?.pause());
+      }
     }
 
     // Enter para enviar
@@ -466,10 +459,66 @@
         enviarPregunta();
       };
       rec.onerror = e => {
-        alert("Error de micrófono: " + e.error + "\nVe al candado del navegador y permite el micrófono para este sitio.");
+        alert("Error de micrófono: " + e.error + "\nDa permiso al micrófono en el candado del navegador.");
       };
       rec.start();
     }
+
+    // ---------- Exportar ----------
+    function rowsToCSV(rows){
+      return rows.map(r => r.map(c=>{
+        const s = String(c ?? "");
+        if (/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+        return s;
+      }).join(",")).join("\n");
+    }
+
+    function exportPDF(){
+      // Imprime solo la zona de resultados (printable).
+      if (printable.hidden){
+        alert("No hay resultados para exportar.");
+        return;
+      }
+      window.print();
+    }
+
+    function exportExcel(){
+      if (!lastRows || !lastRows.length){
+        alert("No hay resultados para exportar.");
+        return;
+      }
+      // Generar una tabla HTML compatible con Excel (.xls)
+      const tableHTML = renderTable(lastRows);
+      const html = `
+        <html><head><meta charset="UTF-8"></head>
+        <body>${tableHTML}</body></html>`;
+      const blob = new Blob([html], { type: "application/vnd.ms-excel" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "resultado.xls";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    // ---------- Limpiar ----------
+    function limpiar(){
+      stopSpeech();
+      document.getElementById("pregunta").value = "";
+      out.textContent = "";
+      out.hidden = false; // mostramos contenedor vacío por consistencia
+      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
+      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+      printable.hidden = true; printable.innerHTML = "";
+      lastRows = null;
+    }
+
+    // Exponer botones al ámbito global
+    window.startListening = startListening;
+    window.stopSpeech = stopSpeech;
+    window.exportPDF = exportPDF;
+    window.exportExcel = exportExcel;
+    window.limpiar = limpiar;
+    window.enviarPregunta = enviarPregunta;
   </script>
 </body>
 </html>
