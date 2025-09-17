@@ -5,49 +5,67 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>csv-gpt-backend · Demo</title>
   <style>
-    /* Layout 25/50/25 */
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; color:#111; background:#fafafa; }
-    .grid { display:grid; grid-template-columns: 1fr 2fr 1fr; gap: 12px; padding: 12px; }
-    @media (max-width: 1024px) { .grid { grid-template-columns: 1fr; } }
+    body { margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; color:#111; background:#fafafa; }
+    .grid { display:grid; grid-template-columns: 1fr 2fr 1fr; gap:12px; padding:12px; }
+    @media (max-width:1024px){ .grid{ grid-template-columns:1fr; } }
 
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
-    .muted { color:#6b7280; font-size:0.9rem; }
+    .muted { color:#6b7280; font-size:.9rem; }
     .row { display:flex; gap:8px; margin-bottom:10px; }
-    input[type="text"] { flex:1; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; font-size:1rem; }
-    button { padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer; }
-    button.secondary { background:#fff; color:#111; border:1px solid #111; }
-    #texto { white-space:pre-wrap; }
+    input[type="text"]{ flex:1; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; font-size:1rem; }
+    button{ padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer; }
+    button.secondary{ background:#fff; color:#111; border:1px solid #111; }
+    #texto{ white-space:pre-wrap; }
+
+    /* Logos */
+    .logo { width:100%; max-width:260px; height:auto; display:block; object-fit:contain; margin:8px auto; }
+
+    /* Video central */
+    .video-wrap { width:100%; border-radius:12px; overflow:hidden; border:1px solid #e5e7eb; background:#000; }
+    .hero-video { width:100%; height:auto; display:block; aspect-ratio:16/9; object-fit:cover; }
 
     /* Lista vertical enumerada */
-    .vertical-list { padding-left: 1.25rem; margin: .5rem 0; }
-    .vertical-list > li { margin: .35rem 0; font-size: 0.9rem; }
-    .vcard { width: 100%; display: grid; grid-template-columns: 160px 1fr; gap: .25rem .75rem; }
-    .k { font-weight: 600; color: #222; }
-    .v { color: #333; word-break: break-word; }
-    @media (max-width: 640px) { .vcard { grid-template-columns: 1fr; } }
+    .vertical-list { padding-left:1.25rem; margin:.5rem 0; }
+    .vertical-list>li { margin:.35rem 0; font-size:.9rem; }
+    .vcard { width:100%; display:grid; grid-template-columns:160px 1fr; gap:.25rem .75rem; }
+    .k { font-weight:600; color:#222; }
+    .v { color:#333; word-break:break-word; }
+    @media (max-width:640px){ .vcard{ grid-template-columns:1fr; } }
 
-    .small { font-size:0.85rem; }
-    .sep { height:8px; }
+    .small{ font-size:.85rem; }
+    .sep{ height:8px; }
   </style>
 </head>
 <body>
   <div class="grid">
     <!-- Izquierda -->
     <div class="card">
-      <div class="muted">Logo / Info</div>
+      <img id="logoIzq" class="logo" src="/img/logo-izq.png" alt="Logo izquierdo"
+           onerror="this.style.display='none'">
       <div class="small">Archivo por defecto: <b id="fileLabel">decimo.csv</b></div>
       <div class="sep"></div>
       <button class="secondary" onclick="verCorrelacion()">Ver correlación A↔E</button>
       <div class="sep"></div>
-      <div class="small muted">Consejo: escribe “lista”, “ranking”, “timidez”, “agresión”, etc.</div>
+      <div class="small muted">Tip: “lista”, “ranking”, “timidez”, “agresión”, etc.</div>
     </div>
 
     <!-- Centro -->
     <div class="card">
+      <!-- VIDEO -->
+      <div class="video-wrap">
+        <!-- Autoplay (muted) permitido por navegador; lo sincronizo con TTS abajo -->
+        <video id="videoMain" class="hero-video" src="/media/descarga.mp4"
+               playsinline muted preload="metadata" poster="/img/poster.jpg"
+               onerror="console.warn('No se encontró /media/descarga.mp4');">
+        </video>
+      </div>
+
+      <div class="sep"></div>
       <div class="row">
         <input id="pregunta" type="text" placeholder="Escribe tu consulta… (Enter para enviar)" />
         <button onclick="enviarPregunta()">Preguntar</button>
       </div>
+
       <!-- Texto inicial (se oculta si hay tabla/lista) -->
       <div id="texto" class="muted">Escribe una consulta y te mostraré resultados del CSV.</div>
       <div class="sep"></div>
@@ -57,19 +75,32 @@
 
     <!-- Derecha -->
     <div class="card">
-      <div class="muted">Logo / Panel</div>
+      <img id="logoDer" class="logo" src="/img/logo-der.png" alt="Logo derecho"
+           onerror="this.style.display='none'">
+      <div class="muted">Panel</div>
       <div class="small" id="audioState">TTS listo.</div>
+      <div class="sep"></div>
+      <div class="row" style="gap:6px">
+        <button class="secondary" onclick="toggleVideo()">⏯ Video</button>
+        <button class="secondary" onclick="toggleMute()">🔇/🔊</button>
+      </div>
     </div>
   </div>
 
   <script>
     // ===== Config =====
-    const DEFAULT_FILE = "decimo.csv"; // tu CSV por defecto (en /public/datos/)
+    const DEFAULT_FILE = "decimo.csv"; // CSV por defecto (en /public/datos/)
     document.getElementById("fileLabel").textContent = DEFAULT_FILE;
 
-    // ===== Utilidades UI =====
-    const TEXT_IDS = ["texto"]; // añade otros si tienes más contenedores de texto
+    // ===== Video helpers =====
+    const vid = () => document.getElementById("videoMain");
+    function playVideo(){ const v = vid(); if (!v) return; v.play().catch(()=>{}); }
+    function pauseVideo(){ const v = vid(); if (!v) return; if (!v.paused) v.pause(); }
+    function toggleVideo(){ const v = vid(); if (!v) return; v.paused ? playVideo() : pauseVideo(); }
+    function toggleMute(){ const v = vid(); if (!v) return; v.muted = !v.muted; }
 
+    // ===== UI helpers =====
+    const TEXT_IDS = ["texto"];
     function setVisible(ids, visible){
       for (const id of ids){
         const el = document.getElementById(id);
@@ -78,8 +109,6 @@
         if (!visible) el.innerHTML = "";
       }
     }
-
-    // Heurística: texto que “parece” tabla/lista
     function looksStructuredText(s){
       if (!s) return false;
       const lines = s.split(/\r?\n/);
@@ -89,7 +118,7 @@
       return hasMarkdownTable || hasNumberedList || hasCSVish;
     }
 
-    // ===== TTS (voz ES-MX si existe) =====
+    // ===== TTS (ES-MX si está disponible) + sincronía con video =====
     function speak(text){
       try{
         if (!window.speechSynthesis) return;
@@ -98,13 +127,13 @@
         u.lang = mx?.lang || "es-MX";
         if (mx) u.voice = mx;
         speechSynthesis.cancel();
+        u.onstart = () => { playVideo(); document.getElementById("audioState").textContent = "Leyendo respuesta…"; };
+        u.onend   = () => { pauseVideo(); document.getElementById("audioState").textContent = "TTS listo."; };
         speechSynthesis.speak(u);
-        document.getElementById("audioState").textContent = "Leyendo respuesta…";
-        u.onend = () => document.getElementById("audioState").textContent = "TTS listo.";
       }catch(e){}
     }
 
-    // ===== Helpers de datos/tablas =====
+    // ===== Helpers de datos/lista =====
     function orderKeysPreferName(obj){
       const keys = Object.keys(obj);
       const preferred = ["nombre","estudiante","alumno","NOMBRE","ESTUDIANTE","ALUMNO"];
@@ -165,6 +194,9 @@
       const pregunta = (input?.value || "").trim();
       if(!pregunta) return;
 
+      // Pre: pausa el video hasta que hablemos de nuevo
+      pauseVideo();
+
       const url = `/api/ask?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
 
       try {
@@ -173,7 +205,7 @@
         try { data = await resp.json(); } catch { /* no-json */ }
         if (!data) text = await resp.text();
 
-        // --- Si el backend avisó error explícito ---
+        // Errores explícitos del backend
         if (data && data.error) {
           setVisible(TEXT_IDS, true);
           const el = document.getElementById("texto");
@@ -188,13 +220,13 @@
           setVisible(TEXT_IDS, false);
           const clean = rows.map(normalizeRow);
           const metric = getLikelyScoreKey(clean[0]);
-          const ranked = sortByMetricDesc(clean, metric); // ranking desc si hay métrica
+          const ranked = sortByMetricDesc(clean, metric);
           drawVerticalNumberedList(ranked, mountId);
-          speak?.(`Mostrando ${ranked.length} registros en lista vertical.`);
-          return; // no mostramos texto
+          speak(`Mostrando ${ranked.length} registros en lista vertical.`);
+          return;
         }
 
-        // 2) Texto con pinta de tabla/lista → ocultar texto inicial
+        // 2) Texto estructurado → ocultamos texto inicial
         const maybeText = text || data?.answer || data?.text;
         if (looksStructuredText(maybeText)){
           setVisible(TEXT_IDS, false);
@@ -220,7 +252,6 @@
     }
 
     async function verCorrelacion() {
-      // Requiere /api/stats (ya te lo pasé antes). Si no lo tienes aún, puedes ignorar este botón.
       const url = `/api/stats?file=${encodeURIComponent(DEFAULT_FILE)}&x=AGRESIÓN&y=EMPATÍA&group_by=Paralelo`;
       try {
         const data = await (await fetch(url)).json();
