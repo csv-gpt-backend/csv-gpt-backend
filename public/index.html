@@ -5,369 +5,243 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Demo CSV + Voz</title>
   <style>
-    :root { --gap: 14px; }
-    html, body { background:#fff; margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; color:#111; }
-    .wrap   { display:grid; grid-template-columns: 1fr 2fr 1fr; gap: var(--gap); padding: var(--gap); }
-    @media (max-width: 1024px){ .wrap { grid-template-columns: 1fr; } }
-
-    .card { background:#fff; border:0; }
-    .center { display:flex; flex-direction:column; gap: var(--gap); }
-    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    textarea { width:100%; min-height:92px; resize:vertical; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; font-size:1rem; }
-    input, button, select { font-size:1rem; }
-    button { padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer; }
-    button.secondary { background:#fff; color:#111; border:1px solid #111; }
-    .muted { color:#6b7280; }
-
-    /* 25-50-25: imágenes y video en la misma línea (encabezado) */
-    .media-strip { display:grid; grid-template-columns: 1fr 2fr 1fr; gap: var(--gap); align-items:center; }
-    .side-img { width:100%; height:100%; object-fit:contain; }
-    .video-box { width:100%; background:#000; border-radius:14px; overflow:hidden; }
-    video { width:100%; height:auto; display:block; border:none; outline:none; }
-
-    /* Área de resultado */
-    #texto { white-space:pre-wrap; margin: 6px 0; }
-    #respuesta { width:100%; }
-
-    /* Tabla/lista numerada */
-    table { border-collapse: collapse; width: 100%; }
-    th, td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
-    th { font-weight: 600; }
-    .num { width: 50px; text-align:right; }
-    .vertical-list { padding-left:1.25rem; margin:.5rem 0; }
-    .vertical-list > li { margin:.35rem 0; }
+    html,body{margin:0;background:#fff;color:#111;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    /* 25% - 50% - 25% */
+    .grid{display:grid;grid-template-columns:1fr 2fr 1fr;gap:16px;padding:16px}
+    @media(max-width:1024px){.grid{grid-template-columns:1fr}}
+    .col{display:flex;flex-direction:column;gap:16px}
+    .side-img{width:100%;height:auto;object-fit:contain}
+    .video-wrap{width:100%;border-radius:14px;overflow:hidden;background:#000}
+    video{width:100%;height:auto;display:block;border:none;outline:none}
+    textarea{width:100%;min-height:96px;resize:vertical;border:1px solid #d1d5db;border-radius:10px;padding:10px 12px;font-size:1rem}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    button{padding:10px 14px;border-radius:10px;font-size:1rem;cursor:pointer}
+    .primary{background:#111;color:#fff;border:1px solid #111}
+    .secondary{background:#fff;color:#111;border:1px solid #111}
+    #texto{white-space:pre-wrap;margin-top:6px}
+    table{border-collapse:collapse;width:100%}
+    th,td{padding:8px 10px;border-bottom:1px solid #eee;text-align:left}
+    th{font-weight:600}
+    .num{width:48px;text-align:right}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <!-- Columna izquierda -->
-    <div class="card">
-      <img src="/left.png" alt="Imagen izquierda" class="side-img"
-           onerror="this.style.display='none'">
+  <div class="grid">
+    <!-- 25% izquierda: UNA sola imagen grande -->
+    <div class="col">
+      <img src="/left.png" alt="Imagen izquierda" class="side-img" onerror="this.style.display='none'">
     </div>
 
-    <!-- Columna central -->
-    <div class="card center">
-      <!-- Tira de medios 25/50/25: img — video — img -->
-      <div class="media-strip">
-        <img src="/left.png" alt="Logo/imagen" class="side-img" onerror="this.style.display='none'">
-        <div class="video-box">
-          <video id="videoMain" playsinline muted preload="metadata"
-                 poster="/right.png">
-            <!-- 1) Tu video en Vercel Blob -->
-            <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
-            <!-- 2) Fallback opcional local -->
-            <source src="/media/descarga.mp4" type="video/mp4">
-          </video>
-        </div>
-        <img src="/right.png" alt="Logo/imagen" class="side-img" onerror="this.style.display='none'">
+    <!-- 50% centro: SOLO el video arriba y luego la UI -->
+    <div class="col">
+      <div class="video-wrap">
+        <video id="videoMain" playsinline muted preload="metadata" poster="/right.png"
+               src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4"></video>
       </div>
 
-      <!-- Entrada y controles -->
+      <textarea id="pregunta" placeholder="Escribe tu consulta (3 líneas)…&#10;• Puedes dictar con el micrófono.&#10;• Pide listas/rankings/tablas y cálculos."></textarea>
+
       <div class="row">
-        <textarea id="pregunta" placeholder="Escribe tu consulta (3 líneas)…&#10;• Puedes dictar con el micrófono.&#10;• Pide listas/rankings/tablas y cálculos."></textarea>
-      </div>
-      <div class="row">
-        <button id="btnPreguntar" onclick="enviarPregunta()">Preguntar</button>
-        <button class="secondary" onclick="dictar()">🎤 Dictar</button>
-        <button class="secondary" onclick="toggleVoice()"><span id="voiceState">🔊 Silenciar voz</span></button>
+        <button class="primary" id="btnPreguntar" onclick="enviarPregunta()">Preguntar</button>
+        <button class="secondary" id="btnDictar" onclick="toggleDictado()">🎤 Dictar</button>
+        <button class="secondary" id="btnSilencio" onclick="toggleVoz()">🔊 Silenciar voz</button>
         <button class="secondary" onclick="detenerVoz()">⏹️ Detener voz</button>
         <button class="secondary" onclick="limpiar()">🧹 Limpiar</button>
         <button class="secondary" onclick="exportarPDF()">📄 Exportar PDF</button>
         <button class="secondary" onclick="exportarCSV()">📊 Exportar Excel</button>
       </div>
 
-      <!-- Salida -->
-      <div id="texto" class="muted">Escribe o dicta una consulta y te mostraré los resultados. Si pides listas/tablas, verás un listado numerado de estudiantes con las puntuaciones solicitadas.</div>
+      <div id="texto" class="muted">Escribe o dicta una consulta y te mostraré los resultados.</div>
       <div id="respuesta"></div>
     </div>
 
-    <!-- Columna derecha -->
-    <div class="card">
-      <img src="/right.png" alt="Imagen derecha" class="side-img"
-           onerror="this.style.display='none'">
+    <!-- 25% derecha: UNA sola imagen grande -->
+    <div class="col">
+      <img src="/right.png" alt="Imagen derecha" class="side-img" onerror="this.style.display='none'">
     </div>
   </div>
 
   <script>
     // ===== Config =====
-    const DEFAULT_FILE = "decimo.csv";              // CSV por defecto en /public/datos/
-    const API_URL = (q) => `/api/ask?q=${encodeURIComponent(q)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
-    const LONG_THRESHOLD_CHARS = 800;               // Respuesta larga → dejar video reproduciendo
-    let VOICE_ENABLED = true;
+    const DEFAULT_FILE = "decimo.csv";
+    const API = (q) => `/api/ask?q=${encodeURIComponent(q)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
+    const LONG_THRESHOLD = 800; // si la respuesta supera esto, el video sigue reproduciéndose
 
-    // ===== Video helpers =====
+    // ===== Video =====
     const vid = () => document.getElementById("videoMain");
     function playVideo(){ const v=vid(); if(!v) return; v.play().catch(()=>{}); }
     function pauseVideo(){ const v=vid(); if(!v) return; if(!v.paused) v.pause(); }
 
-    // ===== Voz (es-MX femenina si está disponible) =====
-    let VOICES = [];
-    let SELECTED_VOICE = null;
-
-    function loadVoices(){
+    // ===== TTS (voz femenina es-MX si está) =====
+    let VOICE_ON = true, VOICES=[], VOZ=null, DICTANDO=false;
+    function cargarVoces(){
       return new Promise(resolve=>{
-        const synth = window.speechSynthesis;
-        if(!synth){ resolve([]); return; }
-        let got = synth.getVoices();
-        if (got && got.length){ VOICES = got; resolve(got); return; }
-        const once = () => { got = synth.getVoices(); VOICES = got; resolve(got); synth.removeEventListener('voiceschanged', once); };
-        synth.addEventListener('voiceschanged', once);
-        setTimeout(()=>{ got = synth.getVoices(); VOICES = got; resolve(got); }, 1200);
+        const s=window.speechSynthesis; if(!s){resolve([]);return;}
+        let vs=s.getVoices(); if(vs&&vs.length){VOICES=vs;resolve(vs);return;}
+        const once=()=>{vs=s.getVoices(); VOICES=vs; resolve(vs); s.removeEventListener('voiceschanged',once);};
+        s.addEventListener('voiceschanged',once);
+        setTimeout(()=>{vs=s.getVoices(); VOICES=vs; resolve(vs);},1200);
       });
     }
-    function pickSpanishFemale(voices){
-      // Preferencias frecuentes en Windows/Chrome
-      const prefer = ["Sabina","Paulina","Lupe","Luciana","Conchita","Helena","Google español"];
-      let v = voices.find(v => /es[-_]?MX/i.test(v.lang) && prefer.some(n => v.name.toLowerCase().includes(n.toLowerCase())));
-      if (v) return v;
-      v = voices.find(v => /es[-_]?MX/i.test(v.lang));
-      if (v) return v;
-      v = voices.find(v => /^es/i.test(v.lang) && prefer.some(n => v.name.toLowerCase().includes(n.toLowerCase())));
-      if (v) return v;
-      return voices.find(v => /^es/i.test(v.lang)) || voices[0] || null;
+    function elegirVoz(voices){
+      const prefer=["Sabina","Paulina","Lupe","Luciana","Conchita","Helena","Google español"];
+      let v=voices.find(v=>/es(-|_)mx/i.test(v.lang)&&prefer.some(n=>v.name.toLowerCase().includes(n.toLowerCase())));
+      if(v) return v;
+      v=voices.find(v=>/es(-|_)mx/i.test(v.lang)); if(v) return v;
+      v=voices.find(v=>/^es/i.test(v.lang)&&prefer.some(n=>v.name.toLowerCase().includes(n.toLowerCase())));
+      return v || voices.find(v=>/^es/i.test(v.lang)) || voices[0] || null;
     }
     async function speak(text){
-      if (!VOICE_ENABLED) return;                 // silenciado
-      if (!window.speechSynthesis) return;
-      const voices = VOICES.length ? VOICES : await loadVoices();
-      SELECTED_VOICE = SELECTED_VOICE || pickSpanishFemale(voices);
-
-      const clean = String(text).replace(/\*/g, ""); // NO leer asteriscos
-      const u = new SpeechSynthesisUtterance(clean);
-      if (SELECTED_VOICE){ u.voice = SELECTED_VOICE; u.lang = SELECTED_VOICE.lang; } else { u.lang = "es-MX"; }
-      u.onstart = () => playVideo();
-      u.onend   = () => { 
-        // si la respuesta es muy larga, deja el video reproduciendo
-        const txt = document.getElementById("texto");
-        const res = document.getElementById("respuesta");
-        const len = (txt?.innerText || "").length + (res?.innerText || "").length;
-        if (len > LONG_THRESHOLD_CHARS) playVideo(); else pauseVideo();
+      if(!VOICE_ON || !window.speechSynthesis) return;
+      const voices = VOICES.length? VOICES : await cargarVoces();
+      VOZ = VOZ || elegirVoz(voices);
+      const u = new SpeechSynthesisUtterance(String(text).replace(/\*/g,""));
+      if(VOZ){ u.voice=VOZ; u.lang=VOZ.lang; } else { u.lang="es-MX"; }
+      u.onstart = ()=> playVideo();
+      u.onend   = ()=>{
+        const t=document.getElementById("texto"), r=document.getElementById("respuesta");
+        const len=(t?.innerText||"").length+(r?.innerText||"").length;
+        if(len>LONG_THRESHOLD) playVideo(); else pauseVideo();
       };
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(u);
     }
-    function toggleVoice(){
-      VOICE_ENABLED = !VOICE_ENABLED;
-      document.getElementById("voiceState").textContent = VOICE_ENABLED ? "🔊 Silenciar voz" : "🔈 Activar voz";
-      if (!VOICE_ENABLED) detenerVoz();
+    function toggleVoz(){
+      VOICE_ON=!VOICE_ON;
+      document.getElementById("btnSilencio").textContent = VOICE_ON ? "🔊 Silenciar voz" : "🔈 Activar voz";
+      if(!VOICE_ON) detenerVoz();
     }
-    function detenerVoz(){ try { window.speechSynthesis.cancel(); pauseVideo(); } catch(e){} }
+    function detenerVoz(){ try{ window.speechSynthesis.cancel(); pauseVideo(); }catch(e){} }
 
-    // ===== Dictado (entrada por voz) =====
-    function dictar(){
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR){ alert("Este navegador no soporta dictado."); return; }
-      const r = new SR();
-      r.lang = "es-MX";
-      r.interimResults = false;
-      r.maxAlternatives = 1;
-      r.onresult = (ev) => {
-        const text = ev.results[0][0].transcript || "";
-        const ta = document.getElementById("pregunta");
-        ta.value = (ta.value ? (ta.value + " ") : "") + text;
+    // ===== Dictado fiable (start/stop) =====
+    let recog=null;
+    function toggleDictado(){
+      const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+      if(!SR){ alert("Este navegador no soporta dictado por voz."); return; }
+      if(DICTANDO){ recog.stop(); return; }
+      recog = new SR(); recog.lang="es-MX"; recog.interimResults=false; recog.maxAlternatives=1;
+      recog.onresult = (ev)=>{
+        const txt=ev.results[0][0].transcript||"";
+        const ta=document.getElementById("pregunta");
+        ta.value = (ta.value?ta.value+" ":"") + txt;
         enviarPregunta();
       };
-      r.onerror = () => {};
-      r.start();
+      recog.onstart = ()=>{ DICTANDO=true; document.getElementById("btnDictar").textContent="⏹️ Detener dictado"; };
+      recog.onend   = ()=>{ DICTANDO=false; document.getElementById("btnDictar").textContent="🎤 Dictar"; };
+      recog.onerror = ()=>{ DICTANDO=false; document.getElementById("btnDictar").textContent="🎤 Dictar"; };
+      recog.start();
     }
 
-    // ===== Utilidades UI =====
-    function setVisible(elem, visible){ if(!elem) return; elem.style.display = visible ? "" : "none"; }
-    function limpiar(){
-      detenerVoz();
-      document.getElementById("pregunta").value = "";
-      const t = document.getElementById("texto"); const r = document.getElementById("respuesta");
-      if (t) t.textContent = "Listo para una nueva consulta.";
-      if (r) r.innerHTML = "";
-      pauseVideo();
-    }
-    function looksStructuredText(s){
-      if(!s) return false;
-      const lines = s.split(/\r?\n/);
-      const tbl = lines.filter(l => l.includes("|")).length >= 2;
-      const num = /^\s*\d+\./m.test(s);
-      const csv = lines.some(l => l.split(",").length >= 3);
-      return tbl || num || csv;
-    }
+    // ===== Render =====
+    function ocultarTexto(){ const t=document.getElementById("texto"); if(t){ t.style.display="none"; t.textContent=""; } }
+    function mostrarTexto(msg){ const t=document.getElementById("texto"); if(t){ t.style.display=""; t.textContent=msg; } }
+    function renderTabla(rows, query){
+      ocultarTexto();
+      const cont=document.getElementById("respuesta"); cont.innerHTML="";
+      const headers=Object.keys(rows[0]||{});
+      const norm=h=>String(h).normalize("NFD").replace(/\p{Diacritic}/gu,"").toUpperCase();
 
-    // ===== Render de listas/tablas de estudiantes =====
-    function normalize(str){ return String(str??"").normalize("NFD").replace(/\p{Diacritic}/gu,"").toUpperCase().trim(); }
-    function findNameCol(headers){
-      const cand = ["NOMBRE","ESTUDIANTE","ALUMNO"];
-      for (const h of headers) if (cand.includes(normalize(h))) return h;
-      // por contiene
-      for (const h of headers){ const H = normalize(h); if (H.includes("NOMBRE") || H.includes("ESTUDIANTE") || H.includes("ALUMNO")) return h; }
-      return headers[0];
-    }
-    function findScoreCols(headers, query){
-      const want = [];
-      const qn = normalize(query);
-      // si mencionan columnas por nombre, intenta mapearlas
-      for (const h of headers){
-        const H = normalize(h);
-        if (/PROMEDIO|NOTA|PUNTAJE|SCORE|CALIFIC/.test(H) && !want.includes(h)) want.push(h);
-        if (qn && H.includes(qn) && !want.includes(h)) want.push(h);
-        // palabras clave en pregunta
-        if (/AGRESION|EMPATIA|TIMIDEZ|AUTOESTIMA|FISICO|TENSION|ANSIEDAD/.test(H) && /AGRES|EMPAT|TIMIDEZ|AUTOEST|FISIC|TENSION|ANSIEDAD/.test(qn)) {
-          if (!want.includes(h)) want.push(h);
-        }
-      }
-      // si no detectó, toma hasta 2 columnas numéricas probables
-      if (!want.length){
-        const nums = headers.filter(h => rowsSampleNumeric[h]); // rowsSampleNumeric se setea en enviarPregunta
-        want.push(...nums.slice(0,2));
-      }
-      return want;
-    }
-    function buildNumberMap(rows){
-      const m = {};
-      rows.forEach(r=>{
-        for (const k of Object.keys(r)){
-          const v = r[k]; const n = Number(String(v).replace(",", "."));
-          if (!isNaN(n)) m[k] = true;
-        }
+      // Detectar columnas
+      const nameCol = headers.find(h=>/^(NOMBRE|ESTUDIANTE|ALUMNO)$/i.test(norm(h))) ||
+                      headers.find(h=>/NOMBRE|ESTUDIANTE|ALUMNO/i.test(norm(h))) || headers[0];
+      const qn = norm(query||"");
+      const scoreCols = headers.filter(h=>{
+        const H=norm(h);
+        if(/PROMEDIO|NOTA|PUNTAJE|SCORE|CALIFICACION|CALIFICACION|TOTAL/.test(H)) return true;
+        if(/AGRESION|EMPATIA|TIMIDEZ|AUTOESTIMA|FISICO|TENSION|ANSIEDAD/.test(H) && /AGRES|EMPAT|TIMIDEZ|AUTOEST|FISIC|TENSION|ANSIEDAD/.test(qn)) return true;
+        return false;
       });
-      return m;
-    }
-    let rowsSampleNumeric = {};
-    function renderListadoEstudiantes(rows, query){
-      const resp = document.getElementById("respuesta");
-      const texto = document.getElementById("texto");
-      if (resp) resp.innerHTML = "";
-      if (texto) setVisible(texto, false); // ocultar texto para evitar duplicados
+      if(!scoreCols.length){
+        // pick 1-2 numéricas
+        const numeric = headers.filter(h=>rows.some(r=>!isNaN(parseFloat(String(r[h]).replace(",",".")))));
+        scoreCols.push(...numeric.slice(0,2));
+      }
 
-      const headers = Object.keys(rows[0]||{});
-      const nameCol = findNameCol(headers);
-      const scoreCols = findScoreCols(headers, query);
-
-      // Tabla
-      const table = document.createElement("table");
-      const thead = document.createElement("thead");
-      const trh = document.createElement("tr");
+      // Construir tabla
+      const table=document.createElement("table");
+      const thead=document.createElement("thead"), trh=document.createElement("tr");
       ["#", nameCol, ...scoreCols].forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
       thead.appendChild(trh); table.appendChild(thead);
-
-      const tbody = document.createElement("tbody");
+      const tbody=document.createElement("tbody");
       rows.forEach((r,i)=>{
-        const tr = document.createElement("tr");
-        const tdN = document.createElement("td"); tdN.className="num"; tdN.textContent = String(i+1); tr.appendChild(tdN);
-        const tdName = document.createElement("td"); tdName.textContent = r[nameCol] ?? ""; tr.appendChild(tdName);
-        for (const c of scoreCols){
-          const td=document.createElement("td"); td.textContent = r[c] ?? ""; tr.appendChild(td);
-        }
+        const tr=document.createElement("tr");
+        const tdN=document.createElement("td"); tdN.className="num"; tdN.textContent=String(i+1); tr.appendChild(tdN);
+        const tdName=document.createElement("td"); tdName.textContent=r[nameCol]??""; tr.appendChild(tdName);
+        for(const c of scoreCols){ const td=document.createElement("td"); td.textContent=r[c]??""; tr.appendChild(td); }
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
-      resp.appendChild(table);
+      cont.appendChild(table);
     }
 
     // ===== Exportar =====
     function exportarPDF(){
-      const w = window.open("", "_blank");
-      const html = `
-        <html><head><title>Exportar PDF</title>
-        <style>body{font-family:Arial;padding:16px} table{border-collapse:collapse;width:100%} th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:left}</style>
-        </head><body>${document.getElementById("respuesta").innerHTML}</body></html>`;
+      const w=window.open("","_blank");
+      const html=`<html><head><title>Exportar PDF</title>
+      <style>body{font-family:Arial;padding:16px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:left}</style>
+      </head><body>${document.getElementById("respuesta").innerHTML}</body></html>`;
       w.document.write(html); w.document.close(); w.focus(); w.print();
     }
     function exportarCSV(){
-      const table = document.querySelector("#respuesta table");
-      if (!table){ alert("No hay una tabla para exportar."); return; }
-      let csv = "";
-      const rows = table.querySelectorAll("tr");
-      rows.forEach(row=>{
-        const cols = Array.from(row.children).map(td=> `"${String(td.textContent).replace(/"/g,'""')}"`);
-        csv += cols.join(",") + "\n";
+      const table=document.querySelector("#respuesta table"); if(!table){ alert("No hay una tabla para exportar."); return; }
+      let csv=""; table.querySelectorAll("tr").forEach(tr=>{
+        const cols=[...tr.children].map(td=>`"${String(td.textContent).replace(/"/g,'""')}"`);
+        csv += cols.join(",")+"\n";
       });
-      const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "resultado.csv";
-      a.click();
-      URL.revokeObjectURL(a.href);
+      const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a");
+      a.href=URL.createObjectURL(blob); a.download="resultado.csv"; a.click(); URL.revokeObjectURL(a.href);
+    }
+    function limpiar(){
+      detenerVoz();
+      document.getElementById("pregunta").value="";
+      document.getElementById("respuesta").innerHTML="";
+      mostrarTexto("Listo para una nueva consulta.");
+      pauseVideo();
     }
 
     // ===== Lógica principal =====
     async function enviarPregunta(){
-      const ta = document.getElementById("pregunta");
-      const q  = (ta.value || "").trim();
-      if (!q) return;
-
-      detenerVoz(); // por si había algo hablando
-      const t = document.getElementById("texto"); const r = document.getElementById("respuesta");
-      if (t){ t.textContent = "Procesando…"; setVisible(t,true); }
-      if (r) r.innerHTML = "";
+      detenerVoz(); // por si estaba hablando
+      const q=(document.getElementById("pregunta").value||"").trim();
+      if(!q) return;
+      document.getElementById("respuesta").innerHTML="";
+      mostrarTexto("Procesando…");
 
       try{
-        const resp = await fetch(API_URL(q));
-        let data = null, asText = "";
-        try { data = await resp.json(); } catch { asText = await resp.text(); }
+        const r=await fetch(API(q)); let data=null, txt="";
+        try{ data=await r.json(); }catch{ txt=await r.text(); }
 
-        // Si backend envía error explícito
-        if (data && data.error){
-          if (t) t.textContent = "No se hallaron resultados en este momento.";
-          speak(t?.textContent || "");
+        if(data && data.error){
+          mostrarTexto("No hay resultados con esos criterios.");
+          speak("No hay resultados con esos criterios.");
           return;
         }
 
-        const rows = data?.rows || data?.data || data?.items;
-        if (Array.isArray(rows) && rows.length){
-          rowsSampleNumeric = buildNumberMap(rows);
-
-          // Si la consulta sugiere lista/tabla de estudiantes → tabla numerada con puntajes solicitados
-          const wantList = /\b(lista|listado|tabla|estudiante|estudiantes|ranking|orden)\b/i.test(q);
-          if (wantList){
-            renderListadoEstudiantes(rows, q);
-            const resumen = `Mostrando ${rows.length} registros en tabla numerada.`;
-            if (t) setVisible(t,false);
-            speak(resumen);
-            return;
-          }
-
-          // Si no es lista, imprime una lista simple (ordenada por algún numérico si existe)
-          const metricKey = Object.keys(rows[0]).find(k => rowsSampleNumeric[k]);
-          let sorted = rows;
-          if (metricKey){ sorted = [...rows].sort((a,b)=> (parseFloat(b[metricKey])||-Infinity) - (parseFloat(a[metricKey])||-Infinity)); }
-
-          if (t) setVisible(t,false);
-          const ol = document.createElement("ol"); ol.className="vertical-list";
-          sorted.forEach(rw=>{
-            const li = document.createElement("li");
-            li.textContent = Object.values(rw).join(" • ");
-            ol.appendChild(li);
-          });
-          document.getElementById("respuesta").appendChild(ol);
-          speak(`Mostrando ${sorted.length} resultados en lista.`);
+        const rows = data?.rows;
+        if(Array.isArray(rows) && rows.length){
+          renderTabla(rows, q);  // tabla numerada sin texto duplicado
+          const phrase = data?.speak || `Mostrando ${rows.length} resultados.`;
+          speak(phrase);
           return;
         }
 
-        // Texto plano (y ocultar si parece tabla)
-        const msg = data?.answer ?? data?.text ?? asText ?? "No se hallaron resultados.";
-        if (looksStructuredText(msg)){
-          if (t) setVisible(t,false);
-          const pre = document.createElement("pre");
-          pre.textContent = msg;
-          document.getElementById("respuesta").appendChild(pre);
-          speak("Mostrando resultados.");
-        } else {
-          if (t) { t.textContent = msg; setVisible(t,true); }
-          speak(msg);
-        }
+        const msg = data?.speak || txt || "No hay resultados.";
+        mostrarTexto(msg);
+        speak(msg);
 
-      } catch (e){
-        if (t){ t.textContent = "Ocurrió un problema al procesar la consulta."; setVisible(t,true); }
-        speak(t?.textContent || "");
+      }catch(e){
+        mostrarTexto("Ocurrió un problema al procesar la consulta.");
+        speak("Ocurrió un problema al procesar la consulta.");
       }
     }
 
-    // Enviar con Enter (Ctrl+Enter para salto de línea)
-    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
-      if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); enviarPregunta(); }
+    // Enviar con Enter (Enter = enviar; Shift+Enter = salto)
+    document.getElementById("pregunta").addEventListener("keydown", e=>{
+      if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); enviarPregunta(); }
     });
 
-    // Carga inicial de voces
-    loadVoices();
+    // Prime audio/voz tras primer gesto (necesario en algunos navegadores)
+    window.addEventListener("click",()=>{ cargarVoces(); const v=vid(); if(v){ v.muted=true; v.play().then(()=>v.pause()).catch(()=>{});} },{once:true});
   </script>
 </body>
 </html>
