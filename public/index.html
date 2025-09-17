@@ -18,7 +18,7 @@
 
     .logo{width:100%;max-width:260px;height:auto;display:block;object-fit:contain;margin:8px auto}
     .video-wrap{width:100%;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;background:#000}
-    .hero-video{width:100%;height:auto;display:block;aspect-ratio:16/9;object-fit:cover}
+    .hero-media{width:100%;height:auto;display:block;aspect-ratio:16/9;object-fit:cover}
 
     .vertical-list{padding-left:1.25rem;margin:.5rem 0}
     .vertical-list>li{margin:.35rem 0;font-size:.9rem}
@@ -33,7 +33,7 @@
   <div class="grid">
     <!-- Izquierda -->
     <div class="card">
-      <img class="logo" src="/img/logo-izq.png" alt="Logo izquierdo"
+      <img class="logo" src="/left.png" alt="Logo izquierdo"
            onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'(logo izq no encontrado)',className:'muted small'}))">
       <div class="small">Archivo por defecto: <b id="fileLabel">decimo.csv</b></div>
       <div class="row" style="gap:6px;flex-wrap:wrap">
@@ -49,14 +49,14 @@
 
     <!-- Centro -->
     <div class="card">
-      <!-- VIDEO (autoplay/loop para que no quede negro) -->
+      <!-- Si no existe /media/descarga.mp4, se oculta el video y se muestra el póster -->
       <div class="video-wrap">
-        <video id="videoMain" class="hero-video"
+        <video id="videoMain" class="hero-media"
                src="/media/descarga.mp4"
-               autoplay loop muted playsinline preload="metadata" poster="/img/poster.jpg"
-               onloadeddata="this.style.background='transparent'"
-               onerror="console.warn('No se encontró /media/descarga.mp4');">
+               autoplay loop muted playsinline preload="metadata"
+               onerror="document.getElementById('videoMain').style.display='none';document.getElementById('poster').style.display='block';">
         </video>
+        <img id="poster" class="hero-media" src="/right.png" alt="Póster" style="display:none">
       </div>
 
       <div class="row">
@@ -71,7 +71,7 @@
 
     <!-- Derecha -->
     <div class="card">
-      <img class="logo" src="/img/logo-der.png" alt="Logo derecho"
+      <img class="logo" src="/right.png" alt="Logo derecho"
            onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'(logo der no encontrado)',className:'muted small'}))">
       <div class="muted">Panel</div>
       <div class="small" id="audioState">TTS listo.</div>
@@ -84,7 +84,7 @@
 
   <script>
     // ===== Config =====
-    const DEFAULT_FILE = "decimo.csv";
+    const DEFAULT_FILE = "decimo.csv"; // coincide con /public/datos/decimo.csv
     document.getElementById("fileLabel").textContent = DEFAULT_FILE;
 
     // ===== MEDIA =====
@@ -96,10 +96,7 @@
 
     // ===== UI =====
     const TEXT_IDS=["texto"];
-    function setVisible(ids,visible){
-      for(const id of ids){ const el=document.getElementById(id); if(!el) continue;
-        el.style.display=visible?"":"none"; if(!visible) el.innerHTML=""; }
-    }
+    function setVisible(ids,visible){ for(const id of ids){ const el=document.getElementById(id); if(!el) continue; el.style.display=visible?"":"none"; if(!visible) el.innerHTML=""; } }
     function looksStructuredText(s){
       if(!s) return false;
       const lines=s.split(/\r?\n/);
@@ -109,7 +106,7 @@
       return hasMarkdownTable||hasNumbered||hasCSVish;
     }
 
-    // ===== TTS =====
+    // ===== TTS (selector de voz; intento español) =====
     let VOICES=[];
     function loadVoices(){
       return new Promise(res=>{
@@ -121,20 +118,11 @@
       });
     }
     function rellenarSelector(voices){
-      const sel=document.getElementById("vozSelect");
-      sel.innerHTML="";
-      voices.forEach((v,i)=>{
-        const opt=document.createElement("option");
-        opt.value=i; opt.textContent=`${v.name} — ${v.lang}`;
-        sel.appendChild(opt);
-      });
-      // pre-selección: algún español
+      const sel=document.getElementById("vozSelect"); sel.innerHTML="";
+      voices.forEach((v,i)=>{ const opt=document.createElement("option"); opt.value=i; opt.textContent=`${v.name} — ${v.lang}`; sel.appendChild(opt); });
       const idxES=voices.findIndex(v=>/^es/i.test(v.lang)); if(idxES>=0) sel.value=idxES;
     }
-    async function actualizarVoces(){
-      const voices=await loadVoices();
-      rellenarSelector(voices);
-    }
+    async function actualizarVoces(){ const voices=await loadVoices(); rellenarSelector(voices); }
     async function speak(text){
       if(!window.speechSynthesis) return;
       if(!VOICES.length) await actualizarVoces();
@@ -148,50 +136,15 @@
       window.speechSynthesis.speak(u);
     }
     function testVoz(){ speak("Hola, Marcelo. La voz está lista."); }
-    // desbloqueo por primer clic
+    // desbloqueo por primer clic (necesario en algunos navegadores)
     window.addEventListener("click",()=>{ actualizarVoces(); const v=vid(); if(v){ v.muted=true; v.play().then(()=>v.pause()).catch(()=>{});} },{once:true});
 
-    // ===== Helpers datos/lista =====
-    function orderKeysPreferName(obj){
-      const keys=Object.keys(obj);
-      const preferred=["nombre","estudiante","alumno","NOMBRE","ESTUDIANTE","ALUMNO"];
-      const first=keys.find(k=>preferred.includes(k));
-      const others=keys.filter(k=>k!==first);
-      return first?[first,...others]:keys;
-    }
-    function normalizeRow(row){
-      const out={};
-      for(const k of Object.keys(row||{})){ const nk=String(k).trim(); const v=row[k];
-        out[nk]=(v===undefined||v===null)?"":(typeof v==="string"?v.trim():v); }
-      return out;
-    }
-    function getLikelyScoreKey(sample){
-      if(!sample) return null;
-      const prefs=["Calificación","CALIFICACION","Calificacion","Promedio","Nota","Puntaje","Score","Total"];
-      const keys=Object.keys(sample);
-      for(const p of prefs){ if(keys.includes(p)) return p; }
-      return keys.find(k=>!isNaN(parseFloat(sample[k])));
-    }
-    function sortByMetricDesc(rows,metric){
-      let m=metric;
-      if(!m){ const sample=rows.find(r=>r&&typeof r==="object");
-        if(sample){ m=Object.keys(sample).find(k=>!isNaN(parseFloat(sample[k]))); } }
-      if(!m) return rows;
-      return [...rows].sort((a,b)=>(parseFloat(b[m])||-Infinity)-(parseFloat(a[m])||-Infinity));
-    }
-    function drawVerticalNumberedList(rows,mountId="respuesta"){
-      const mount=document.getElementById(mountId); if(!mount) return;
-      mount.innerHTML="";
-      const ol=document.createElement("ol"); ol.className="vertical-list";
-      rows.forEach(row=>{
-        const li=document.createElement("li");
-        const keys=orderKeysPreferName(row);
-        li.innerHTML=`<div class="vcard">${keys.map(k=>`
-          <div class="k">${k}</div><div class="v">${row[k]??""}</div>`).join("")}</div>`;
-        ol.appendChild(li);
-      });
-      mount.appendChild(ol);
-    }
+    // ===== Helpers de datos/lista =====
+    function orderKeysPreferName(obj){ const keys=Object.keys(obj); const preferred=["nombre","estudiante","alumno","NOMBRE","ESTUDIANTE","ALUMNO"]; const first=keys.find(k=>preferred.includes(k)); const others=keys.filter(k=>k!==first); return first?[first,...others]:keys; }
+    function normalizeRow(row){ const out={}; for(const k of Object.keys(row||{})){ const nk=String(k).trim(); const v=row[k]; out[nk]=(v===undefined||v===null)?"":(typeof v==="string"?v.trim():v); } return out; }
+    function getLikelyScoreKey(sample){ if(!sample) return null; const prefs=["Calificación","CALIFICACION","Calificacion","Promedio","Nota","Puntaje","Score","Total"]; const keys=Object.keys(sample); for(const p of prefs){ if(keys.includes(p)) return p; } return keys.find(k=>!isNaN(parseFloat(sample[k]))); }
+    function sortByMetricDesc(rows,metric){ let m=metric; if(!m){ const sample=rows.find(r=>r&&typeof r==="object"); if(sample){ m=Object.keys(sample).find(k=>!isNaN(parseFloat(sample[k]))); } } if(!m) return rows; return [...rows].sort((a,b)=>(parseFloat(b[m])||-Infinity)-(parseFloat(a[m])||-Infinity)); }
+    function drawVerticalNumberedList(rows,mountId="respuesta"){ const mount=document.getElementById(mountId); if(!mount) return; mount.innerHTML=""; const ol=document.createElement("ol"); ol.className="vertical-list"; rows.forEach(row=>{ const li=document.createElement("li"); const keys=orderKeysPreferName(row); li.innerHTML=`<div class="vcard">${keys.map(k=>`<div class="k">${k}</div><div class="v">${row[k]??""}</div>`).join("")}</div>`; ol.appendChild(li); }); mount.appendChild(ol); }
 
     // ===== Lógica principal =====
     async function enviarPregunta(){
@@ -212,7 +165,7 @@
         if(data && data.error){
           setVisible(TEXT_IDS,true);
           const el=document.getElementById("texto");
-          if(el) el.textContent = data.message + (data.details?` (${data.details})`:"");
+          if(el) el.textContent=data.message + (data.details?` (${data.details})`:"");
           speak(el?.textContent||"");
           return;
         }
@@ -252,7 +205,7 @@
     }
 
     async function verCorrelacion(){
-      // Requiere /api/stats
+      // Requiere /api/stats (ya lo tienes)
       const url=`/api/stats?file=${encodeURIComponent(DEFAULT_FILE)}&x=AGRESIÓN&y=EMPATÍA&group_by=Paralelo`;
       try{
         const data=await (await fetch(url)).json();
@@ -270,6 +223,9 @@
 
     // Enter = enviar
     document.getElementById("pregunta").addEventListener("keydown",(e)=>{ if(e.key==="Enter") enviarPregunta(); });
+
+    // Carga voces en el primer gesto
+    window.addEventListener("click",()=>{ actualizarVoces(); const v=vid(); if(v){ v.muted=true; v.play().then(()=>v.pause()).catch(()=>{});} },{once:true});
   </script>
 </body>
 </html>
