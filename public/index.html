@@ -6,24 +6,19 @@
   <title>csv-gpt-backend · Demo</title>
   <style>
     /* Layout 25/50/25 */
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; color:#111; }
-    .grid {
-      display:grid; grid-template-columns: 1fr 2fr 1fr; gap: 12px; padding: 12px;
-    }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; color:#111; background:#fafafa; }
+    .grid { display:grid; grid-template-columns: 1fr 2fr 1fr; gap: 12px; padding: 12px; }
     @media (max-width: 1024px) { .grid { grid-template-columns: 1fr; } }
 
-    /* Paneles */
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
     .muted { color:#6b7280; font-size:0.9rem; }
-
-    /* Entrada */
     .row { display:flex; gap:8px; margin-bottom:10px; }
     input[type="text"] { flex:1; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; font-size:1rem; }
     button { padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer; }
     button.secondary { background:#fff; color:#111; border:1px solid #111; }
-
-    /* Contenedores de resultado */
     #texto { white-space:pre-wrap; }
+
+    /* Lista vertical enumerada */
     .vertical-list { padding-left: 1.25rem; margin: .5rem 0; }
     .vertical-list > li { margin: .35rem 0; font-size: 0.9rem; }
     .vcard { width: 100%; display: grid; grid-template-columns: 160px 1fr; gap: .25rem .75rem; }
@@ -37,30 +32,30 @@
 </head>
 <body>
   <div class="grid">
-    <!-- Izquierda (25%) -->
+    <!-- Izquierda -->
     <div class="card">
       <div class="muted">Logo / Info</div>
       <div class="small">Archivo por defecto: <b id="fileLabel">decimo.csv</b></div>
       <div class="sep"></div>
       <button class="secondary" onclick="verCorrelacion()">Ver correlación A↔E</button>
       <div class="sep"></div>
-      <div class="small muted">Consejo: escribe “lista”, “ranking”, “timidez”, etc.</div>
+      <div class="small muted">Consejo: escribe “lista”, “ranking”, “timidez”, “agresión”, etc.</div>
     </div>
 
-    <!-- Centro (50%) -->
+    <!-- Centro -->
     <div class="card">
       <div class="row">
         <input id="pregunta" type="text" placeholder="Escribe tu consulta… (Enter para enviar)" />
         <button onclick="enviarPregunta()">Preguntar</button>
       </div>
-      <!-- Texto “inicial” (se ocultará si hay tabla/lista) -->
+      <!-- Texto inicial (se oculta si hay tabla/lista) -->
       <div id="texto" class="muted">Escribe una consulta y te mostraré resultados del CSV.</div>
       <div class="sep"></div>
       <!-- Montaje de listas/tablas -->
       <div id="respuesta"></div>
     </div>
 
-    <!-- Derecha (25%) -->
+    <!-- Derecha -->
     <div class="card">
       <div class="muted">Logo / Panel</div>
       <div class="small" id="audioState">TTS listo.</div>
@@ -69,11 +64,12 @@
 
   <script>
     // ===== Config =====
-    const DEFAULT_FILE = "decimo.csv"; // Cambia si necesitas otro por defecto
+    const DEFAULT_FILE = "decimo.csv"; // tu CSV por defecto (en /public/datos/)
     document.getElementById("fileLabel").textContent = DEFAULT_FILE;
 
     // ===== Utilidades UI =====
-    const TEXT_IDS = ["texto"]; // añade otros si tienes varios
+    const TEXT_IDS = ["texto"]; // añade otros si tienes más contenedores de texto
+
     function setVisible(ids, visible){
       for (const id of ids){
         const el = document.getElementById(id);
@@ -82,6 +78,8 @@
         if (!visible) el.innerHTML = "";
       }
     }
+
+    // Heurística: texto que “parece” tabla/lista
     function looksStructuredText(s){
       if (!s) return false;
       const lines = s.split(/\r?\n/);
@@ -91,7 +89,7 @@
       return hasMarkdownTable || hasNumberedList || hasCSVish;
     }
 
-    // ===== TTS (voz femenina ES-MX cuando esté disponible) =====
+    // ===== TTS (voz ES-MX si existe) =====
     function speak(text){
       try{
         if (!window.speechSynthesis) return;
@@ -99,7 +97,7 @@
         const mx = speechSynthesis.getVoices().find(v => /es(-|_)mx/i.test(v.lang));
         u.lang = mx?.lang || "es-MX";
         if (mx) u.voice = mx;
-        speechSynthesis.cancel(); // corta lectura previa
+        speechSynthesis.cancel();
         speechSynthesis.speak(u);
         document.getElementById("audioState").textContent = "Leyendo respuesta…";
         u.onend = () => document.getElementById("audioState").textContent = "TTS listo.";
@@ -125,7 +123,7 @@
     }
     function getLikelyScoreKey(sample){
       if(!sample) return null;
-      const prefs = ["Calificación","CALIFICACION","Calificacion","Nota","Puntaje","Score","Total","Promedio"];
+      const prefs = ["Calificación","CALIFICACION","Calificacion","Promedio","Nota","Puntaje","Score","Total"];
       const keys = Object.keys(sample);
       for (const p of prefs){ if (keys.includes(p)) return p; }
       return keys.find(k => !isNaN(parseFloat(sample[k])));
@@ -175,6 +173,15 @@
         try { data = await resp.json(); } catch { /* no-json */ }
         if (!data) text = await resp.text();
 
+        // --- Si el backend avisó error explícito ---
+        if (data && data.error) {
+          setVisible(TEXT_IDS, true);
+          const el = document.getElementById("texto");
+          if (el) el.textContent = data.message + (data.details ? ` (${data.details})` : "");
+          speak(el?.textContent || "");
+          return;
+        }
+
         // 1) JSON con filas
         const rows = data?.rows || data?.data || data?.items;
         if (Array.isArray(rows) && rows.length){
@@ -184,14 +191,15 @@
           const ranked = sortByMetricDesc(clean, metric); // ranking desc si hay métrica
           drawVerticalNumberedList(ranked, mountId);
           speak?.(`Mostrando ${ranked.length} registros en lista vertical.`);
-          return; // importante: no mostramos texto
+          return; // no mostramos texto
         }
 
-        // 2) Texto con pinta de tabla/lista (markdown/csv/lista numerada) → ocultar texto inicial
-        if (looksStructuredText(text || data?.answer || data?.text)){
+        // 2) Texto con pinta de tabla/lista → ocultar texto inicial
+        const maybeText = text || data?.answer || data?.text;
+        if (looksStructuredText(maybeText)){
           setVisible(TEXT_IDS, false);
           const mount = document.getElementById(mountId); if (mount) mount.innerHTML = "";
-          speak?.("Mostrando resultados estructurados.");
+          speak("Mostrando resultados estructurados.");
           return;
         }
 
@@ -201,7 +209,7 @@
         const textEl = document.getElementById("texto");
         const show = data?.answer ?? data?.text ?? text ?? "Sin resultados.";
         if (textEl) textEl.textContent = show;
-        speak?.(show);
+        speak(show);
 
       } catch (err){
         console.error(err);
@@ -212,15 +220,16 @@
     }
 
     async function verCorrelacion() {
-      const url = `/api/stats?file=${encodeURIComponent(DEFAULT_FILE)}&x=AGRESIVIDAD&y=EMPATIA&group_by=Paralelo`;
+      // Requiere /api/stats (ya te lo pasé antes). Si no lo tienes aún, puedes ignorar este botón.
+      const url = `/api/stats?file=${encodeURIComponent(DEFAULT_FILE)}&x=AGRESIÓN&y=EMPATÍA&group_by=Paralelo`;
       try {
         const data = await (await fetch(url)).json();
         const r = (data.overall?.r !== null && data.overall?.r !== undefined) ? data.overall.r.toFixed(3) : "N/D";
         const t = `n=${data.overall.x.n} | r=${r}`;
         setVisible(TEXT_IDS, true);
         const el = document.getElementById("texto");
-        if (el) el.textContent = `Correlación global AGRESIVIDAD↔EMPATIA: ${t}`;
-        speak?.(`Correlación global ${r}.`);
+        if (el) el.textContent = `Correlación global AGRESIÓN↔EMPATÍA: ${t}`;
+        speak(`Correlación global ${r}.`);
       } catch(e){
         const el = document.getElementById("texto");
         if (el) el.textContent = "No se pudo calcular la correlación.";
