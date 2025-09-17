@@ -46,7 +46,6 @@
     .footer-bar{ width:min(95%,1100px); margin:8px auto 28px; display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; }
     .export-hint{ width:min(95%,1100px); margin:-12px auto 8px; color:#374151; font-size:13px; text-align:center; }
 
-    /* Bloques para la vista de correlación */
     .card{ width:min(95%,1100px); margin:16px auto; background:#fff; border:1px solid #e5e5e7; border-radius:12px; padding:14px; text-align:left; }
     .kpis{ display:flex; gap:12px; flex-wrap:wrap; margin:6px 0 10px; }
     .kpi{ background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; font-size:14px; }
@@ -122,7 +121,7 @@
   </div>
 
   <script>
-    /* ====== Config fuentes ====== */
+    /* ================== CONFIG / MEMORIA / VOZ (igual que antes) ================== */
     const ENDPOINT = "/api/ask";
     const SOURCES = {
       csv:  "datos/decimo.csv",
@@ -130,434 +129,348 @@
       eval: "https://csv-gpt-backend.vercel.app/evaluaciones.pdf",
       emo:  "https://csv-gpt-backend.vercel.app/emocionales.pdf",
     };
-
-    /* ====== Memoria 10 min ====== */
     const HISTORY_KEY = "nexa-history-v1";
     const HISTORY_TTL_MS = 10 * 60 * 1000;
-    function loadHistory(){
-      try{
-        const obj = JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]");
-        return obj.filter(x => Date.now() - x.ts < HISTORY_TTL_MS);
-      }catch{ return []; }
-    }
-    function saveHistory(q, text){
-      const arr = loadHistory(); arr.push({ ts: Date.now(), q, text: String(text||"") });
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(arr.slice(-20)));
-    }
+    function loadHistory(){ try{ const obj = JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]"); return obj.filter(x => Date.now() - x.ts < HISTORY_TTL_MS);}catch{return [];} }
+    function saveHistory(q, text){ const arr = loadHistory(); arr.push({ ts: Date.now(), q, text: String(text||"") }); localStorage.setItem(HISTORY_KEY, JSON.stringify(arr.slice(-20))); }
     function clearHistory(){ localStorage.removeItem(HISTORY_KEY); }
 
-    /* ====== Voz ====== */
     let chosenVoice = null;
     const voiceSelect = document.getElementById("voiceSelect");
-    function scoreVoice(v){
-      const name = (v.name||"").toLowerCase();
-      const lang = (v.lang||"").toLowerCase();
-      let s = 0;
-      if (lang.startsWith("es-mx")) s += 100;
-      else if (lang.startsWith("es-419")) s += 70;
-      else if (lang.startsWith("es")) s += 40;
-      if (/(female|mujer|femenina|sabina|dalia|beatriz|abril|camila|lucia)/i.test(name)) s += 25;
-      if (/(neural|natural|online)/i.test(name)) s += 10;
-      return s;
-    }
-    function populateVoices(){
-      const vs = (window.speechSynthesis?.getVoices?.() || []).slice()
-        .filter(v => /^es(-|$)/i.test(v.lang))
-        .sort((a,b)=> scoreVoice(b)-scoreVoice(a));
-      voiceSelect.innerHTML = vs.map((v,i)=>`<option value="${i}">${v.name} — ${v.lang}</option>`).join("");
-      if (vs.length){ chosenVoice = vs[0]; voiceSelect.selectedIndex = 0; }
-      voiceSelect.onchange = ()=>{ chosenVoice = vs[voiceSelect.selectedIndex] || null; };
-    }
+    function scoreVoice(v){ const name=(v.name||"").toLowerCase(), lang=(v.lang||"").toLowerCase(); let s=0; if(lang.startsWith("es-mx"))s+=100; else if(lang.startsWith("es-419"))s+=70; else if(lang.startsWith("es"))s+=40; if(/(female|mujer|femenina|sabina|dalia|beatriz|abril|camila|lucia)/i.test(name))s+=25; if(/(neural|natural|online)/i.test(name))s+=10; return s; }
+    function populateVoices(){ const vs=(speechSynthesis?.getVoices?.()||[]).slice().filter(v=>/^es(-|$)/i.test(v.lang)).sort((a,b)=>scoreVoice(b)-scoreVoice(a)); voiceSelect.innerHTML=vs.map((v,i)=>`<option value="${i}">${v.name} — ${v.lang}</option>`).join(""); if(vs.length){ chosenVoice=vs[0]; voiceSelect.selectedIndex=0; } voiceSelect.onchange=()=>{ chosenVoice=vs[voiceSelect.selectedIndex]||null; }; }
     window.speechSynthesis.onvoiceschanged = populateVoices; populateVoices();
+    function sanitizeForSpeech(text){ if(!text) return ""; let t=text.replace(/```[\s\S]*?```/g," "); t=t.replace(/\*/g,""); t=t.replace(/^[#>\-\u2022]\s*/gm,""); t=t.replace(/\s{2,}/g," ").trim(); return t; }
+    const video=document.getElementById("video");
+    function speak(text){ try{ if(!window.speechSynthesis) return; const u=new SpeechSynthesisUtterance(sanitizeForSpeech(text)); if(chosenVoice) u.voice=chosenVoice; u.lang = chosenVoice?.lang?.startsWith("es")?chosenVoice.lang:"es-MX"; u.rate=1.08; u.pitch=1.02; u.volume=1.0; u.onstart=()=>{ try{ video.currentTime=0; video.play(); }catch{} }; u.onend=()=>{ try{ video.pause(); }catch{} }; u.onerror=()=>{ try{ video.pause(); }catch{} }; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);}catch{} }
+    function stopSpeech(){ try{ speechSynthesis.cancel(); }catch{} try{ video.pause(); }catch{} }
 
-    function sanitizeForSpeech(text){
-      if (!text) return "";
-      let t = text.replace(/```[\s\S]*?```/g, " ");
-      t = t.replace(/\*/g, ""); // no leer asteriscos
-      t = t.replace(/^[#>\-\u2022]\s*/gm, "");
-      t = t.replace(/\s{2,}/g, " ").trim();
-      return t;
-    }
+    /* ================== ELEMENTOS / TABLAS ================== */
+    const out=document.getElementById("respuesta");
+    const tablaWrap=document.getElementById("tabla");
+    const printable=document.getElementById("printable");
+    const exportHint=document.getElementById("exportHint");
+    let lastRows=null, lastText="";
 
-    const video = document.getElementById("video");
-    function speak(text){
-      try{
-        if(!window.speechSynthesis) return;
-        const u = new SpeechSynthesisUtterance(sanitizeForSpeech(text));
-        if (chosenVoice) u.voice = chosenVoice;
-        u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-        u.rate = 1.08; u.pitch = 1.02; u.volume = 1.0;
-        u.onstart = () => { try{ video.currentTime = 0; video.play(); }catch{} };
-        u.onend   = () => { try{ video.pause(); }catch{} };
-        u.onerror = () => { try{ video.pause(); }catch{} };
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(u);
-      }catch{}
-    }
-    function stopSpeech(){
-      try{ window.speechSynthesis.cancel(); }catch{}
-      try{ video.pause(); }catch{}
-    }
+    const escapeHtml = s => String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+    function addRowNumbers(rows){ if(!rows||rows.length<2) return rows; const head=rows[0].slice(); const first=String(head[0]||"").trim().toLowerCase(); const already=/^#|n°|no\.?$/.test(first); const newHead=already?head:["#",...head]; const body=rows.slice(1).map((r,i)=>already?r:[String(i+1),...r]); return [newHead,...body]; }
+    function renderTable(rows){ const r=addRowNumbers(rows); const [h,...b]=r; let html='<table class="data"><thead><tr>'; h.forEach((x,i)=>{ const cls=i===0?' class="col-num"':''; html+=`<th${cls}>${escapeHtml(x)}</th>`;}); html+='</tr></thead><tbody>'; for(const row of b){ html+='<tr>'; row.forEach((c,i)=>{ const cls=i===0?' class="col-num"':''; html+=`<td${cls}>${escapeHtml(c)}</td>`;}); html+='</tr>';} html+='</tbody></table>'; return html; }
+    function rowsToSpeech(rows){ const r=addRowNumbers(rows); const [h,...b]=r; const cols=h.map(x=>String(x).trim()).slice(0,6); const parts=[]; b.slice(0,30).forEach((row,i)=>{ const fields=cols.map((hh,idx)=>`${hh}: ${row[idx]}`).join("; "); parts.push(`${i+1}. ${fields}.`);}); return parts.join(" "); }
 
-    /* ====== Selectores / helpers tabla ====== */
-    const out = document.getElementById("respuesta");
-    const tablaWrap = document.getElementById("tabla");
-    const printable = document.getElementById("printable");
-    const exportHint = document.getElementById("exportHint");
-    let lastRows = null;
-    let lastText = "";
-
-    const escapeHtml = s => String(s ?? "")
-      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-
-    function addRowNumbers(rows){
-      if (!rows || rows.length<2) return rows;
-      const head = rows[0].slice();
-      const first = String(head[0]||"").trim().toLowerCase();
-      const already = /^#|n°|no\.?$/.test(first);
-      const newHead = already ? head : ["#", ...head];
-      const body = rows.slice(1).map((r,i) => already ? r : [String(i+1), ...r]);
-      return [newHead, ...body];
-    }
-    function renderTable(rows){
-      const withNums = addRowNumbers(rows);
-      const [head, ...body] = withNums;
-      let html = '<table class="data"><thead><tr>';
-      head.forEach((h,idx)=>{ const cls = idx===0 ? ' class="col-num"' : ''; html += `<th${cls}>${escapeHtml(h)}</th>`; });
-      html += '</tr></thead><tbody>';
-      for (const r of body){
-        html += '<tr>';
-        r.forEach((c,idx)=>{ const cls = idx===0 ? ' class="col-num"' : ''; html += `<td${cls}>${escapeHtml(c)}</td>`; });
-        html += '</tr>';
-      }
-      html += '</tbody></table>';
-      return html;
-    }
-    function rowsToSpeech(rows){
-      const withNums = addRowNumbers(rows);
-      const [head, ...body] = withNums;
-      const cols = head.map(h => String(h).trim()).slice(0, 6);
-      const parts = [];
-      body.slice(0, 30).forEach((r,i)=>{
-        const fields = cols.map((h,idx)=> `${h}: ${r[idx]}`).join("; ");
-        parts.push(`${i+1}. ${fields}.`);
-      });
-      return parts.join(" ");
-    }
-
-    /* ====== Parsers simples (para texto → tabla) ====== */
-    function pickDelimiter(sampleLines){
-      const cands = [",",";","\t","|"];
-      let best=",", bestScore=-1;
-      for (const d of cands){
-        let score=0;
-        for (const line of sampleLines){
-          const parts = line.split(d);
-          if (parts.length>1) score += parts.length;
-        }
-        if (score>bestScore){ bestScore=score; best=d; }
-      }
-      return best;
-    }
-    function parseDelimited(text){
-      const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-      if (lines.length < 2) return null;
-      const d = pickDelimiter(lines.slice(0,10));
-      const rows = lines.map(l => l.split(d).map(c=>c.trim()));
-      const max = Math.max(...rows.map(r=>r.length));
-      const normalized = rows.map(r => { const a=r.slice(0,max); while(a.length<max)a.push(""); return a; });
-      if (max < 2 || normalized.length < 2) return null;
-      return normalized;
-    }
-    function parseMarkdownTable(text){
-      const lines = text.split(/\r?\n/).map(l=>l.trim());
-      const md = lines.filter(l => /^\|.*\|$/.test(l));
-      if (md.length < 2) return null;
-      const rows = md.map(l=>{
-        const cells = l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim());
-        return cells;
-      });
-      const sepIdx = rows.findIndex(r => r.every(c => /^:?-{3,}:?$/.test(c)));
-      if (sepIdx >= 0) rows.splice(sepIdx,1);
-      return rows.length >= 2 ? rows : null;
-    }
-
-    /* ====== Detección de intención: correlación ====== */
+    /* ================== PARSERS / UTIL ================== */
+    function pickDelimiter(sampleLines){ const c=[",",";","\t","|"]; let best=",", score=-1; for(const d of c){ let sc=0; for(const l of sampleLines){ const p=l.split(d); if(p.length>1) sc+=p.length; } if(sc>score){ score=sc; best=d; } } return best; }
+    function parseDelimited(text){ const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean); if(lines.length<2) return null; const d=pickDelimiter(lines.slice(0,10)); const rows=lines.map(l=>l.split(d).map(c=>c.trim())); const max=Math.max(...rows.map(r=>r.length)); const norm=rows.map(r=>{const a=r.slice(0,max); while(a.length<max)a.push(""); return a;}); if(max<2||norm.length<2) return null; return norm; }
+    function parseMarkdownTable(text){ const lines=text.split(/\r?\n/).map(l=>l.trim()); const md=lines.filter(l=>/^\|.*\|$/.test(l)); if(md.length<2) return null; const rows=md.map(l=>l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim())); const sep=rows.findIndex(r=>r.every(c=>/^:?-{3,}:?$/.test(c))); if(sep>=0) rows.splice(sep,1); return rows.length>=2?rows:null; }
     function norm(s){ return (s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); }
-    function wantsCorrelation(q){
-      const x = norm(q);
-      return /\bcorrelaci[oó]n\b|\bcoeficiente\b|\br2\b|\br\^?2\b|\bpearson\b/.test(x);
+
+    function selectedSources(){ const arr=[]; if(document.getElementById("src-csv").checked) arr.push(SOURCES.csv); if(document.getElementById("src-lex").checked) arr.push(SOURCES.lex); if(document.getElementById("src-eval").checked) arr.push(SOURCES.eval); if(document.getElementById("src-emo").checked) arr.push(SOURCES.emo); return arr; }
+
+    /* ================== DETECCIONES ESPECIALES ================== */
+    function wantsCorrelation(q){ const x=norm(q); return /\bcorrelaci[oó]n\b|\bcoeficiente\b|\br2\b|\br\^?2\b|\bpearson\b/.test(x); }
+
+    // === QUINTIL === detección de intención
+    function wantsQuintile(q){ return /\bquintil\b/.test(norm(q)); }
+    // número de quintil: 1..5; si no hay número y dice “más alto”, devolvemos 5
+    function parseQuintileIndex(q){
+      const x=norm(q);
+      const mNum=x.match(/\bquintil\s*(\d)\b/);
+      if(mNum){ const k=+mNum[1]; if(k>=1&&k<=5) return k; }
+      const mRom=x.match(/\bquintil\s*(v|iv|iii|ii|i)\b/);
+      if(mRom){ const map={i:1,ii:2,iii:3,iv:4,v:5}; return map[mRom[1]]||5; }
+      if(/\b(mas|más)\s+alto\b|\bsuperior\b/.test(x)) return 5;
+      return 5; // por defecto
     }
 
-    /* ====== Core: cálculo de correlación R y R² ====== */
+    // ==== Sinónimos para encontrar la columna pedida (front)
+    const SYN = {
+      "nombre":["nombre","estudiante","alumno","name"],
+      "curso":["curso","grado"],
+      "paralelo":["paralelo","seccion","sección"],
+      "edad":["edad"],
+      "asertividad":["asertividad","asertiv"],
+      "autoestima":["autoestima"],
+      "motivacion":["motivacion","motivación"],
+      "compromiso":["compromiso"],
+      "administracion del tiempo":["administracion del tiempo","administración del tiempo","gestion del tiempo","gestión del tiempo","manejo del tiempo"],
+      "liderazgo":["liderazgo","lider"],
+      "empatia":["empatia","empatía"],
+      "agresion":["agresion","agresión"],
+      "timidez":["timidez"],
+      "conciencia de los demas":["conciencia de los demas","conciencia de los demás"],
+      "bienestar fisico":["bienestar fisico","bienestar físico"],
+      "toma de decisiones":["toma de decisiones"]
+    };
+    function colIdxByTerm(term, headers){
+      const q=norm(term);
+      let best={idx:-1,score:1e9};
+      for(let i=0;i<headers.length;i++){
+        const h=norm(headers[i]);
+        if(h.includes(q)||q.includes(h)) return i;
+        // leve distância
+        const d=Math.abs(h.length-q.length);
+        if(d<best.score){ best={idx:i,score:d}; }
+      }
+      return best.idx;
+    }
+    function findMetricFromQuery(q, headers){
+      const x=norm(q);
+      for(const [canon, aliases] of Object.entries(SYN)){
+        if(aliases.some(a=>x.includes(norm(a)))){
+          // devolver header que mejor matchee
+          let best={idx:-1,score:1e9};
+          for(let i=0;i<headers.length;i++){
+            const h=norm(headers[i]);
+            for(const a of aliases.concat([canon])){
+              const d=Math.abs(h.length-norm(a).length);
+              if(h.includes(norm(a))||norm(a).includes(h)) return i;
+              if(d<best.score) best={idx:i,score:d};
+            }
+          }
+          return best.idx;
+        }
+      }
+      // fallback: si trae la palabra cruda
+      const w = x.match(/\b[a-záéíóúñ ]{4,}\b/g)||[];
+      for(const token of w){ const i=colIdxByTerm(token, headers); if(i>=0) return i; }
+      return -1;
+    }
+    function getFirstIdx(headers, keys){ const h=headers.map(x=>norm(x)); for(const key of keys){ const ii=h.findIndex(x=>x.includes(norm(key))); if(ii>=0) return ii; } return -1; }
+
+    /* ================== ESTADÍSTICA BÁSICA ================== */
+    function toNum(v){ const n=parseFloat(String(v).replace(/[^0-9.\-]+/g,"")); return Number.isFinite(n)?n:null; }
+    function percentile(arr, p){
+      const v=arr.map(toNum).filter(x=>x!==null).sort((a,b)=>a-b);
+      if(!v.length) return null;
+      if(p<=0) return v[0]; if(p>=100) return v[v.length-1];
+      const rank=(p/100)*(v.length-1);
+      const lo=Math.floor(rank), hi=Math.ceil(rank);
+      const w=rank-lo;
+      return v[lo]*(1-w) + v[hi]*w;
+    }
+    function mean(arr){ const v=arr.map(toNum).filter(x=>x!==null); if(!v.length) return null; return v.reduce((a,b)=>a+b,0)/v.length; }
+    function median(arr){
+      const v=arr.map(toNum).filter(x=>x!==null).sort((a,b)=>a-b);
+      if(!v.length) return null;
+      const m=Math.floor(v.length/2);
+      return v.length%2? v[m] : (v[m-1]+v[m])/2;
+    }
+
+    /* ================== CORRELACIÓN (ya lo tenías) ================== */
     async function handleCorrelationQuery(pregunta){
       try{
-        out.hidden = false; out.textContent = "Calculando correlaciones...";
-        tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-        exportHint.hidden = true; lastRows = null; lastText = "";
+        out.hidden=false; out.textContent="Calculando correlaciones..."; tablaWrap.hidden=true; tablaWrap.innerHTML=""; exportHint.hidden=true; lastRows=null; lastText="";
+        const resp=await fetch(SOURCES.csv); if(!resp.ok){ out.textContent="No pude leer el CSV."; return; }
+        const csvText=await resp.text();
+        const lines=csvText.split(/\r?\n/).filter(l=>l.trim().length);
+        const d=pickDelimiter(lines.slice(0,10));
+        const rows=lines.map(l=>l.split(d).map(c=>c.trim()));
+        const headers=rows[0], body=rows.slice(1);
 
-        // 1) Leer CSV
-        const resp = await fetch(SOURCES.csv);
-        if (!resp.ok){ out.textContent = "No pude leer el CSV."; return; }
-        const csvText = await resp.text();
-
-        // 2) Parsear CSV a filas
-        const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
-        const d = pickDelimiter(lines.slice(0,10));
-        const rows = lines.map(l => l.split(d).map(c=>c.trim()));
-        if (!rows.length){ out.textContent = "CSV vacío."; return; }
-        const headers = rows[0];
-        const body = rows.slice(1);
-
-        // 3) Detectar columnas numéricas (>=60% valores numéricos)
-        function toNum(v){ const n = parseFloat(String(v).replace(/[^0-9.\-]+/g,"")); return Number.isFinite(n) ? n : null; }
-        const numericIdx = [];
-        for (let i=0;i<headers.length;i++){
-          const nums = body.map(r => toNum(r[i])).filter(v => v!==null);
-          const ratio = nums.length / body.length;
-          if (ratio >= 0.60) numericIdx.push(i);
+        const numericIdx=[];
+        for(let i=0;i<headers.length;i++){
+          const nums=body.map(r=>toNum(r[i])).filter(v=>v!==null);
+          if(nums.length/body.length>=0.60) numericIdx.push(i);
         }
-        // 4) Pearson para todos los pares
-        function pearson(arrX, arrY){
+        function pearson(aX,aY){
           const xv=[], yv=[];
-          for (let i=0;i<arrX.length;i++){
-            const a = toNum(arrX[i]); const b = toNum(arrY[i]);
-            if (a!==null && b!==null){ xv.push(a); yv.push(b); }
-          }
-          const n=xv.length; if (n<3) return {r:NaN, n};
-          const mx = xv.reduce((s,v)=>s+v,0)/n;
-          const my = yv.reduce((s,v)=>s+v,0)/n;
+          for(let i=0;i<aX.length;i++){ const a=toNum(aX[i]); const b=toNum(aY[i]); if(a!==null&&b!==null){xv.push(a); yv.push(b);} }
+          const n=xv.length; if(n<3) return {r:NaN,n};
+          const mx=mean(xv), my=mean(yv);
           let num=0, dx=0, dy=0;
-          for (let i=0;i<n;i++){
-            const ax=xv[i]-mx, by=yv[i]-my;
-            num += ax*by; dx += ax*ax; dy += by*by;
-          }
-          const den = Math.sqrt(dx*dy);
-          const r = den ? num/den : NaN;
-          return { r, n };
+          for(let i=0;i<n;i++){ const ax=xv[i]-mx, by=yv[i]-my; num+=ax*by; dx+=ax*ax; dy+=by*by; }
+          const den=Math.sqrt(dx*dy); const r=den?num/den:NaN;
+          return {r,n};
         }
-
-        const pairs = [];
-        for (let a=0; a<numericIdx.length; a++){
-          for (let b=a+1; b<numericIdx.length; b++){
-            const ia = numericIdx[a], ib = numericIdx[b];
-            const {r,n} = pearson(body.map(r=>r[ia]), body.map(r=>r[ib]));
-            if (!Number.isFinite(r)) continue;
-            pairs.push({
-              A: headers[ia],
-              B: headers[ib],
-              r,
-              r2: r*r,
-              n
-            });
+        const pairs=[];
+        for(let a=0;a<numericIdx.length;a++){
+          for(let b=a+1;b<numericIdx.length;b++){
+            const ia=numericIdx[a], ib=numericIdx[b];
+            const {r,n}=pearson(body.map(r=>r[ia]), body.map(r=>r[ib]));
+            if(!Number.isFinite(r)) continue;
+            pairs.push({A:headers[ia],B:headers[ib],r,r2:r*r,n});
           }
         }
-        pairs.sort((u,v)=> Math.abs(v.r) - Math.abs(u.r));
-        const top = pairs.slice(0, Math.min(12, pairs.length));
+        pairs.sort((u,v)=>Math.abs(v.r)-Math.abs(u.r));
+        const top=pairs.slice(0,Math.min(12,pairs.length));
 
-        // Conteo por paralelo
-        const idxParalelo = headers.findIndex(h => norm(h).includes("paralelo"));
-        const countA = idxParalelo>=0 ? body.filter(r => String(r[idxParalelo]||"").trim().toUpperCase()==="A").length : null;
-        const countB = idxParalelo>=0 ? body.filter(r => String(r[idxParalelo]||"").trim().toUpperCase()==="B").length : null;
+        const idxParalelo=headers.findIndex(h=>norm(h).includes("paralelo"));
+        const countA=idxParalelo>=0?body.filter(r=>String(r[idxParalelo]||"").trim().toUpperCase()==="A").length:null;
+        const countB=idxParalelo>=0?body.filter(r=>String(r[idxParalelo]||"").trim().toUpperCase()==="B").length:null;
 
-        // 5) Construir HTML: teoría + KPIs + tabla
-        let html = "";
-        html += `<div class="card"><h3 style="margin:0 0 8px">Correlación (Pearson) en toda la muestra</h3>
+        let html="";
+        html+=`<div class="card"><h3 style="margin:0 0 8px">Correlación (Pearson) en toda la muestra</h3>
           <div class="kpis">
             <div class="kpi"><div>Muestra total</div><b>${body.length}</b></div>
-            ${idxParalelo>=0 ? `<div class="kpi"><div>Paralelo A</div><b>${countA}</b></div>` : ``}
-            ${idxParalelo>=0 ? `<div class="kpi"><div>Paralelo B</div><b>${countB}</b></div>` : ``}
+            ${idxParalelo>=0?`<div class="kpi"><div>Paralelo A</div><b>${countA}</b></div>`:""}
+            ${idxParalelo>=0?`<div class="kpi"><div>Paralelo B</div><b>${countB}</b></div>`:""}
             <div class="kpi"><div>Columnas numéricas</div><b>${numericIdx.length}</b></div>
           </div>
-          <p style="margin:6px 0 0; line-height:1.5">
-            <b>¿Qué medimos?</b> El coeficiente de correlación de Pearson (<i>r</i>) cuantifica la relación lineal entre dos variables numéricas.
-            Toma valores entre -1 y 1: cercano a 1 =&gt; relación positiva fuerte; cercano a -1 =&gt; relación negativa fuerte; cercano a 0 =&gt; relación débil o nula.
-            <b>R²</b> es el cuadrado de <i>r</i> e indica el porcentaje de variación de una variable explicado por la otra en un modelo lineal simple.
-          </p>
-          <p style="margin:8px 0 0; line-height:1.5">
-            Interpretación rápida (guía): |r| ≈ 0.1–0.3 débil; 0.3–0.5 moderada; &gt; 0.5 fuerte. Recuerda que correlación no implica causalidad.
-          </p>
+          <p style="margin:6px 0 0; line-height:1.5"><b>¿Qué medimos?</b> El coeficiente de correlación de Pearson (<i>r</i>) cuantifica la relación lineal entre dos variables numéricas. <b>R²</b> es el cuadrado de <i>r</i> e indica el porcentaje de variación explicada.</p>
+          <p style="margin:8px 0 0; line-height:1.5">Guía rápida: |r|≈0.1–0.3 débil; 0.3–0.5 moderada; &gt;0.5 fuerte. La correlación no implica causalidad.</p>
         </div>`;
 
-        if (top.length){
-          const best = top[0];
-          const resumen = `Se encontró como relación más fuerte: “${best.A}” vs “${best.B}” con r = ${best.r.toFixed(3)} (R² = ${(best.r2*100).toFixed(1)}%).`;
-          html += `<div class="card"><b>Resumen</b><br>${escapeHtml(resumen)}</div>`;
-          // tabla top correlaciones
-          const rowsTop = [["#", "Variable X", "Variable Y", "r", "R² (%)", "n"],
-            ...top.map((p,i)=>[i+1, p.A, p.B, p.r.toFixed(3), (p.r2*100).toFixed(1), p.n])
-          ];
-          html += `<div class="table-wrap">${renderTable(rowsTop)}</div>`;
-          lastRows = rowsTop;
-          tablaWrap.innerHTML = html;
-          tablaWrap.hidden = false; out.hidden = true; exportHint.hidden = false;
-
-          speak(`Cálculo de correlación completado. ${resumen}`);
-          saveHistory(pregunta, resumen);
+        if(top.length){
+          const best=top[0];
+          const resumen=`Relación más fuerte: “${best.A}” vs “${best.B}” con r=${best.r.toFixed(3)} (R²=${(best.r2*100).toFixed(1)}%).`;
+          html+=`<div class="card"><b>Resumen</b><br>${escapeHtml(resumen)}</div>`;
+          const rowsTop=[["#","Variable X","Variable Y","r","R² (%)","n"], ...top.map((p,i)=>[i+1,p.A,p.B,p.r.toFixed(3),(p.r2*100).toFixed(1),p.n])];
+          html+=`<div class="table-wrap">${renderTable(rowsTop)}</div>`;
+          lastRows=rowsTop; tablaWrap.innerHTML=html; tablaWrap.hidden=false; out.hidden=true; exportHint.hidden=false;
+          speak(`Cálculo de correlación completado. ${resumen}`); saveHistory(pregunta,resumen);
         }else{
-          out.hidden = false; out.textContent = "No fue posible calcular correlaciones (no se detectaron columnas numéricas suficientes).";
-          speak(out.textContent);
-          saveHistory(pregunta, out.textContent);
+          out.hidden=false; out.textContent="No fue posible calcular correlaciones (no se detectaron columnas numéricas suficientes)."; speak(out.textContent); saveHistory(pregunta,out.textContent);
         }
-      }catch(e){
-        console.error(e);
-        out.hidden = false; out.textContent = "Ocurrió un error calculando la correlación.";
-      }
+      }catch(e){ console.error(e); out.hidden=false; out.textContent="Ocurrió un error calculando la correlación."; }
     }
 
-    /* ====== Enviar ====== */
-    async function enviarPregunta(){
-      const pregunta = document.getElementById("pregunta").value.trim();
-      if (!pregunta) return alert("Escribe una pregunta.");
+    /* ================== QUINTIL (NUEVO) ================== */
+    async function handleQuintileQuery(pregunta){
+      out.hidden=false; out.textContent="Calculando quintil solicitado..."; tablaWrap.hidden=true; tablaWrap.innerHTML=""; exportHint.hidden=true; lastRows=null; lastText="";
 
-      // **Atajo para INTENCIÓN de CORRELACIÓN / R²**
-      if (wantsCorrelation(pregunta)) {
-        await handleCorrelationQuery(pregunta);
-        return;
-      }
+      const resp=await fetch(SOURCES.csv);
+      if(!resp.ok){ out.textContent="No pude leer el CSV."; return; }
+      const csvText=await resp.text();
+      const lines=csvText.split(/\r?\n/).filter(l=>l.trim().length);
+      const d=pickDelimiter(lines.slice(0,10));
+      const rows=lines.map(l=>l.split(d).map(c=>c.trim()));
+      const headers=rows[0], body=rows.slice(1);
 
-      out.hidden = false; out.textContent = "Consultando...";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      exportHint.hidden = true; lastRows = null; lastText = "";
+      // ¿qué métrica pide el usuario?
+      let idxMetric = findMetricFromQuery(pregunta, headers);
+      if (idxMetric<0){ out.textContent="No logré identificar la columna a evaluar (por ejemplo: Asertividad)."; return; }
 
-      const body = {
-        q: pregunta,
-        src: selectedSources(),
-        history: loadHistory().map(h => ({ q: h.q, text: h.text }))
-      };
+      // quintil pedido
+      const q = parseQuintileIndex(pregunta); // 1..5
+      const pLo = (q-1)*20, pHi = q*20;
+      const values = body.map(r=>toNum(r[idxMetric])).filter(v=>v!==null);
+      if(!values.length){ out.textContent="No hay datos numéricos en esa columna."; return; }
+      const cutLo = percentile(values, pLo);
+      const cutHi = percentile(values, pHi);
 
-      let data = null;
-      try{
-        const resp = await fetch(ENDPOINT, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
-        data = await resp.json();
-      }catch(e){
-        out.textContent = "No se pudo contactar al servidor."; console.error(e); return;
-      }
+      // top quintil (q=5) → filtrar >= P80
+      let filterFn;
+      if(q===5) filterFn = v => v!==null && v>=cutLo; // cutLo = P80
+      else      filterFn = v => v!==null && v>=cutLo && v<=cutHi;
 
-      const texto = data.text || "";
-      const formato = data.formato || "texto";
+      const idxNombre  = getFirstIdx(headers, SYN.nombre||["nombre"]);
+      const idxCurso   = getFirstIdx(headers, SYN.curso||["curso"]);
+      const idxParalel = getFirstIdx(headers, SYN.paralelo||["paralelo"]);
 
-      if (formato === "json"){
-        try{
-          const arr = JSON.parse(texto);
-          if (!Array.isArray(arr) || arr.length <= 1){
-            out.hidden = false; out.textContent = "No existe información.";
-            lastText = out.textContent; speak(lastText); exportHint.hidden = false; saveHistory(pregunta, lastText);
-            return;
-          }
-          lastRows = addRowNumbers(arr);
-          tablaWrap.innerHTML = renderTable(arr);
-          tablaWrap.hidden = false; out.hidden = true;
-          speak(rowsToSpeech(arr)); exportHint.hidden = false;
-          saveHistory(pregunta, "Se generó una tabla con " + (arr.length-1) + " registros.");
-          return;
-        }catch{}
-      }
+      // construir lista
+      const data = body
+        .map((r,i)=>({ i, nombre: idxNombre>=0? r[idxNombre] : (r[0]||""), curso: idxCurso>=0? r[idxCurso] : "", par: idxParalel>=0? r[idxParalel] : "", v: toNum(r[idxMetric]) }))
+        .filter(x => filterFn(x.v))
+        .sort((a,b)=> (b.v??-Infinity) - (a.v??-Infinity));
 
-      let triedTable = false;
-      if (texto){
-        const rowsMd  = parseMarkdownTable(texto);
-        const rowsDel = parseDelimited(texto);
-        const rows = rowsMd || rowsDel;
-        if (rows){
-          lastRows = addRowNumbers(rows);
-          tablaWrap.innerHTML = renderTable(rows);
-          tablaWrap.hidden = false; out.hidden = true;
-          speak(rowsToSpeech(rows)); exportHint.hidden = false;
-          saveHistory(pregunta, "Se generó una tabla con " + (rows.length-1) + " registros (autodetectada).");
-          triedTable = true;
-        }
-      }
-      if (!triedTable){
-        const clean = sanitizeForSpeech(texto || "No existe información.");
-        out.hidden = false; out.textContent = clean; lastText = clean; speak(clean); exportHint.hidden = false; saveHistory(pregunta, clean);
-      }
+      // KPIs & teoría
+      const meanV = mean(values), medV = median(values);
+      const idxPar = idxParalel;
+      const cntA = idxPar>=0 ? body.filter(r => String(r[idxPar]||"").trim().toUpperCase()==="A").length : null;
+      const cntB = idxPar>=0 ? body.filter(r => String(r[idxPar]||"").trim().toUpperCase()==="B").length : null;
+
+      const metricName = headers[idxMetric];
+
+      let html="";
+      html+=`<div class="card"><h3 style="margin:0 0 8px">Quintil ${q} — ${escapeHtml(metricName)}</h3>
+        <div class="kpis">
+          <div class="kpi"><div>Muestra total</div><b>${values.length}</b></div>
+          ${idxPar>=0?`<div class="kpi"><div>Paralelo A</div><b>${cntA}</b></div>`:""}
+          ${idxPar>=0?`<div class="kpi"><div>Paralelo B</div><b>${cntB}</b></div>`:""}
+          <div class="kpi"><div>Media</div><b>${(meanV??0).toFixed(1)}</b></div>
+          <div class="kpi"><div>Mediana</div><b>${(medV??0).toFixed(1)}</b></div>
+          <div class="kpi"><div>Umbral ${q===5?"P80":"P"+pLo}</div><b>${(cutLo??0).toFixed(1)}</b></div>
+          ${q<5?`<div class="kpi"><div>Máximo del quintil (P${pHi})</div><b>${(cutHi??0).toFixed(1)}</b></div>`:""}
+        </div>
+        <p style="margin:6px 0 0; line-height:1.5">
+          <b>¿Qué es un quintil?</b> Es cada uno de los cinco grupos iguales en que se puede dividir una distribución ordenada (20% cada uno).
+          El <b>quintil ${q}</b> abarca los valores ${q===5?"desde el percentil 80 hasta el 100 (los más altos)":"entre el percentil "+pLo+" y el "+pHi}.
+          Usamos el umbral <b>${q===5?"P80":"P"+pLo}</b> calculado sobre la muestra para seleccionar los estudiantes correspondientes.
+        </p>
+      </div>`;
+
+      // tabla
+      const table = [["#", "Nombre", "Curso", "Paralelo", metricName]];
+      data.forEach((x,idx)=> table.push([idx+1, x.nombre||"", x.curso||"", x.par||"", x.v??""]));
+      if(table.length===1){ out.hidden=false; out.textContent="No hay estudiantes en ese quintil para la columna seleccionada."; speak(out.textContent); return; }
+
+      html += `<div class="table-wrap">${renderTable(table)}</div>`;
+      tablaWrap.innerHTML = html;
+      tablaWrap.hidden = false; out.hidden = true; exportHint.hidden = false;
+      lastRows = table;
+
+      const resumen = `${data.length} estudiantes en el quintil ${q} de ${metricName}. Umbral ${q===5?"P80":"P"+pLo}: ${(cutLo??0).toFixed(1)}.`;
+      speak(`Listado del quintil ${q}. ${resumen}`);
+      saveHistory(pregunta, resumen);
     }
-    document.getElementById("pregunta").addEventListener("keydown", (e)=>{ if (e.key === "Enter"){ enviarPregunta(); } });
 
-    function selectedSources(){
-      const arr = [];
-      if (document.getElementById("src-csv").checked)  arr.push(SOURCES.csv);
-      if (document.getElementById("src-lex").checked)  arr.push(SOURCES.lex);
-      if (document.getElementById("src-eval").checked) arr.push(SOURCES.eval);
-      if (document.getElementById("src-emo").checked)  arr.push(SOURCES.emo);
-      return arr;
-    }
-
-    /* ====== Exportar ====== */
-    function doExport(){
-      const opt = document.getElementById("exportSelect").value;
-      if (opt === "pdf") return exportPDF();
-      if (opt === "doc") return exportWord();
-      if (opt === "csv") return exportCSV();
-    }
+    /* ================== EXPORTAR / IMPRESIÓN ================== */
+    function doExport(){ const opt=document.getElementById("exportSelect").value; if(opt==="pdf")return exportPDF(); if(opt==="doc")return exportWord(); if(opt==="csv")return exportCSV(); }
     function exportPDF(){
-      const qtxt = escapeHtml(document.getElementById("pregunta").value.trim() || "Consulta");
-      const when = new Date().toLocaleString();
-      let html = `<div style="font-family:Arial;margin:0">
-        <h2 style="margin:0 0 6px 0">Resultado</h2>
-        <div style="color:#374151;margin:0 0 12px 0">Pregunta: <strong>${qtxt}</strong> — <span>${when}</span></div>`;
-      if (!tablaWrap.hidden){ html += tablaWrap.innerHTML; }
-      else { html += `<div style="white-space:pre-wrap">${escapeHtml(lastText||out.textContent||"")}</div>`; }
-      html += `</div>`;
-      printable.innerHTML = html;
-      window.scrollTo(0,0);
-      const after = () => { printable.innerHTML = ""; window.removeEventListener('afterprint', after); };
-      window.addEventListener('afterprint', after);
-      setTimeout(()=>window.print(), 0);
+      const qtxt=escapeHtml(document.getElementById("pregunta").value.trim()||"Consulta");
+      const when=new Date().toLocaleString();
+      let html=`<div style="font-family:Arial;margin:0"><h2 style="margin:0 0 6px 0">Resultado</h2><div style="color:#374151;margin:0 0 12px 0">Pregunta: <strong>${qtxt}</strong> — <span>${when}</span></div>`;
+      if(!tablaWrap.hidden){ html+=tablaWrap.innerHTML; } else { html+=`<div style="white-space:pre-wrap">${escapeHtml(lastText||out.textContent||"")}</div>`; }
+      html+=`</div>`;
+      printable.innerHTML=html; window.scrollTo(0,0);
+      const after=()=>{ printable.innerHTML=""; window.removeEventListener('afterprint',after); };
+      window.addEventListener('afterprint',after); setTimeout(()=>window.print(),0);
     }
     function exportWord(){
-      const qtxt = escapeHtml(document.getElementById("pregunta").value.trim() || "Consulta");
-      const when = new Date().toLocaleString();
-      let content = `<html><head><meta charset="UTF-8"></head><body style="font-family:Arial;margin:0">
-        <h2 style="margin:0 0 6px 0">Resultado</h2>
-        <div style="margin:0 0 12px 0">Pregunta: <b>${qtxt}</b> — ${when}</div>`;
-      if (!tablaWrap.hidden){ content += tablaWrap.innerHTML; }
-      else { content += `<pre style="white-space:pre-wrap">${escapeHtml(lastText||out.textContent||"")}</pre>`; }
-      content += `</body></html>`;
-      const blob = new Blob([content], {type: "application/msword"});
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "reporte.doc"; a.click(); URL.revokeObjectURL(a.href);
+      const qtxt=escapeHtml(document.getElementById("pregunta").value.trim()||"Consulta");
+      const when=new Date().toLocaleString();
+      let content=`<html><head><meta charset="UTF-8"></head><body style="font-family:Arial;margin:0"><h2 style="margin:0 0 6px 0">Resultado</h2><div style="margin:0 0 12px 0">Pregunta: <b>${qtxt}</b> — ${when}</div>`;
+      if(!tablaWrap.hidden){ content+=tablaWrap.innerHTML; } else { content+=`<pre style="white-space:pre-wrap">${escapeHtml(lastText||out.textContent||"")}</pre>`; }
+      content+=`</body></html>`;
+      const blob=new Blob([content],{type:"application/msword"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="reporte.doc"; a.click(); URL.revokeObjectURL(a.href);
     }
     function exportCSV(){
-      if (!lastRows){
-        const blob = new Blob([lastText||out.textContent||""], {type:"text/plain;charset=utf-8"});
-        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "reporte.txt"; a.click(); URL.revokeObjectURL(a.href); return;
-      }
-      const rows = addRowNumbers(lastRows);
-      const csv = rows.map(r => r.map(c => {
-        const s = String(c??""); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
-      }).join(",")).join("\n");
-      const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "reporte.csv"; a.click(); URL.revokeObjectURL(a.href);
+      if(!lastRows){ const blob=new Blob([lastText||out.textContent||""],{type:"text/plain;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="reporte.txt"; a.click(); URL.revokeObjectURL(a.href); return; }
+      const rows=addRowNumbers(lastRows);
+      const csv=rows.map(r=>r.map(c=>{ const s=String(c??""); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }).join(",")).join("\n");
+      const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="reporte.csv"; a.click(); URL.revokeObjectURL(a.href);
     }
-
-    /* ====== Limpieza & memoria ====== */
-    function limpiar(){
-      stopSpeech();
-      document.getElementById("pregunta").value = "";
-      out.textContent = ""; out.hidden = false;
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = ""; exportHint.hidden = true;
-    }
+    function limpiar(){ stopSpeech(); document.getElementById("pregunta").value=""; out.textContent=""; out.hidden=false; tablaWrap.hidden=true; tablaWrap.innerHTML=""; printable.innerHTML=""; exportHint.hidden=true; }
     function borrarMemoria(){ clearHistory(); alert("Memoria borrada."); }
 
-    /* ====== Micrófono ====== */
-    function startListening(){
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
-      const rec = new SR(); rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
-      rec.onresult = e => { const t = e.results[0][0].transcript; document.getElementById("pregunta").value = t; enviarPregunta(); };
-      rec.onerror = e => { alert("Error de micrófono: " + e.error + "\nDa permiso al micrófono en el candado del navegador."); };
-      rec.start();
+    /* ================== ENVÍO ================== */
+    async function enviarPregunta(){
+      const pregunta=document.getElementById("pregunta").value.trim();
+      if(!pregunta) return alert("Escribe una pregunta.");
+
+      // 1) Correlación
+      if (wantsCorrelation(pregunta)) { await handleCorrelationQuery(pregunta); return; }
+      // 2) Quintil
+      if (wantsQuintile(pregunta))   { await handleQuintileQuery(pregunta);   return; }
+
+      // 3) Flujo normal (OpenAI/CSV/PDF con las reglas actuales)
+      out.hidden=false; out.textContent="Consultando..."; tablaWrap.hidden=true; tablaWrap.innerHTML=""; exportHint.hidden=true; lastRows=null; lastText="";
+      const body={ q:pregunta, src:selectedSources(), history:loadHistory().map(h=>({q:h.q,text:h.text})) };
+      let data=null;
+      try{ const resp=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); data=await resp.json(); }
+      catch(e){ out.textContent="No se pudo contactar al servidor."; console.error(e); return; }
+
+      const texto=data.text||""; const formato=data.formato||"texto";
+      if(formato==="json"){
+        try{
+          const arr=JSON.parse(texto);
+          if(!Array.isArray(arr)||arr.length<=1){ out.hidden=false; out.textContent="No existe información."; lastText=out.textContent; speak(lastText); exportHint.hidden=false; saveHistory(pregunta,lastText); return; }
+          lastRows=addRowNumbers(arr);
+          tablaWrap.innerHTML=renderTable(arr); tablaWrap.hidden=false; out.hidden=true; speak(rowsToSpeech(arr)); exportHint.hidden=false; saveHistory(pregunta,"Se generó una tabla con "+(arr.length-1)+" registros."); return;
+        }catch{}
+      }
+      let tried=false;
+      if(texto){
+        const rowsMd=parseMarkdownTable(texto); const rowsDel=parseDelimited(texto); const rows=rowsMd||rowsDel;
+        if(rows){ lastRows=addRowNumbers(rows); tablaWrap.innerHTML=renderTable(rows); tablaWrap.hidden=false; out.hidden=true; speak(rowsToSpeech(rows)); exportHint.hidden=false; saveHistory(pregunta,"Tabla autodetectada con "+(rows.length-1)+" filas."); tried=true; }
+      }
+      if(!tried){ const clean=sanitizeForSpeech(texto||"No existe información."); out.hidden=false; out.textContent=clean; lastText=clean; speak(clean); exportHint.hidden=false; saveHistory(pregunta,clean); }
     }
+    document.getElementById("pregunta").addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ enviarPregunta(); } });
 
     // Exponer
-    window.enviarPregunta = enviarPregunta;
-    window.startListening = startListening;
-    window.stopSpeech = stopSpeech;
-    window.doExport = doExport;
-    window.limpiar = limpiar;
-    window.borrarMemoria = borrarMemoria;
+    window.enviarPregunta=enviarPregunta;
+    window.startListening=function(){ const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; } const rec=new SR(); rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1; rec.onresult=e=>{ const t=e.results[0][0].transcript; document.getElementById("pregunta").value=t; enviarPregunta(); }; rec.onerror=e=>{ alert("Error de micrófono: "+e.error+"\nDa permiso al micrófono en el candado del navegador."); }; rec.start(); };
+    window.stopSpeech=stopSpeech; window.doExport=doExport; window.limpiar=limpiar; window.borrarMemoria=borrarMemoria;
   </script>
 </body>
 </html>
