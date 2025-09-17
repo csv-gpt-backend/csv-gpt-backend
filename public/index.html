@@ -11,7 +11,7 @@
 
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
     .muted { color:#6b7280; font-size:.9rem; }
-    .row { display:flex; gap:8px; margin-bottom:10px; }
+    .row { display:flex; gap:8px; margin:10px 0; }
     input[type="text"]{ flex:1; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; font-size:1rem; }
     button{ padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer; }
     button.secondary{ background:#fff; color:#111; border:1px solid #111; }
@@ -41,11 +41,12 @@
     <!-- Izquierda -->
     <div class="card">
       <img id="logoIzq" class="logo" src="/img/logo-izq.png" alt="Logo izquierdo"
-           onerror="this.style.display='none'">
+           onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'(logo izq no encontrado)',className:'muted small'}))">
       <div class="small">Archivo por defecto: <b id="fileLabel">decimo.csv</b></div>
-      <div class="sep"></div>
-      <button class="secondary" onclick="verCorrelacion()">Ver correlación A↔E</button>
-      <div class="sep"></div>
+      <div class="row" style="gap:6px">
+        <button class="secondary" onclick="verCorrelacion()">Ver correlación A↔E</button>
+        <button class="secondary" onclick="testVoz()">Probar voz</button>
+      </div>
       <div class="small muted">Tip: “lista”, “ranking”, “timidez”, “agresión”, etc.</div>
     </div>
 
@@ -53,14 +54,13 @@
     <div class="card">
       <!-- VIDEO -->
       <div class="video-wrap">
-        <!-- Autoplay (muted) permitido por navegador; lo sincronizo con TTS abajo -->
+        <!-- NOTA: pon tu video en /public/media/descarga.mp4 -->
         <video id="videoMain" class="hero-video" src="/media/descarga.mp4"
                playsinline muted preload="metadata" poster="/img/poster.jpg"
                onerror="console.warn('No se encontró /media/descarga.mp4');">
         </video>
       </div>
 
-      <div class="sep"></div>
       <div class="row">
         <input id="pregunta" type="text" placeholder="Escribe tu consulta… (Enter para enviar)" />
         <button onclick="enviarPregunta()">Preguntar</button>
@@ -76,10 +76,9 @@
     <!-- Derecha -->
     <div class="card">
       <img id="logoDer" class="logo" src="/img/logo-der.png" alt="Logo derecho"
-           onerror="this.style.display='none'">
+           onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'(logo der no encontrado)',className:'muted small'}))">
       <div class="muted">Panel</div>
       <div class="small" id="audioState">TTS listo.</div>
-      <div class="sep"></div>
       <div class="row" style="gap:6px">
         <button class="secondary" onclick="toggleVideo()">⏯ Video</button>
         <button class="secondary" onclick="toggleMute()">🔇/🔊</button>
@@ -89,10 +88,10 @@
 
   <script>
     // ===== Config =====
-    const DEFAULT_FILE = "decimo.csv"; // CSV por defecto (en /public/datos/)
+    const DEFAULT_FILE = "decimo.csv"; // CSV por defecto (/public/datos/)
     document.getElementById("fileLabel").textContent = DEFAULT_FILE;
 
-    // ===== Video helpers =====
+    // ===== MEDIA =====
     const vid = () => document.getElementById("videoMain");
     function playVideo(){ const v = vid(); if (!v) return; v.play().catch(()=>{}); }
     function pauseVideo(){ const v = vid(); if (!v) return; if (!v.paused) v.pause(); }
@@ -118,20 +117,58 @@
       return hasMarkdownTable || hasNumberedList || hasCSVish;
     }
 
-    // ===== TTS (ES-MX si está disponible) + sincronía con video =====
-    function speak(text){
+    // ===== VOZ (carga fiable + ES-MX preferente) =====
+    let VOICES_LOADED = false;
+    function loadVoices(){
+      return new Promise(resolve=>{
+        const synth = window.speechSynthesis;
+        if (!synth){ resolve([]); return; }
+        let voices = synth.getVoices();
+        if (voices && voices.length){ VOICES_LOADED = true; resolve(voices); return; }
+        const onv = () => { voices = synth.getVoices(); VOICES_LOADED = true; resolve(voices); synth.removeEventListener('voiceschanged', onv); };
+        synth.addEventListener('voiceschanged', onv);
+        // fallback por si el evento no dispara
+        setTimeout(()=>{ voices = synth.getVoices(); VOICES_LOADED = true; resolve(voices); }, 1200);
+      });
+    }
+    function pickSpanishFemale(voices){
+      // Preferencias por nombre común (Windows/Google)
+      const preferNames = [
+        "Sabina", "Paulina", "Lupe", "Google español", "Google US Spanish", "Helena", "Conchita", "Luciana"
+      ];
+      // 1) es-MX si es posible
+      let v = voices.find(v=>/es(-|_)mx/i.test(v.lang) && preferNames.some(n=>v.name.toLowerCase().includes(n.toLowerCase())));
+      if (v) return v;
+      v = voices.find(v=>/es(-|_)mx/i.test(v.lang));
+      if (v) return v;
+      // 2) cualquier es-*
+      v = voices.find(v=>/^es/i.test(v.lang) && preferNames.some(n=>v.name.toLowerCase().includes(n.toLowerCase())));
+      if (v) return v;
+      return voices.find(v=>/^es/i.test(v.lang)) || voices[0];
+    }
+    async function speak(text){
       try{
         if (!window.speechSynthesis) return;
+        const voices = VOICES_LOADED ? window.speechSynthesis.getVoices() : await loadVoices();
+        const chosen = pickSpanishFemale(voices);
         const u = new SpeechSynthesisUtterance(text);
-        const mx = speechSynthesis.getVoices().find(v => /es(-|_)mx/i.test(v.lang));
-        u.lang = mx?.lang || "es-MX";
-        if (mx) u.voice = mx;
-        speechSynthesis.cancel();
+        if (chosen){ u.voice = chosen; u.lang = chosen.lang; } else { u.lang = "es-MX"; }
+        window.speechSynthesis.cancel();
         u.onstart = () => { playVideo(); document.getElementById("audioState").textContent = "Leyendo respuesta…"; };
         u.onend   = () => { pauseVideo(); document.getElementById("audioState").textContent = "TTS listo."; };
-        speechSynthesis.speak(u);
-      }catch(e){}
+        window.speechSynthesis.speak(u);
+      }catch(e){ console.warn(e); }
     }
+    // Desbloquear audio/voz al primer gesto del usuario
+    function primeAudioOnce(){
+      const handler = ()=>{
+        loadVoices().then(()=>{ /* primed */ });
+        const v = vid(); if (v){ v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); }
+        window.removeEventListener('click', handler);
+      };
+      window.addEventListener('click', handler);
+    }
+    primeAudioOnce();
 
     // ===== Helpers de datos/lista =====
     function orderKeysPreferName(obj){
@@ -194,8 +231,7 @@
       const pregunta = (input?.value || "").trim();
       if(!pregunta) return;
 
-      // Pre: pausa el video hasta que hablemos de nuevo
-      pauseVideo();
+      pauseVideo(); // hasta que el TTS empiece
 
       const url = `/api/ask?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
 
@@ -205,7 +241,7 @@
         try { data = await resp.json(); } catch { /* no-json */ }
         if (!data) text = await resp.text();
 
-        // Errores explícitos del backend
+        // backend reportó error explícito
         if (data && data.error) {
           setVisible(TEXT_IDS, true);
           const el = document.getElementById("texto");
@@ -251,6 +287,7 @@
       }
     }
 
+    // Opcional: correlación (requiere /api/stats)
     async function verCorrelacion() {
       const url = `/api/stats?file=${encodeURIComponent(DEFAULT_FILE)}&x=AGRESIÓN&y=EMPATÍA&group_by=Paralelo`;
       try {
@@ -266,6 +303,9 @@
         if (el) el.textContent = "No se pudo calcular la correlación.";
       }
     }
+
+    // Prueba rápida de voz
+    async function testVoz(){ await speak("Hola, Marcelo. La voz en español está lista."); }
 
     // Enter para enviar
     document.getElementById("pregunta").addEventListener("keydown", (e)=>{
