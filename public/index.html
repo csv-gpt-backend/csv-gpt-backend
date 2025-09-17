@@ -5,58 +5,56 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>csv-gpt-backend · Demo</title>
   <style>
-    body { margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; color:#111; background:#fafafa; }
-    .grid { display:grid; grid-template-columns: 1fr 2fr 1fr; gap:12px; padding:12px; }
-    @media (max-width:1024px){ .grid{ grid-template-columns:1fr; } }
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#111;background:#fafafa}
+    .grid{display:grid;grid-template-columns:1fr 2fr 1fr;gap:12px;padding:12px}
+    @media(max-width:1024px){.grid{grid-template-columns:1fr}}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px}
+    .muted{color:#6b7280;font-size:.9rem}
+    .row{display:flex;gap:8px;margin:10px 0}
+    input[type="text"]{flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:1rem}
+    button{padding:10px 14px;border:1px solid #111;background:#111;color:#fff;border-radius:10px;cursor:pointer}
+    button.secondary{background:#fff;color:#111;border:1px solid #111}
+    #texto{white-space:pre-wrap}
 
-    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
-    .muted { color:#6b7280; font-size:.9rem; }
-    .row { display:flex; gap:8px; margin:10px 0; }
-    input[type="text"]{ flex:1; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; font-size:1rem; }
-    button{ padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer; }
-    button.secondary{ background:#fff; color:#111; border:1px solid #111; }
-    #texto{ white-space:pre-wrap; }
+    .logo{width:100%;max-width:260px;height:auto;display:block;object-fit:contain;margin:8px auto}
+    .video-wrap{width:100%;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;background:#000}
+    .hero-video{width:100%;height:auto;display:block;aspect-ratio:16/9;object-fit:cover}
 
-    /* Logos */
-    .logo { width:100%; max-width:260px; height:auto; display:block; object-fit:contain; margin:8px auto; }
-
-    /* Video central */
-    .video-wrap { width:100%; border-radius:12px; overflow:hidden; border:1px solid #e5e7eb; background:#000; }
-    .hero-video { width:100%; height:auto; display:block; aspect-ratio:16/9; object-fit:cover; }
-
-    /* Lista vertical enumerada */
-    .vertical-list { padding-left:1.25rem; margin:.5rem 0; }
-    .vertical-list>li { margin:.35rem 0; font-size:.9rem; }
-    .vcard { width:100%; display:grid; grid-template-columns:160px 1fr; gap:.25rem .75rem; }
-    .k { font-weight:600; color:#222; }
-    .v { color:#333; word-break:break-word; }
-    @media (max-width:640px){ .vcard{ grid-template-columns:1fr; } }
-
-    .small{ font-size:.85rem; }
-    .sep{ height:8px; }
+    .vertical-list{padding-left:1.25rem;margin:.5rem 0}
+    .vertical-list>li{margin:.35rem 0;font-size:.9rem}
+    .vcard{width:100%;display:grid;grid-template-columns:160px 1fr;gap:.25rem .75rem}
+    .k{font-weight:600;color:#222}
+    .v{color:#333;word-break:break-word}
+    @media(max-width:640px){.vcard{grid-template-columns:1fr}}
+    .small{font-size:.85rem}.sep{height:8px}
   </style>
 </head>
 <body>
   <div class="grid">
     <!-- Izquierda -->
     <div class="card">
-      <img id="logoIzq" class="logo" src="/img/logo-izq.png" alt="Logo izquierdo"
+      <img class="logo" src="/img/logo-izq.png" alt="Logo izquierdo"
            onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'(logo izq no encontrado)',className:'muted small'}))">
       <div class="small">Archivo por defecto: <b id="fileLabel">decimo.csv</b></div>
-      <div class="row" style="gap:6px">
+      <div class="row" style="gap:6px;flex-wrap:wrap">
         <button class="secondary" onclick="verCorrelacion()">Ver correlación A↔E</button>
         <button class="secondary" onclick="testVoz()">Probar voz</button>
+        <button class="secondary" onclick="actualizarVoces()">Actualizar voces</button>
+      </div>
+      <div class="row" style="gap:6px">
+        <select id="vozSelect" class="small" style="flex:1;padding:6px 8px;border:1px solid #d1d5db;border-radius:8px"></select>
       </div>
       <div class="small muted">Tip: “lista”, “ranking”, “timidez”, “agresión”, etc.</div>
     </div>
 
     <!-- Centro -->
     <div class="card">
-      <!-- VIDEO -->
+      <!-- VIDEO (autoplay/loop para que no quede negro) -->
       <div class="video-wrap">
-        <!-- NOTA: pon tu video en /public/media/descarga.mp4 -->
-        <video id="videoMain" class="hero-video" src="/media/descarga.mp4"
-               playsinline muted preload="metadata" poster="/img/poster.jpg"
+        <video id="videoMain" class="hero-video"
+               src="/media/descarga.mp4"
+               autoplay loop muted playsinline preload="metadata" poster="/img/poster.jpg"
+               onloadeddata="this.style.background='transparent'"
                onerror="console.warn('No se encontró /media/descarga.mp4');">
         </video>
       </div>
@@ -66,16 +64,14 @@
         <button onclick="enviarPregunta()">Preguntar</button>
       </div>
 
-      <!-- Texto inicial (se oculta si hay tabla/lista) -->
       <div id="texto" class="muted">Escribe una consulta y te mostraré resultados del CSV.</div>
       <div class="sep"></div>
-      <!-- Montaje de listas/tablas -->
       <div id="respuesta"></div>
     </div>
 
     <!-- Derecha -->
     <div class="card">
-      <img id="logoDer" class="logo" src="/img/logo-der.png" alt="Logo derecho"
+      <img class="logo" src="/img/logo-der.png" alt="Logo derecho"
            onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'(logo der no encontrado)',className:'muted small'}))">
       <div class="muted">Panel</div>
       <div class="small" id="audioState">TTS listo.</div>
@@ -88,137 +84,110 @@
 
   <script>
     // ===== Config =====
-    const DEFAULT_FILE = "decimo.csv"; // CSV por defecto (/public/datos/)
+    const DEFAULT_FILE = "decimo.csv";
     document.getElementById("fileLabel").textContent = DEFAULT_FILE;
 
     // ===== MEDIA =====
     const vid = () => document.getElementById("videoMain");
-    function playVideo(){ const v = vid(); if (!v) return; v.play().catch(()=>{}); }
-    function pauseVideo(){ const v = vid(); if (!v) return; if (!v.paused) v.pause(); }
-    function toggleVideo(){ const v = vid(); if (!v) return; v.paused ? playVideo() : pauseVideo(); }
-    function toggleMute(){ const v = vid(); if (!v) return; v.muted = !v.muted; }
+    function playVideo(){ const v=vid(); if(!v) return; v.play().catch(()=>{}); }
+    function pauseVideo(){ const v=vid(); if(!v) return; if(!v.paused) v.pause(); }
+    function toggleVideo(){ const v=vid(); if(!v) return; v.paused?playVideo():pauseVideo(); }
+    function toggleMute(){ const v=vid(); if(!v) return; v.muted=!v.muted; }
 
-    // ===== UI helpers =====
-    const TEXT_IDS = ["texto"];
-    function setVisible(ids, visible){
-      for (const id of ids){
-        const el = document.getElementById(id);
-        if (!el) continue;
-        el.style.display = visible ? "" : "none";
-        if (!visible) el.innerHTML = "";
-      }
+    // ===== UI =====
+    const TEXT_IDS=["texto"];
+    function setVisible(ids,visible){
+      for(const id of ids){ const el=document.getElementById(id); if(!el) continue;
+        el.style.display=visible?"":"none"; if(!visible) el.innerHTML=""; }
     }
     function looksStructuredText(s){
-      if (!s) return false;
-      const lines = s.split(/\r?\n/);
-      const hasMarkdownTable = lines.filter(l => l.includes("|")).length >= 2;
-      const hasNumberedList  = /^\s*\d+\./m.test(s);
-      const hasCSVish        = lines.some(l => l.split(",").length >= 3);
-      return hasMarkdownTable || hasNumberedList || hasCSVish;
+      if(!s) return false;
+      const lines=s.split(/\r?\n/);
+      const hasMarkdownTable=lines.filter(l=>l.includes("|")).length>=2;
+      const hasNumbered=/^\s*\d+\./m.test(s);
+      const hasCSVish=lines.some(l=>l.split(",").length>=3);
+      return hasMarkdownTable||hasNumbered||hasCSVish;
     }
 
-    // ===== VOZ (carga fiable + ES-MX preferente) =====
-    let VOICES_LOADED = false;
+    // ===== TTS =====
+    let VOICES=[];
     function loadVoices(){
-      return new Promise(resolve=>{
-        const synth = window.speechSynthesis;
-        if (!synth){ resolve([]); return; }
-        let voices = synth.getVoices();
-        if (voices && voices.length){ VOICES_LOADED = true; resolve(voices); return; }
-        const onv = () => { voices = synth.getVoices(); VOICES_LOADED = true; resolve(voices); synth.removeEventListener('voiceschanged', onv); };
-        synth.addEventListener('voiceschanged', onv);
-        // fallback por si el evento no dispara
-        setTimeout(()=>{ voices = synth.getVoices(); VOICES_LOADED = true; resolve(voices); }, 1200);
+      return new Promise(res=>{
+        const synth=window.speechSynthesis; if(!synth){res([]);return;}
+        let got=synth.getVoices(); if(got&&got.length){VOICES=got;res(got);return;}
+        const once=()=>{got=synth.getVoices(); VOICES=got; res(got); synth.removeEventListener('voiceschanged',once);};
+        synth.addEventListener('voiceschanged',once);
+        setTimeout(()=>{got=synth.getVoices(); VOICES=got; res(got);},1200);
       });
     }
-    function pickSpanishFemale(voices){
-      // Preferencias por nombre común (Windows/Google)
-      const preferNames = [
-        "Sabina", "Paulina", "Lupe", "Google español", "Google US Spanish", "Helena", "Conchita", "Luciana"
-      ];
-      // 1) es-MX si es posible
-      let v = voices.find(v=>/es(-|_)mx/i.test(v.lang) && preferNames.some(n=>v.name.toLowerCase().includes(n.toLowerCase())));
-      if (v) return v;
-      v = voices.find(v=>/es(-|_)mx/i.test(v.lang));
-      if (v) return v;
-      // 2) cualquier es-*
-      v = voices.find(v=>/^es/i.test(v.lang) && preferNames.some(n=>v.name.toLowerCase().includes(n.toLowerCase())));
-      if (v) return v;
-      return voices.find(v=>/^es/i.test(v.lang)) || voices[0];
+    function rellenarSelector(voices){
+      const sel=document.getElementById("vozSelect");
+      sel.innerHTML="";
+      voices.forEach((v,i)=>{
+        const opt=document.createElement("option");
+        opt.value=i; opt.textContent=`${v.name} — ${v.lang}`;
+        sel.appendChild(opt);
+      });
+      // pre-selección: algún español
+      const idxES=voices.findIndex(v=>/^es/i.test(v.lang)); if(idxES>=0) sel.value=idxES;
+    }
+    async function actualizarVoces(){
+      const voices=await loadVoices();
+      rellenarSelector(voices);
     }
     async function speak(text){
-      try{
-        if (!window.speechSynthesis) return;
-        const voices = VOICES_LOADED ? window.speechSynthesis.getVoices() : await loadVoices();
-        const chosen = pickSpanishFemale(voices);
-        const u = new SpeechSynthesisUtterance(text);
-        if (chosen){ u.voice = chosen; u.lang = chosen.lang; } else { u.lang = "es-MX"; }
-        window.speechSynthesis.cancel();
-        u.onstart = () => { playVideo(); document.getElementById("audioState").textContent = "Leyendo respuesta…"; };
-        u.onend   = () => { pauseVideo(); document.getElementById("audioState").textContent = "TTS listo."; };
-        window.speechSynthesis.speak(u);
-      }catch(e){ console.warn(e); }
+      if(!window.speechSynthesis) return;
+      if(!VOICES.length) await actualizarVoces();
+      const sel=document.getElementById("vozSelect");
+      const v=VOICES[Number(sel.value)] || VOICES.find(v=>/^es/i.test(v.lang)) || VOICES[0];
+      const u=new SpeechSynthesisUtterance(text);
+      if(v){ u.voice=v; u.lang=v.lang; } else { u.lang="es-ES"; }
+      window.speechSynthesis.cancel();
+      u.onstart=()=>{ playVideo(); document.getElementById("audioState").textContent="Leyendo respuesta…"; };
+      u.onend=()=>{ pauseVideo(); document.getElementById("audioState").textContent="TTS listo."; };
+      window.speechSynthesis.speak(u);
     }
-    // Desbloquear audio/voz al primer gesto del usuario
-    function primeAudioOnce(){
-      const handler = ()=>{
-        loadVoices().then(()=>{ /* primed */ });
-        const v = vid(); if (v){ v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); }
-        window.removeEventListener('click', handler);
-      };
-      window.addEventListener('click', handler);
-    }
-    primeAudioOnce();
+    function testVoz(){ speak("Hola, Marcelo. La voz está lista."); }
+    // desbloqueo por primer clic
+    window.addEventListener("click",()=>{ actualizarVoces(); const v=vid(); if(v){ v.muted=true; v.play().then(()=>v.pause()).catch(()=>{});} },{once:true});
 
-    // ===== Helpers de datos/lista =====
+    // ===== Helpers datos/lista =====
     function orderKeysPreferName(obj){
-      const keys = Object.keys(obj);
-      const preferred = ["nombre","estudiante","alumno","NOMBRE","ESTUDIANTE","ALUMNO"];
-      const first = keys.find(k => preferred.includes(k));
-      const others = keys.filter(k => k !== first);
-      return first ? [first, ...others] : keys;
+      const keys=Object.keys(obj);
+      const preferred=["nombre","estudiante","alumno","NOMBRE","ESTUDIANTE","ALUMNO"];
+      const first=keys.find(k=>preferred.includes(k));
+      const others=keys.filter(k=>k!==first);
+      return first?[first,...others]:keys;
     }
     function normalizeRow(row){
-      const out = {};
-      for (const k of Object.keys(row||{})) {
-        const nk = String(k).trim();
-        const v = row[k];
-        out[nk] = (v===undefined || v===null) ? "" : (typeof v==="string" ? v.trim() : v);
-      }
+      const out={};
+      for(const k of Object.keys(row||{})){ const nk=String(k).trim(); const v=row[k];
+        out[nk]=(v===undefined||v===null)?"":(typeof v==="string"?v.trim():v); }
       return out;
     }
     function getLikelyScoreKey(sample){
       if(!sample) return null;
-      const prefs = ["Calificación","CALIFICACION","Calificacion","Promedio","Nota","Puntaje","Score","Total"];
-      const keys = Object.keys(sample);
-      for (const p of prefs){ if (keys.includes(p)) return p; }
-      return keys.find(k => !isNaN(parseFloat(sample[k])));
+      const prefs=["Calificación","CALIFICACION","Calificacion","Promedio","Nota","Puntaje","Score","Total"];
+      const keys=Object.keys(sample);
+      for(const p of prefs){ if(keys.includes(p)) return p; }
+      return keys.find(k=>!isNaN(parseFloat(sample[k])));
     }
-    function sortByMetricDesc(rows, metricCandidate){
-      let metric = metricCandidate;
-      if (!metric) {
-        const sample = rows.find(r => r && typeof r === "object");
-        if (sample){ metric = Object.keys(sample).find(k => !isNaN(parseFloat(sample[k]))); }
-      }
-      if (!metric) return rows;
-      return [...rows].sort((a,b) => (parseFloat(b[metric])||-Infinity) - (parseFloat(a[metric])||-Infinity));
+    function sortByMetricDesc(rows,metric){
+      let m=metric;
+      if(!m){ const sample=rows.find(r=>r&&typeof r==="object");
+        if(sample){ m=Object.keys(sample).find(k=>!isNaN(parseFloat(sample[k]))); } }
+      if(!m) return rows;
+      return [...rows].sort((a,b)=>(parseFloat(b[m])||-Infinity)-(parseFloat(a[m])||-Infinity));
     }
-    function drawVerticalNumberedList(rows, mountId = "respuesta"){
-      const mount = document.getElementById(mountId);
-      if(!mount) return;
-      mount.innerHTML = "";
-      const ol = document.createElement("ol");
-      ol.className = "vertical-list";
-      rows.forEach((row) => {
-        const li = document.createElement("li");
-        const keys = orderKeysPreferName(row);
-        li.innerHTML = `
-          <div class="vcard">
-            ${keys.map(k => `
-              <div class="k">${k}</div>
-              <div class="v">${row[k] ?? ""}</div>
-            `).join("")}
-          </div>`;
+    function drawVerticalNumberedList(rows,mountId="respuesta"){
+      const mount=document.getElementById(mountId); if(!mount) return;
+      mount.innerHTML="";
+      const ol=document.createElement("ol"); ol.className="vertical-list";
+      rows.forEach(row=>{
+        const li=document.createElement("li");
+        const keys=orderKeysPreferName(row);
+        li.innerHTML=`<div class="vcard">${keys.map(k=>`
+          <div class="k">${k}</div><div class="v">${row[k]??""}</div>`).join("")}</div>`;
         ol.appendChild(li);
       });
       mount.appendChild(ol);
@@ -226,91 +195,81 @@
 
     // ===== Lógica principal =====
     async function enviarPregunta(){
-      const input = document.getElementById("pregunta");
-      const mountId = "respuesta";
-      const pregunta = (input?.value || "").trim();
+      const input=document.getElementById("pregunta");
+      const mountId="respuesta";
+      const pregunta=(input?.value||"").trim();
       if(!pregunta) return;
 
-      pauseVideo(); // hasta que el TTS empiece
+      pauseVideo(); // hasta que hable TTS
 
-      const url = `/api/ask?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
+      const url=`/api/ask?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}&format=json`;
+      try{
+        const resp=await fetch(url);
+        let data=null, text="";
+        try{ data=await resp.json(); }catch{}
+        if(!data) text=await resp.text();
 
-      try {
-        const resp = await fetch(url);
-        let data = null, text = "";
-        try { data = await resp.json(); } catch { /* no-json */ }
-        if (!data) text = await resp.text();
-
-        // backend reportó error explícito
-        if (data && data.error) {
-          setVisible(TEXT_IDS, true);
-          const el = document.getElementById("texto");
-          if (el) el.textContent = data.message + (data.details ? ` (${data.details})` : "");
-          speak(el?.textContent || "");
+        if(data && data.error){
+          setVisible(TEXT_IDS,true);
+          const el=document.getElementById("texto");
+          if(el) el.textContent = data.message + (data.details?` (${data.details})`:"");
+          speak(el?.textContent||"");
           return;
         }
 
-        // 1) JSON con filas
-        const rows = data?.rows || data?.data || data?.items;
-        if (Array.isArray(rows) && rows.length){
-          setVisible(TEXT_IDS, false);
-          const clean = rows.map(normalizeRow);
-          const metric = getLikelyScoreKey(clean[0]);
-          const ranked = sortByMetricDesc(clean, metric);
-          drawVerticalNumberedList(ranked, mountId);
+        const rows=data?.rows||data?.data||data?.items;
+        if(Array.isArray(rows)&&rows.length){
+          setVisible(TEXT_IDS,false);
+          const clean=rows.map(normalizeRow);
+          const metric=getLikelyScoreKey(clean[0]);
+          const ranked=sortByMetricDesc(clean,metric);
+          drawVerticalNumberedList(ranked,mountId);
           speak(`Mostrando ${ranked.length} registros en lista vertical.`);
           return;
         }
 
-        // 2) Texto estructurado → ocultamos texto inicial
-        const maybeText = text || data?.answer || data?.text;
-        if (looksStructuredText(maybeText)){
-          setVisible(TEXT_IDS, false);
-          const mount = document.getElementById(mountId); if (mount) mount.innerHTML = "";
+        const maybe=text||data?.answer||data?.text;
+        if(looksStructuredText(maybe)){
+          setVisible(TEXT_IDS,false);
+          const mount=document.getElementById(mountId); if(mount) mount.innerHTML="";
           speak("Mostrando resultados estructurados.");
           return;
         }
 
-        // 3) Solo texto plano
-        const mount = document.getElementById(mountId); if (mount) mount.innerHTML = "";
-        setVisible(TEXT_IDS, true);
-        const textEl = document.getElementById("texto");
-        const show = data?.answer ?? data?.text ?? text ?? "Sin resultados.";
-        if (textEl) textEl.textContent = show;
+        const mount=document.getElementById(mountId); if(mount) mount.innerHTML="";
+        setVisible(TEXT_IDS,true);
+        const textEl=document.getElementById("texto");
+        const show=data?.answer ?? data?.text ?? text ?? "Sin resultados.";
+        if(textEl) textEl.textContent=show;
         speak(show);
 
-      } catch (err){
+      }catch(err){
         console.error(err);
-        setVisible(TEXT_IDS, true);
-        const textEl = document.getElementById("texto");
-        if (textEl) textEl.textContent = "Ocurrió un error consultando el backend.";
+        setVisible(TEXT_IDS,true);
+        const textEl=document.getElementById("texto");
+        if(textEl) textEl.textContent="Ocurrió un error consultando el backend.";
       }
     }
 
-    // Opcional: correlación (requiere /api/stats)
-    async function verCorrelacion() {
-      const url = `/api/stats?file=${encodeURIComponent(DEFAULT_FILE)}&x=AGRESIÓN&y=EMPATÍA&group_by=Paralelo`;
-      try {
-        const data = await (await fetch(url)).json();
-        const r = (data.overall?.r !== null && data.overall?.r !== undefined) ? data.overall.r.toFixed(3) : "N/D";
-        const t = `n=${data.overall.x.n} | r=${r}`;
-        setVisible(TEXT_IDS, true);
-        const el = document.getElementById("texto");
-        if (el) el.textContent = `Correlación global AGRESIÓN↔EMPATÍA: ${t}`;
+    async function verCorrelacion(){
+      // Requiere /api/stats
+      const url=`/api/stats?file=${encodeURIComponent(DEFAULT_FILE)}&x=AGRESIÓN&y=EMPATÍA&group_by=Paralelo`;
+      try{
+        const data=await (await fetch(url)).json();
+        const r=(data.overall?.r!==null&&data.overall?.r!==undefined)?data.overall.r.toFixed(3):"N/D";
+        const t=`n=${data.overall.x.n} | r=${r}`;
+        setVisible(TEXT_IDS,true);
+        const el=document.getElementById("texto");
+        if(el) el.textContent=`Correlación global AGRESIÓN↔EMPATÍA: ${t}`;
         speak(`Correlación global ${r}.`);
-      } catch(e){
-        const el = document.getElementById("texto");
-        if (el) el.textContent = "No se pudo calcular la correlación.";
+      }catch(e){
+        const el=document.getElementById("texto");
+        if(el) el.textContent="No se pudo calcular la correlación.";
       }
     }
 
-    // Prueba rápida de voz
-    async function testVoz(){ await speak("Hola, Marcelo. La voz en español está lista."); }
-
-    // Enter para enviar
-    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
-      if (e.key === "Enter") enviarPregunta();
-    });
+    // Enter = enviar
+    document.getElementById("pregunta").addEventListener("keydown",(e)=>{ if(e.key==="Enter") enviarPregunta(); });
   </script>
 </body>
 </html>
