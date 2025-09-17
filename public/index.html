@@ -46,6 +46,12 @@
     .footer-bar{ width:min(95%,1100px); margin:8px auto 28px; display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; }
     .export-hint{ width:min(95%,1100px); margin:-12px auto 8px; color:#374151; font-size:13px; text-align:center; }
 
+    /* Bloques para la vista de correlación */
+    .card{ width:min(95%,1100px); margin:16px auto; background:#fff; border:1px solid #e5e5e7; border-radius:12px; padding:14px; text-align:left; }
+    .kpis{ display:flex; gap:12px; flex-wrap:wrap; margin:6px 0 10px; }
+    .kpi{ background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; font-size:14px; }
+    .kpi b{ font-size:16px; }
+
     #printable{ display:none; }
 
     @media print{
@@ -193,7 +199,7 @@
       try{ video.pause(); }catch{}
     }
 
-    /* ====== Tabla & parsers ====== */
+    /* ====== Selectores / helpers tabla ====== */
     const out = document.getElementById("respuesta");
     const tablaWrap = document.getElementById("tabla");
     const printable = document.getElementById("printable");
@@ -213,28 +219,20 @@
       const body = rows.slice(1).map((r,i) => already ? r : [String(i+1), ...r]);
       return [newHead, ...body];
     }
-
     function renderTable(rows){
       const withNums = addRowNumbers(rows);
       const [head, ...body] = withNums;
       let html = '<table class="data"><thead><tr>';
-      head.forEach((h,idx)=>{
-        const cls = idx===0 ? ' class="col-num"' : '';
-        html += `<th${cls}>${escapeHtml(h)}</th>`;
-      });
+      head.forEach((h,idx)=>{ const cls = idx===0 ? ' class="col-num"' : ''; html += `<th${cls}>${escapeHtml(h)}</th>`; });
       html += '</tr></thead><tbody>';
       for (const r of body){
         html += '<tr>';
-        r.forEach((c,idx)=>{
-          const cls = idx===0 ? ' class="col-num"' : '';
-          html += `<td${cls}>${escapeHtml(c)}</td>`;
-        });
+        r.forEach((c,idx)=>{ const cls = idx===0 ? ' class="col-num"' : ''; html += `<td${cls}>${escapeHtml(c)}</td>`; });
         html += '</tr>';
       }
       html += '</tbody></table>';
       return html;
     }
-
     function rowsToSpeech(rows){
       const withNums = addRowNumbers(rows);
       const [head, ...body] = withNums;
@@ -247,6 +245,7 @@
       return parts.join(" ");
     }
 
+    /* ====== Parsers simples (para texto → tabla) ====== */
     function pickDelimiter(sampleLines){
       const cands = [",",";","\t","|"];
       let best=",", bestScore=-1;
@@ -283,19 +282,139 @@
       return rows.length >= 2 ? rows : null;
     }
 
-    /* ====== Enviar ====== */
-    function selectedSources(){
-      const arr = [];
-      if (document.getElementById("src-csv").checked)  arr.push(SOURCES.csv);
-      if (document.getElementById("src-lex").checked)  arr.push(SOURCES.lex);
-      if (document.getElementById("src-eval").checked) arr.push(SOURCES.eval);
-      if (document.getElementById("src-emo").checked)  arr.push(SOURCES.emo);
-      return arr;
+    /* ====== Detección de intención: correlación ====== */
+    function norm(s){ return (s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); }
+    function wantsCorrelation(q){
+      const x = norm(q);
+      return /\bcorrelaci[oó]n\b|\bcoeficiente\b|\br2\b|\br\^?2\b|\bpearson\b/.test(x);
     }
 
+    /* ====== Core: cálculo de correlación R y R² ====== */
+    async function handleCorrelationQuery(pregunta){
+      try{
+        out.hidden = false; out.textContent = "Calculando correlaciones...";
+        tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+        exportHint.hidden = true; lastRows = null; lastText = "";
+
+        // 1) Leer CSV
+        const resp = await fetch(SOURCES.csv);
+        if (!resp.ok){ out.textContent = "No pude leer el CSV."; return; }
+        const csvText = await resp.text();
+
+        // 2) Parsear CSV a filas
+        const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
+        const d = pickDelimiter(lines.slice(0,10));
+        const rows = lines.map(l => l.split(d).map(c=>c.trim()));
+        if (!rows.length){ out.textContent = "CSV vacío."; return; }
+        const headers = rows[0];
+        const body = rows.slice(1);
+
+        // 3) Detectar columnas numéricas (>=60% valores numéricos)
+        function toNum(v){ const n = parseFloat(String(v).replace(/[^0-9.\-]+/g,"")); return Number.isFinite(n) ? n : null; }
+        const numericIdx = [];
+        for (let i=0;i<headers.length;i++){
+          const nums = body.map(r => toNum(r[i])).filter(v => v!==null);
+          const ratio = nums.length / body.length;
+          if (ratio >= 0.60) numericIdx.push(i);
+        }
+        // 4) Pearson para todos los pares
+        function pearson(arrX, arrY){
+          const xv=[], yv=[];
+          for (let i=0;i<arrX.length;i++){
+            const a = toNum(arrX[i]); const b = toNum(arrY[i]);
+            if (a!==null && b!==null){ xv.push(a); yv.push(b); }
+          }
+          const n=xv.length; if (n<3) return {r:NaN, n};
+          const mx = xv.reduce((s,v)=>s+v,0)/n;
+          const my = yv.reduce((s,v)=>s+v,0)/n;
+          let num=0, dx=0, dy=0;
+          for (let i=0;i<n;i++){
+            const ax=xv[i]-mx, by=yv[i]-my;
+            num += ax*by; dx += ax*ax; dy += by*by;
+          }
+          const den = Math.sqrt(dx*dy);
+          const r = den ? num/den : NaN;
+          return { r, n };
+        }
+
+        const pairs = [];
+        for (let a=0; a<numericIdx.length; a++){
+          for (let b=a+1; b<numericIdx.length; b++){
+            const ia = numericIdx[a], ib = numericIdx[b];
+            const {r,n} = pearson(body.map(r=>r[ia]), body.map(r=>r[ib]));
+            if (!Number.isFinite(r)) continue;
+            pairs.push({
+              A: headers[ia],
+              B: headers[ib],
+              r,
+              r2: r*r,
+              n
+            });
+          }
+        }
+        pairs.sort((u,v)=> Math.abs(v.r) - Math.abs(u.r));
+        const top = pairs.slice(0, Math.min(12, pairs.length));
+
+        // Conteo por paralelo
+        const idxParalelo = headers.findIndex(h => norm(h).includes("paralelo"));
+        const countA = idxParalelo>=0 ? body.filter(r => String(r[idxParalelo]||"").trim().toUpperCase()==="A").length : null;
+        const countB = idxParalelo>=0 ? body.filter(r => String(r[idxParalelo]||"").trim().toUpperCase()==="B").length : null;
+
+        // 5) Construir HTML: teoría + KPIs + tabla
+        let html = "";
+        html += `<div class="card"><h3 style="margin:0 0 8px">Correlación (Pearson) en toda la muestra</h3>
+          <div class="kpis">
+            <div class="kpi"><div>Muestra total</div><b>${body.length}</b></div>
+            ${idxParalelo>=0 ? `<div class="kpi"><div>Paralelo A</div><b>${countA}</b></div>` : ``}
+            ${idxParalelo>=0 ? `<div class="kpi"><div>Paralelo B</div><b>${countB}</b></div>` : ``}
+            <div class="kpi"><div>Columnas numéricas</div><b>${numericIdx.length}</b></div>
+          </div>
+          <p style="margin:6px 0 0; line-height:1.5">
+            <b>¿Qué medimos?</b> El coeficiente de correlación de Pearson (<i>r</i>) cuantifica la relación lineal entre dos variables numéricas.
+            Toma valores entre -1 y 1: cercano a 1 =&gt; relación positiva fuerte; cercano a -1 =&gt; relación negativa fuerte; cercano a 0 =&gt; relación débil o nula.
+            <b>R²</b> es el cuadrado de <i>r</i> e indica el porcentaje de variación de una variable explicado por la otra en un modelo lineal simple.
+          </p>
+          <p style="margin:8px 0 0; line-height:1.5">
+            Interpretación rápida (guía): |r| ≈ 0.1–0.3 débil; 0.3–0.5 moderada; &gt; 0.5 fuerte. Recuerda que correlación no implica causalidad.
+          </p>
+        </div>`;
+
+        if (top.length){
+          const best = top[0];
+          const resumen = `Se encontró como relación más fuerte: “${best.A}” vs “${best.B}” con r = ${best.r.toFixed(3)} (R² = ${(best.r2*100).toFixed(1)}%).`;
+          html += `<div class="card"><b>Resumen</b><br>${escapeHtml(resumen)}</div>`;
+          // tabla top correlaciones
+          const rowsTop = [["#", "Variable X", "Variable Y", "r", "R² (%)", "n"],
+            ...top.map((p,i)=>[i+1, p.A, p.B, p.r.toFixed(3), (p.r2*100).toFixed(1), p.n])
+          ];
+          html += `<div class="table-wrap">${renderTable(rowsTop)}</div>`;
+          lastRows = rowsTop;
+          tablaWrap.innerHTML = html;
+          tablaWrap.hidden = false; out.hidden = true; exportHint.hidden = false;
+
+          speak(`Cálculo de correlación completado. ${resumen}`);
+          saveHistory(pregunta, resumen);
+        }else{
+          out.hidden = false; out.textContent = "No fue posible calcular correlaciones (no se detectaron columnas numéricas suficientes).";
+          speak(out.textContent);
+          saveHistory(pregunta, out.textContent);
+        }
+      }catch(e){
+        console.error(e);
+        out.hidden = false; out.textContent = "Ocurrió un error calculando la correlación.";
+      }
+    }
+
+    /* ====== Enviar ====== */
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
+
+      // **Atajo para INTENCIÓN de CORRELACIÓN / R²**
+      if (wantsCorrelation(pregunta)) {
+        await handleCorrelationQuery(pregunta);
+        return;
+      }
 
       out.hidden = false; out.textContent = "Consultando...";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
@@ -332,10 +451,9 @@
           speak(rowsToSpeech(arr)); exportHint.hidden = false;
           saveHistory(pregunta, "Se generó una tabla con " + (arr.length-1) + " registros.");
           return;
-        }catch{ /* si no es JSON seguimos como texto */ }
+        }catch{}
       }
 
-      // Auto convertir tablas Markdown/ASCII si vienen como texto
       let triedTable = false;
       if (texto){
         const rowsMd  = parseMarkdownTable(texto);
@@ -357,6 +475,15 @@
     }
     document.getElementById("pregunta").addEventListener("keydown", (e)=>{ if (e.key === "Enter"){ enviarPregunta(); } });
 
+    function selectedSources(){
+      const arr = [];
+      if (document.getElementById("src-csv").checked)  arr.push(SOURCES.csv);
+      if (document.getElementById("src-lex").checked)  arr.push(SOURCES.lex);
+      if (document.getElementById("src-eval").checked) arr.push(SOURCES.eval);
+      if (document.getElementById("src-emo").checked)  arr.push(SOURCES.emo);
+      return arr;
+    }
+
     /* ====== Exportar ====== */
     function doExport(){
       const opt = document.getElementById("exportSelect").value;
@@ -364,7 +491,6 @@
       if (opt === "doc") return exportWord();
       if (opt === "csv") return exportCSV();
     }
-
     function exportPDF(){
       const qtxt = escapeHtml(document.getElementById("pregunta").value.trim() || "Consulta");
       const when = new Date().toLocaleString();
@@ -380,7 +506,6 @@
       window.addEventListener('afterprint', after);
       setTimeout(()=>window.print(), 0);
     }
-
     function exportWord(){
       const qtxt = escapeHtml(document.getElementById("pregunta").value.trim() || "Consulta");
       const when = new Date().toLocaleString();
@@ -393,17 +518,16 @@
       const blob = new Blob([content], {type: "application/msword"});
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "reporte.doc"; a.click(); URL.revokeObjectURL(a.href);
     }
-
     function exportCSV(){
       if (!lastRows){
         const blob = new Blob([lastText||out.textContent||""], {type:"text/plain;charset=utf-8"});
         const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "reporte.txt"; a.click(); URL.revokeObjectURL(a.href); return;
       }
-      const numRows = addRowNumbers(lastRows);
-      const rows = numRows.map(r => r.map(c => {
+      const rows = addRowNumbers(lastRows);
+      const csv = rows.map(r => r.map(c => {
         const s = String(c??""); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
       }).join(",")).join("\n");
-      const blob = new Blob([rows], {type:"text/csv;charset=utf-8"});
+      const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "reporte.csv"; a.click(); URL.revokeObjectURL(a.href);
     }
 
