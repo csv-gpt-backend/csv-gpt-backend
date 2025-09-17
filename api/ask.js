@@ -2,7 +2,7 @@
 const fs = require("fs").promises;
 const path = require("path");
 
-// -------- CSV helpers --------
+// ---------- CSV helpers ----------
 function detectDelimiter(line) {
   const cands = [",", ";", "\t", "|"];
   let best = { d: ",", n: 0 };
@@ -71,22 +71,35 @@ function getCol(headers, ...aliases){
   return null;
 }
 
-// -------- Handler --------
-module.exports = async (req, res) => {
+// ---------- Fallback: leer CSV desde FS o por HTTP ----------
+async function readCSVFromFsOrHttp(file, req) {
+  const fsPath = path.join(process.cwd(), "public", "datos", file);
   try {
-    const {
-      q = "",
-      file = "decimo.csv",
-      format = "json",
-      limit,
-      columns,
-      sort_by,
-      filter_key,
-      filter_val
-    } = req.query || {};
+    return await fs.readFile(fsPath, "utf8");
+  } catch {
+    const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000";
+    const proto = host.includes("localhost") ? "http" : "https";
+    const url = `${proto}://${host}/datos/${encodeURIComponent(file)}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status} al leer ${url}`);
+    return await r.text();
+  }
+}
 
-    const csvPath = path.join(process.cwd(), "public", "datos", file);
-    const raw = await fs.readFile(csvPath, "utf8");
+// ---------- Handler ----------
+module.exports = async (req, res) => {
+  const q = String(req.query?.q || "");
+  const file = String(req.query?.file || "decimo.csv");
+  const format = String(req.query?.format || "json").toLowerCase();
+  const limit = req.query?.limit;
+  const columns = req.query?.columns;
+  const sort_by = req.query?.sort_by;
+  const filter_key = req.query?.filter_key;
+  const filter_val = req.query?.filter_val;
+  const DEBUG = String(req.query?.debug || "").toLowerCase() === "1" || String(req.query?.debug || "").toLowerCase() === "true";
+
+  try {
+    const raw = await readCSVFromFsOrHttp(file, req);
     const { headers, rows } = parseCSV(raw);
 
     // Columnas típicas
@@ -94,8 +107,10 @@ module.exports = async (req, res) => {
     const colParalelo = getCol(headers, "Paralelo", "Sección", "Seccion", "Grupo");
     const colCurso    = getCol(headers, "Curso", "Grado", "Nivel");
 
-    // -------- Proyección de columnas (opcional) --------
+    // -------- Base de datos "data" --------
     let data = rows.map(r => ({ ...r }));
+
+    // Proyección de columnas (?columns=Nombre,Promedio,Paralelo)
     if (columns) {
       const cmap = caseMap(headers);
       const want = String(columns).split(",").map(s => s.trim()).filter(Boolean);
@@ -103,7 +118,7 @@ module.exports = async (req, res) => {
       data = data.map(r => { const o = {}; actual.forEach(k => o[k] = r[k]); return o; });
     }
 
-    // -------- Filtro simple (?filter_key=Paralelo&filter_val=A) --------
+    // Filtro simple (?filter_key=Paralelo&filter_val=A)
     if (filter_key && filter_val !== undefined){
       const k = getCol(headers, filter_key) ?? filter_key;
       data = data.filter(r => normalize(r[k]) === normalize(filter_val));
@@ -111,18 +126,18 @@ module.exports = async (req, res) => {
 
     // -------- Heurísticas por texto natural --------
     const qlow = q.toLowerCase();
-
-    // ¿Piden lista/ranking?
     const wantsList = /(^|\s)(lista|listado|mostrar|ver|despliega)(\s|$)/.test(qlow);
     const wantsRanking = /(ranking|mayor a menor|ordenar|top|rank)/.test(qlow);
 
-    // Detecta “décimo a/b”, “paralelo a/b”, “sección a/b”
+    // “décimo a/b”, “paralelo a/b”, “sección a/b”, “ambos”
     let filtroCurso = null, filtroPar = null;
-    if (/(decimo|d[eé]cimo)/.test(qlow)) filtroCurso = "DECIMO"; // lo comparamos normalizado
-    const mPar1 = qlow.match(/(paralelo|secci[oó]n|grupo)\s*([ab])/i);
+    const hayDecimo = /(decimo|d[eé]cimo)/.test(qlow);
+    if (hayDecimo) filtroCurso = "DECIMO";
+    const mPar1 = qlow.match(/(paralelo|secci[oó]n|grupo)\s*([ab])\b/i);
     const mPar2 = qlow.match(/d[eé]cimo\s*([ab])\b/i);
     if (mPar1) filtroPar = mPar1[2].toUpperCase();
     else if (mPar2) filtroPar = mPar2[1].toUpperCase();
+    if (/\bambos\b/i.test(qlow) || /\bambas\b/i.test(qlow)) filtroPar = null; // “ambos” = no filtrar paralelo
 
     if (filtroCurso && colCurso){
       data = data.filter(r => normalize(r[colCurso]).includes(filtroCurso));
@@ -131,12 +146,12 @@ module.exports = async (req, res) => {
       data = data.filter(r => normalize(r[colParalelo]) === filtroPar);
     }
 
-    // Si pidieron “timidez/agresividad/empatía/…”, devuelve al menos esas columnas + nombre + paralelo
+    // Si mencionan una “feature” específica, proyecta: Nombre + Feature + Paralelo/Curso
     const cmap = caseMap(headers);
     const featureMatch = qlow.match(/\b(agresividad|empat[ií]a|timidez|f[ií]sico|autoestima|tensi[oó]n|ansiedad|promedio|nota|puntaje)\b/);
     if (featureMatch){
       const feat = featureMatch[1];
-      const kf = Object.keys(cmap).find(k => k.includes(feat)); // nombre lógico
+      const kf = Object.keys(cmap).find(k => k.includes(feat));
       if (kf){
         const Kf = cmap[kf];
         data = data.map(r => {
@@ -150,7 +165,7 @@ module.exports = async (req, res) => {
       }
     }
 
-    // Ranking si procede (elige métrica razonable)
+    // Ranking (por Promedio/Nota… o primera numérica)
     if (wantsRanking){
       const hints = ["Calificación","CALIFICACION","Calificacion","Promedio","Nota","Puntaje","Score","Total"];
       let metric = headers.find(h => hints.some(w => normalize(h).includes(normalize(w))));
@@ -171,13 +186,16 @@ module.exports = async (req, res) => {
     if (!Number.isFinite(n) || n <= 0) n = data.length;
     data = data.slice(0, n);
 
-    // Si pidieron lista/columna/ranking o JSON → devolvemos filas
-    if (wantsList || wantsRanking || featureMatch || columns || filter_key || sort_by || String(format).toLowerCase()==="json"){
+    // Salida JSON por defecto (tu front usa format=json)
+    if (wantsList || wantsRanking || featureMatch || columns || filter_key || sort_by || format === "json"){
       res.setHeader("Content-Type", "application/json; charset=utf-8");
-      return res.status(200).json({ rows: data });
+      return res.status(200).json({
+        rows: data,
+        ...(DEBUG && { debug: { headers, count: rows.length, file, colHints: { colNombre, colParalelo, colCurso } } })
+      });
     }
 
-    // Texto (opcional, normalmente no usado por tu front)
+    // Texto (no lo usas, pero lo dejamos)
     const lines = data.slice(0, 20).map((r,i)=>{
       const nom = colNombre ? r[colNombre] : `Fila ${i+1}`;
       const par = colParalelo ? `, Paralelo: ${r[colParalelo]}` : "";
@@ -188,7 +206,6 @@ module.exports = async (req, res) => {
 
   } catch (err) {
     console.error("ask.js error:", err);
-    // Mantenemos 200 para no romper el front, pero explicamos
-    res.status(200).json({ answer: "No se encontró respuesta (ver consola del server). Verifica que el CSV exista en /public/datos y el nombre de archivo." });
+    res.status(200).json({ error: true, message: "No se encontró respuesta (backend)", details: err?.message });
   }
 };
