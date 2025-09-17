@@ -1,8 +1,8 @@
-// api/stats.js  (Vercel Serverless - CommonJS)
+// api/ask.js  (Vercel Serverless - CommonJS)
 const fs = require("fs").promises;
 const path = require("path");
 
-// --- Utilidades CSV (auto-delimitador y comillas) ---
+// --- CSV helpers (delimitador + comillas) ---
 function detectDelimiter(line) {
   const cands = [",", ";", "\t", "|"];
   let best = { d: ",", n: 0 };
@@ -12,7 +12,6 @@ function detectDelimiter(line) {
   }
   return best.d;
 }
-
 function splitCSVLine(line, d) {
   const out = [];
   let cur = "", inQuotes = false;
@@ -28,7 +27,6 @@ function splitCSVLine(line, d) {
   out.push(cur);
   return out.map(s => s.trim());
 }
-
 function parseCSV(text) {
   const lines = text.replace(/\r/g, "").split("\n").filter(l => l.length > 0);
   if (!lines.length) return { headers: [], rows: [], delimiter: "," };
@@ -43,107 +41,140 @@ function parseCSV(text) {
   }
   return { headers, rows, delimiter };
 }
-
-// --- Números y estadísticas ---
 function toNum(v) {
   if (v === null || v === undefined) return null;
   if (typeof v === "number") return isFinite(v) ? v : null;
   let s = String(v).trim();
   if (s === "" || s.toLowerCase() === "na" || s.toLowerCase() === "null") return null;
-  // Intento decimal con coma si no hay punto
   let n = Number(s);
   if (Number.isNaN(n) && s.includes(",") && !s.includes(".")) n = Number(s.replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
-
-function basicStats(arr) {
-  const a = arr.filter(v => v !== null && Number.isFinite(v)).sort((x, y) => x - y);
-  const n = a.length;
-  if (!n) return { n: 0, min: null, max: null, mean: null, p50: null, p90: null, p99: null };
-  const min = a[0], max = a[n - 1];
-  const mean = a.reduce((s, v) => s + v, 0) / n;
-  const pct = (p) => {
-    if (n === 1) return a[0];
-    const pos = (n - 1) * p;
-    const lo = Math.floor(pos), hi = Math.ceil(pos);
-    if (lo === hi) return a[lo];
-    const w = pos - lo;
-    return a[lo] * (1 - w) + a[hi] * w;
-  };
-  return { n, min, max, mean, p50: pct(0.5), p90: pct(0.9), p99: pct(0.99) };
-}
-
-function pearson(xs, ys) {
-  const pairs = [];
-  for (let i = 0; i < xs.length; i++) {
-    const x = xs[i], y = ys[i];
-    if (x !== null && y !== null) pairs.push([x, y]);
+function firstNumericKey(obj) {
+  if (!obj) return null;
+  for (const k of Object.keys(obj)) {
+    if (toNum(obj[k]) !== null) return k;
   }
-  const n = pairs.length;
-  if (n < 2) return { r: null, n_pairs: n };
-  let sumX = 0, sumY = 0, sumXX = 0, sumYY = 0, sumXY = 0;
-  for (const [x, y] of pairs) {
-    sumX += x; sumY += y;
-    sumXX += x * x; sumYY += y * y; sumXY += x * y;
-  }
-  const cov = sumXY - (sumX * sumY) / n;
-  const varX = sumXX - (sumX * sumX) / n;
-  const varY = sumYY - (sumY * sumY) / n;
-  if (varX <= 0 || varY <= 0) return { r: null, n_pairs: n };
-  const r = cov / Math.sqrt(varX * varY);
-  return { r, n_pairs: n };
+  return null;
 }
+function caseMap(headers){ const m = {}; headers.forEach(h => m[h.toLowerCase()] = h); return m; }
 
 // --- Handler ---
 module.exports = async (req, res) => {
   try {
-    const { file = "decimo.csv", x = "AGRESIVIDAD", y = "EMPATIA", group_by } = req.query || {};
+    const {
+      q = "",
+      file = "decimo.csv",
+      format = "json",
+      limit,           // opcional: ?limit=50
+      columns,         // opcional: ?columns=Nombre,Promedio,Paralelo (case-insensitive)
+      sort_by,         // opcional: ?sort_by=Promedio (desc)
+      filter_key,      // opcional: ?filter_key=Paralelo&filter_val=A
+      filter_val
+    } = req.query || {};
+
     const csvPath = path.join(process.cwd(), "public", "datos", file);
     const raw = await fs.readFile(csvPath, "utf8");
-    const { headers, rows, delimiter } = parseCSV(raw);
+    const { headers, rows } = parseCSV(raw);
+    const cmap = caseMap(headers);
 
-    // Normaliza acceso a columnas (case-insensitive)
-    const keyMap = {};
-    for (const h of headers) keyMap[h.toLowerCase()] = h;
-    const kx = keyMap[String(x).toLowerCase()] ?? x;
-    const ky = keyMap[String(y).toLowerCase()] ?? y;
-    const kg = group_by ? (keyMap[String(group_by).toLowerCase()] ?? group_by) : null;
+    // Proyección de columnas (si se pidieron)
+    let data = rows.map(r => ({ ...r }));
+    if (columns) {
+      const want = String(columns).split(",").map(s => s.trim()).filter(Boolean);
+      const actual = want.map(k => cmap[k.toLowerCase()] ?? k);
+      data = data.map(r => {
+        const o = {};
+        actual.forEach(k => { o[k] = r[k]; });
+        return o;
+      });
+    }
 
-    // Extrae columnas numéricas
-    const X = rows.map(r => toNum(r[kx]));
-    const Y = rows.map(r => toNum(r[ky]));
-    const overall = {
-      x: basicStats(X),
-      y: basicStats(Y),
-      ...pearson(X, Y)
-    };
+    // Filtro simple (key=val)
+    if (filter_key && filter_val !== undefined){
+      const k = cmap[String(filter_key).toLowerCase()] ?? filter_key;
+      data = data.filter(r => String(r[k]).toLowerCase() === String(filter_val).toLowerCase());
+    }
 
-    // Por grupos (si se pide)
-    const groups = {};
-    if (kg) {
-      const by = {};
-      for (let i = 0; i < rows.length; i++) {
-        const g = (rows[i][kg] ?? "SinGrupo") || "SinGrupo";
-        if (!by[g]) by[g] = { X: [], Y: [] };
-        by[g].X.push(X[i]);
-        by[g].Y.push(Y[i]);
-      }
-      for (const g of Object.keys(by)) {
-        const xg = by[g].X, yg = by[g].Y;
-        groups[g] = { x: basicStats(xg), y: basicStats(yg), ...pearson(xg, yg) };
+    // Heurísticas por texto de la pregunta
+    const qlow = q.toLowerCase();
+    const wantsList = /lista|listado|mostrar|ver|despliega/.test(qlow);
+    const wantsRanking = /ranking|mayor a menor|ordenar|top|rank/.test(qlow);
+    const metricHints = ["calificación","calificacion","promedio","nota","puntaje","score","total"];
+    let metric = null;
+
+    // Si piden “timidez/agresividad/empatía/…” mostramos al menos esas columnas + nombre
+    const featureMatch = qlow.match(/\b(agresividad|empat[ií]a|timidez|f[ií]sico|autoestima|tensi[oó]n|ansiedad)\b/);
+    if (featureMatch){
+      const feat = featureMatch[1];
+      const kf = Object.keys(cmap).find(k => k.includes(feat)); // case-insensitive contain
+      const kn = Object.keys(cmap).find(k => k.includes("nombre")||k.includes("alumno")||k.includes("estudiante"));
+      if (kf){
+        data = rows.map(r => {
+          const o = {};
+          if (kn) o[cmap[kn]] = r[cmap[kn]];
+          o[cmap[kf]] = r[cmap[kf]];
+          // Incluimos “Paralelo/Curso” si existen
+          const kp = Object.keys(cmap).find(k => k.includes("paralelo"));
+          if (kp) o[cmap[kp]] = r[cmap[kp]];
+          const kc = Object.keys(cmap).find(k => k.includes("curso"));
+          if (kc) o[cmap[kc]] = r[cmap[kc]];
+          return o;
+        });
       }
     }
 
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.status(200).json({
-      file, delimiter_used: delimiter,
-      columns_detected: headers,
-      x: kx, y: ky, group_by: kg || null,
-      n_total: rows.length,
-      overall, groups
+    // Ranking si lo piden (detecta métrica probable)
+    if (wantsRanking){
+      const sample = data[0] || rows[0];
+      // preferidas
+      for (const h of headers){
+        if (metricHints.some(w => h.toLowerCase().includes(w))) { metric = h; break; }
+      }
+      if (!metric) metric = firstNumericKey(sample);
+      if (metric){
+        data = [...data].sort((a,b)=>(toNum(b[metric])||-Infinity)-(toNum(a[metric])||-Infinity));
+      }
+    }
+
+    // Orden personalizado (?sort_by=Promedio)
+    if (sort_by){
+      const key = cmap[String(sort_by).toLowerCase()] ?? sort_by;
+      data = [...data].sort((a,b)=>(toNum(b[key])||-Infinity)-(toNum(a[key])||-Infinity));
+    }
+
+    // Límite de filas
+    let n = Number(limit);
+    if (!Number.isFinite(n) || n <= 0) n = data.length;
+    data = data.slice(0, n);
+
+    // Regla: si pidieron lista/ranking/columna → devolvemos filas
+    if (wantsList || wantsRanking || featureMatch || columns || filter_key || sort_by){
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      return res.status(200).json({ rows: data });
+    }
+
+    // Si el front pide format=json devolvemos filas por defecto (seguro)
+    if (String(format).toLowerCase() === "json"){
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      return res.status(200).json({ rows: data });
+    }
+
+    // Texto plano (no recomendado). Devolvemos algo simple.
+    const kn = Object.keys(cmap).find(k => k.includes("nombre")||k.includes("alumno")||k.includes("estudiante"));
+    const kp = Object.keys(cmap).find(k => k.includes("paralelo"));
+    const km = headers.find(h => metricHints.some(w => h.toLowerCase().includes(w))) || firstNumericKey(rows[0]);
+    const lines = data.slice(0, 20).map((r,i)=>{
+      const nombre = kn ? r[cmap[kn]] : `Fila ${i+1}`;
+      const par = kp ? `, Paralelo: ${r[cmap[kp]]}` : "";
+      const mv = km ? `, ${km}: ${r[km]}` : "";
+      return `${i+1}. ${nombre}${par}${mv}`;
     });
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.status(200).send(lines.join("\n"));
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "No se pudo procesar el CSV o parámetros inválidos." });
+    res.status(200).json({ answer: "No se encontró respuesta, revisa el archivo CSV o el parámetro 'file'." });
   }
 };
