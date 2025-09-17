@@ -1,8 +1,7 @@
 // /api/ask.js
-// Analiza CSVs con columnas variables: envía el archivo "tal cual" a OpenAI.
-// - Lee /public/datos/<file>.csv por URL (cache 5 min).
-// - Si el CSV es grande, filtra filas según tokens de la pregunta.
-// - Devuelve { text } y metadatos (chars_enviados, recortado, archivo).
+// Analiza un CSV completo (columnas variables) “tal cual” se sube, sin fijar encabezados.
+// Lee /public/datos/<file>.csv por URL (cache 5 min). Devuelve texto para tu voz,
+// y opcionalmente JSON estructurado si usas ?format=json.
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const API_KEY =
@@ -10,112 +9,96 @@ const API_KEY =
   process.env.CLAVE_API_DE_OPENAI ||
   process.env["CLAVE API DE OPENAI"];
 
-const CACHE = new Map(); // key: url -> { ts, text }
+const CACHE_MS = 5 * 60 * 1000;
+const cache = new Map(); // url -> { ts, text }
 
-// límites
-const MAX_CHARS = 250_000;  // si el csv cabe en este tamaño → se envía completo
-const HARD_CAP   = 400_000; // nunca enviar más de esto
-const CACHE_MS   = 5 * 60 * 1000;
-
-// ---- utilidades ----
 function safeFileParam(s, def = "decimo.csv") {
   const x = (s || "").toString().trim();
   if (!x) return def;
-  // no permitimos rutas con ../ ni barras
   if (x.includes("..") || x.includes("/") || x.includes("\\")) return def;
   return x;
 }
 
-function detectDelim(firstLine) {
-  if (!firstLine) return ",";
-  if (firstLine.includes(";")) return ";";
-  if (firstLine.includes("\t")) return "\t";
-  if (firstLine.includes("|")) return "|";
-  return ",";
-}
-
-function tokenize(q) {
-  return (q || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter(w => w && w.length >= 3 && !["los","las","una","que","con","del","para","por","unas","unos","sobre","como","cual","cuales","donde","cuando","cualquiera"].includes(w));
-}
-
-// filtra el CSV por tokens: conserva cabecera + filas que contengan algún token
-function filterCSV(raw, query, maxChars = HARD_CAP) {
-  const lines = raw.split(/\r?\n/);
-  if (!lines.length) return raw.slice(0, maxChars);
-
-  const header = lines.shift();
-  const tokens = tokenize(query);
-  if (!tokens.length) return (header + "\n" + lines.join("\n")).slice(0, maxChars);
-
-  const out = [header];
-  for (const l of lines) {
-    const ll = l.toLowerCase();
-    if (tokens.some(t => ll.includes(t))) out.push(l);
-    if (out.join("\n").length >= maxChars) break;
-  }
-  // si casi no hubo matches, manda una muestra para contexto
-  if (out.length < 5) {
-    out.push(...lines.slice(0, Math.min(200, lines.length)));
-  }
-  return out.join("\n").slice(0, maxChars);
-}
-
-async function getCSVText(url) {
+async function getCSVText(publicUrl) {
+  const hit = cache.get(publicUrl);
   const now = Date.now();
-  const hit = CACHE.get(url);
   if (hit && now - hit.ts < CACHE_MS) return hit.text;
 
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`No pude leer CSV ${url} (HTTP ${r.status})`);
+  const r = await fetch(publicUrl);
+  if (!r.ok) throw new Error(`No pude leer CSV ${publicUrl} (HTTP ${r.status})`);
   const text = await r.text();
-  CACHE.set(url, { ts: now, text });
+  cache.set(publicUrl, { ts: now, text });
   return text;
 }
 
-function buildSystemPrompt() {
+function detectDelim(line) {
+  if (!line) return ",";
+  if (line.includes(";")) return ";";
+  if (line.includes("\t")) return "\t";
+  if (line.includes("|")) return "|";
+  return ",";
+}
+
+function systemPromptText() {
   return [
-    "Eres una asesora educativa clara y ejecutiva. Hablas español (México).",
-    "Recibirás un CSV (o fragmento) con columnas variables (no asumas nombres fijos).",
-    "1) Detecta el delimitador (coma, punto y coma, tab, etc.).",
-    "2) Para responder, analiza la tabla tal como viene; no inventes datos.",
-    "3) Si piden por una persona, localízala por coincidencias del nombre dentro del CSV.",
-    "4) Si los datos son incompletos, dilo y explica qué faltaría.",
-    "5) Responde breve (máx. ~180 palabras) y con criterio profesional.",
+    "Eres una asesora educativa clara y ejecutiva (español México).",
+    "Recibirás un CSV completo con columnas variables (no asumas nombres fijos).",
+    "Instrucciones:",
+    "1) Detecta el delimitador (coma/; /tab/|) y analiza la tabla tal cual.",
+    "2) Si preguntan por una persona, localízala por coincidencia del nombre en cualquier columna.",
+    "3) No inventes datos: basar todo en el CSV entregado. Si falta info, dilo.",
+    "4) Responde breve (~150-180 palabras), tono profesional, en español (MX).",
   ].join(" ");
 }
 
-function buildUserPrompt(q, csv, delim) {
+function userPromptText(query, csvText) {
+  const first = (csvText.split(/\r?\n/)[0] || "").slice(0, 500);
+  const delim = detectDelim(first);
   return [
-    `PREGUNTA: ${q}`,
+    `PREGUNTA: ${query}`,
     "",
     `DELIMITADOR_APROX: ${JSON.stringify(delim)}`,
     "",
-    "CSV (o fragmento) entre triple backticks. Analízalo tal cual:",
+    "A continuación va el CSV completo entre triple backticks. Analízalo tal cual:",
     "```csv",
-    csv,
-    "```"
+    csvText,
+    "```",
   ].join("\n");
 }
 
-// ---- OpenAI call ----
-async function askOpenAI(q, csvText) {
+function systemPromptJSON() {
+  return [
+    "Eres una asesora educativa clara y ejecutiva (español México).",
+    "Recibirás un CSV completo con columnas variables.",
+    "Objetivo: entregar un RESUMEN ESTRUCTURADO en JSON con estas claves exactas:",
+    'diagnostico (string corto),',
+    'fortalezas (array de strings),',
+    'oportunidades (array de strings),',
+    'recomendaciones_corto_plazo (array de strings),',
+    'recomendaciones_mediano_plazo (array de strings),',
+    'riesgos (array de strings).',
+    "No inventes datos. Si faltan, indícalo de forma explícita.",
+    "Devuelve SOLO el JSON (sin texto adicional).",
+  ].join(" ");
+}
+
+function userPromptJSON(query, csvText) {
+  const first = (csvText.split(/\r?\n/)[0] || "").slice(0, 500);
+  const delim = detectDelim(first);
+  return [
+    `PREGUNTA: ${query}`,
+    `DELIMITADOR_APROX: ${JSON.stringify(delim)}`,
+    "CSV completo entre triple backticks:",
+    "```csv",
+    csvText,
+    "```",
+  ].join("\n");
+}
+
+async function callOpenAI(messages) {
   if (!API_KEY) {
-    return { text: "Falta configurar OPENAI_API_KEY en Vercel." };
+    return { ok: false, text: "Falta configurar OPENAI_API_KEY en Vercel." };
   }
-  const firstLine = csvText.split(/\r?\n/)[0] || "";
-  const delim = detectDelim(firstLine);
-
-  const messages = [
-    { role: "system", content: buildSystemPrompt() },
-    { role: "user",   content: buildUserPrompt(q, csvText, delim) }
-  ];
-
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -125,50 +108,50 @@ async function askOpenAI(q, csvText) {
     body: JSON.stringify({
       model: MODEL,
       messages,
-      temperature: 0.35,
+      temperature: 0.35, // más consistente
     }),
   });
-
   const data = await r.json().catch(() => null);
   const text =
     data?.choices?.[0]?.message?.content?.trim() ||
     `No pude consultar OpenAI (HTTP ${r.status}).`;
-  return { text };
+  return { ok: true, text };
 }
 
-// ---- Handler ----
 export default async function handler(req, res) {
   try {
     const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
     const file = safeFileParam(req.query.file || req.query.f || "decimo.csv");
+    const format = (req.query.format || "").toString().toLowerCase(); // "json" | ""
 
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host  = req.headers.host;
-    const url   = `${proto}://${host}/datos/${encodeURIComponent(file)}`;
+    const host = req.headers.host;
+    const publicUrl = `${proto}://${host}/datos/${encodeURIComponent(file)}`;
 
-    // 1) leer CSV (público) con cache
-    const raw = await getCSVText(url);
-    const size = raw.length;
+    const csvText = await getCSVText(publicUrl);
+    const lines = csvText.split(/\r?\n/).filter(Boolean).length;
 
-    // 2) recortar si es necesario
-    let csvToSend = raw;
-    let recortado = false;
-    if (size > MAX_CHARS) {
-      csvToSend = filterCSV(raw, q, HARD_CAP);
-      recortado = true;
-    } else if (size > HARD_CAP) {
-      csvToSend = raw.slice(0, HARD_CAP);
-      recortado = true;
+    let messages;
+    if (format === "json") {
+      messages = [
+        { role: "system", content: systemPromptJSON() },
+        { role: "user", content: userPromptJSON(q, csvText) },
+      ];
+    } else {
+      messages = [
+        { role: "system", content: systemPromptText() },
+        { role: "user", content: userPromptText(q, csvText) },
+      ];
     }
 
-    // 3) preguntar al modelo
-    const ai = await askOpenAI(q, csvToSend);
+    const ai = await callOpenAI(messages);
 
+    // Para el front: text se usa en pantalla/voz.
     return res.status(200).json({
       text: ai.text,
       archivo: file,
-      chars_enviados: csvToSend.length,
-      recortado,
+      filas_aprox: lines,
+      formato: format || "texto",
     });
   } catch (e) {
     console.error(e);
