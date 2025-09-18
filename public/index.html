@@ -7,32 +7,34 @@
 
   <style>
     :root{
-      --header-height: 360px; /* video grande */
-      --video-shift: 10px;
+      --header-height: 320px;
+      --left-col: 30%;
+      --center-col: 40%;
+      --right-col: 30%;
       --accent:#0078d7;
     }
     *{ box-sizing:border-box; }
     body{
-      margin:0; background:#fff;
+      margin:0;
+      background:#fff;
       font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
       color:#111;
     }
 
-    /* ====== Encabezado 25/50/25 ====== */
+    /* ====== Encabezado ====== */
     .header-rail{
       display:flex; align-items:center; justify-content:center;
       width:100%; height:var(--header-height); background:#fff; overflow:hidden;
     }
     .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
-    .header-rail .col.left, .header-rail .col.right{ flex:0 0 25%; }
-    .header-rail .col.center{ flex:0 0 50%; position:relative; }
-    .header-rail .col.left img, .header-rail .col.right img{
-      max-height:100%; max-width:100%; height:auto; width:auto; object-fit:contain; display:block;
-    }
-    .header-rail .col.center video{
-      max-height:100%; max-width:100%; height:100%; width:auto; object-fit:contain; display:block;
-      transform: translateY(var(--video-shift));
-    }
+    .header-rail .col.left{  flex:0 0 var(--left-col); }
+    .header-rail .col.center{flex:0 0 var(--center-col); }
+    .header-rail .col.right{ flex:0 0 var(--right-col); }
+    .header-rail img{ max-height:100%; max-width:100%; object-fit:contain; display:block; }
+    .header-rail video{ max-height:100%; max-width:90%; height:100%; width:auto; object-fit:contain; display:block; }
+
+    @media (max-width: 900px){ :root{ --header-height:280px; } }
+    @media (max-width: 640px){ :root{ --header-height:240px; } }
 
     /* ====== Interacción ====== */
     .interaction{ padding:24px 16px; text-align:center; }
@@ -58,18 +60,6 @@
       text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
     }
 
-    /* ====== Lista vertical ====== */
-    .vlist{ width:min(95%,1100px); margin:16px auto 24px; font-size:13px; }
-    .vitem{
-      border:1px solid #e5e5e7; border-radius:12px;
-      padding:10px 12px; margin:8px 0; background:#fff;
-      display:grid; grid-template-columns:36px 1fr; gap:10px;
-    }
-    .vnum{ font-weight:700; color:#000; display:flex; align-items:flex-start; justify-content:center; padding-top:2px; }
-    .vbody{ display:grid; grid-template-columns:1fr 2fr; gap:6px 12px; align-items:start; }
-    .vkey{ font-weight:600; color:#333; }
-    .vval{ color:#111; word-break:break-word; }
-
     /* ====== Tabla ====== */
     .table-wrap{
       width:min(95%,1100px); margin:16px auto 24px; overflow:auto;
@@ -88,39 +78,23 @@
       width:min(95%,1100px); margin:4px auto 28px;
       display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
     }
-
-    /* ====== Área imprimible ====== */
-    #printable{ display:none; }            /* Nunca visible en pantalla */
-    @media print{
-      body *{ visibility:hidden !important; }
-      #printable{ display:block; }         /* Solo aparece al imprimir */
-      #printable, #printable *{ visibility:visible !important; }
-    }
-
-    /* Responsive */
-    @media (max-width: 900px){ :root{ --header-height: 320px; } }
-    @media (max-width: 640px){
-      :root{ --header-height: 260px; }
-      .header-rail .col.center video{ transform: translateY(8px); }
-      .vbody{ grid-template-columns:1fr; }
-    }
   </style>
 </head>
 <body>
 
-  <!-- ====== ENCABEZADO ====== -..->
+  <!-- ====== ENCABEZADO CON VIDEO ====== -->
   <div class="header-rail">
     <div class="col left">
-      <img src="/left.png" alt="Imagen izquierda">
+      <img src="/left.png" alt="Logo izquierdo">
     </div>
     <div class="col center">
-      <video id="video" muted playsinline preload="metadata">
+      <video id="video" muted playsinline autoplay loop preload="auto" poster="/left.png" aria-label="Avatar">
         <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
         Tu navegador no soporta video.
       </video>
     </div>
     <div class="col right">
-      <img src="/right.png" alt="Imagen derecha">
+      <img src="/right.png" alt="Logo derecho">
     </div>
   </div>
 
@@ -132,17 +106,10 @@
       <button class="btn" onclick="startListening()">🎤</button>
     </div>
 
-    <!-- Texto por defecto -->
     <div id="respuesta">Aquí aparecerá la respuesta...</div>
 
-    <!-- Salidas estructuradas -->
-    <div id="vlist" class="vlist" hidden></div>
     <div id="tabla" class="table-wrap" hidden></div>
 
-    <!-- Zona imprimible (vacía salvo al imprimir) -->
-    <div id="printable"></div>
-
-    <!-- Botones -->
     <div class="footer-bar">
       <button class="btn" onclick="exportPDF()">Exportar PDF</button>
       <button class="btn" onclick="stopSpeech()">Detener voz</button>
@@ -151,337 +118,57 @@
   </div>
 
   <script>
-    /* ====== Config ====== */
-    const ENDPOINTS = ["/api/ask", "/api/preguntar"];
-    const DEFAULT_SOURCES = [
-      "datos/decimo.csv",
-      "https://csv-gpt-backend.vercel.app/lexium.pdf",
-      "https://csv-gpt-backend.vercel.app/evaluaciones.pdf"
-    ];
+    const ENDPOINT = "/api/ask";
+    const DEFAULT_SRC = "datos/decimo.csv";
 
-    const video = document.getElementById("video");
-    const vlistWrap = document.getElementById("vlist");
-    const tablaWrap = document.getElementById("tabla");
     const out = document.getElementById("respuesta");
-    const printable = document.getElementById("printable");
-    let lastRows = null;
+    const tablaWrap = document.getElementById("tabla");
 
-    /* ====== Voz ====== */
-    let chosenVoice = null;
-    const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
-    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
-    const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
+    // Intentar autoplay forzado
+    document.addEventListener('DOMContentLoaded', () => {
+      const v = document.getElementById('video');
+      const tryPlay = () => v?.play?.().catch(()=>{});
+      tryPlay();
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) tryPlay(); });
+    });
 
-    function scoreVoice(v){
-      const name = (v.name||"").toLowerCase();
-      const lang = (v.lang||"").toLowerCase();
-      let s = 0;
-      if (lang.startsWith("es-mx")) s += 100;
-      else if (lang.startsWith("es-419")) s += 60;
-      else if (lang.startsWith("es")) s += 30;
-      if (EXEC_PREF.some(t => name.includes(t))) s += 40;
-      if (FEMALE_HINTS.some(t => name.includes(t))) s += 20;
-      if (/(neural|natural|online)/i.test(name)) s += 25;
-      if (MALE_HINTS.some(t => name.includes(t))) s -= 80;
-      return s;
-    }
-    function pickExecutiveSpanishFemale(){
-      const voices = window.speechSynthesis?.getVoices?.() || [];
-      if (!voices.length) return null;
-      const forced = new URLSearchParams(location.search).get("voice");
-      if (forced){
-        const v = voices.find(v => (v.name||"").toLowerCase().includes(forced.toLowerCase()));
-        if (v) return v;
-      }
-      return voices.slice().sort((a,b) => scoreVoice(b) - scoreVoice(a))[0] || voices[0];
-    }
-    function ensureVoiceSelected(){ if (!chosenVoice) chosenVoice = pickExecutiveSpanishFemale(); }
-
-    function sanitizeForSpeech(text){
-      if (!text) return "";
-      let t = text.replace(/```[\s\S]*?```/g, " "); // no leer bloques
-      t = t.replace(/\*/g, "");                    // no leer asteriscos
-      t = t.replace(/^[#>\-\u2022]\s*/gm, "");     // limpiar bullets/headers
-      t = t.replace(/\s{2,}/g, " ").trim();
-      return t;
-    }
-    function speak(text, onStart, onEnd){
-      if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
-      ensureVoiceSelected();
-      const clean = sanitizeForSpeech(text);
-      if (!clean){ onStart&&onStart(); onEnd&&onEnd(); return; }
-      const u = new SpeechSynthesisUtterance(clean);
-      if (chosenVoice) u.voice = chosenVoice;
-      u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-      u.rate = 1.12; u.pitch = 1.02; u.volume = 1.0;
-      u.onstart = ()=> onStart && onStart();
-      u.onend   = ()=> onEnd && onEnd();
-      u.onerror = ()=> onEnd && onEnd();
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
-    }
-    function stopSpeech(){ try{ window.speechSynthesis.cancel(); }catch{} try{ video?.pause(); }catch{} }
-    window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
-
-    /* ====== Parseo/Render ====== */
-    const escapeHtml = (s) => String(s ?? "")
-      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-
-    function parseMarkdownTableStrict(text){
-      const lines = text.split(/\r?\n/).map(l=>l.trim());
-      const starts = lines.findIndex(l => /^\|.*\|$/.test(l));
-      if (starts === -1) return null;
-      const rows = [];
-      for (let i=starts; i<lines.length; i++){
-        const l = lines[i];
-        if (!/^\|.*\|$/.test(l)) break;
-        rows.push(l);
-      }
-      if (rows.length < 3) return null; // header + sep + 1 row
-      const cells = rows.map(l => l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
-      if (!cells[1].every(c => /^:?-{3,}:?$/.test(c))) return null; // separador
-      cells.splice(1,1);
-      return cells;
-    }
-    function parseJsonTable(text){
-      try{
-        const obj = JSON.parse(text);
-        if (Array.isArray(obj) && obj.length && typeof obj[0] === "object"){
-          const headers = Array.from(
-            obj.reduce((set,row)=>{ Object.keys(row).forEach(k=>set.add(k)); return set; }, new Set())
-          );
-          const rows = [headers, ...obj.map(o => headers.map(h => o[h] ?? ""))];
-          return rows;
-        }
-      }catch{}
-      return null;
-    }
-    function extractCsvBlock(text){
-      const m = text.match(/```(?:csv)?\s*([\s\S]*?)```/i);
-      return m ? m[1].trim() : null;
-    }
-    function parseDelimited(csvText){
-      const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
-      if (lines.length < 2) return null;
-      const cand = [",",";","\t","|"];
-      let best=",", ok=0, cols=0;
-      for (const d of cand){
-        let good=0, c=null;
-        for (const line of lines.slice(0,20)){
-          const p = line.split(d);
-          if (p.length<2) continue;
-          if (c==null) c=p.length;
-          if (p.length===c) good++;
-        }
-        if (good>ok){ ok=good; best=d; cols=c||0; }
-      }
-      if (ok<2 || cols<2) return null;
-      const rows = lines.map(l => l.split(best).map(c=>c.trim()));
-      const max = Math.max(...rows.map(r=>r.length));
-      return rows.map(r => { const a=r.slice(0,max); while(a.length<max)a.push(""); return a; });
-    }
-
-    function reorderHeaders(headers){
-      const prio = ["nombre","estudiante","alumno","apellidos","nombres"];
-      const idx = headers.map((h,i)=>({h, i, key:String(h||"").toLowerCase()}));
-      idx.sort((a,b)=>{
-        const pa = prio.findIndex(p => a.key.includes(p));
-        const pb = prio.findIndex(p => b.key.includes(p));
-        const sa = pa === -1 ? 999 : pa;
-        const sb = pb === -1 ? 999 : pb;
-        return sa - sb || a.i - b.i;
-      });
-      const map = idx.map(x=>x.i);
-      return { newHeaders: idx.map(x=>x.h), map };
-    }
-    function applyHeaderOrder(rows){
-      if (!rows || rows.length < 2) return rows;
-      const [head, ...body] = rows;
-      const {newHeaders, map} = reorderHeaders(head);
-      const remap = body.map(r => map.map(i => r[i] ?? ""));
-      return [newHeaders, ...remap];
-    }
-
-    function renderVerticalList(rows){
-      const [head, ...body] = rows;
-      let html = "";
-      body.forEach((r, idx) => {
-        html += `<div class="vitem"><div class="vnum">#${idx+1}</div><div class="vbody">`;
-        for (let c = 0; c < head.length; c++){
-          html += `<div class="vkey">${escapeHtml(head[c])}</div><div class="vval">${escapeHtml(r[c])}</div>`;
-        }
-        html += `</div></div>`;
-      });
-      return html || "<div class='vitem'><div class='vnum'>#1</div><div class='vbody'><div class='vkey'>Mensaje</div><div class='vval'>Sin datos tabulares.</div></div></div>";
-    }
-    function renderTable(rows){
-      const [head, ...body] = rows;
-      let html = '<table class="data"><thead><tr>';
-      for (const h of head) html += `<th>${escapeHtml(h)}</th>`;
-      html += '</tr></thead><tbody>';
-      for (const r of body){
-        html += '<tr>';
-        for (const c of r) html += `<td>${escapeHtml(c)}</td>`;
-        html += '</tr>';
-      }
-      html += '</tbody></table>';
-      return html;
-    }
-
-    /* ====== Activadores ====== */
-    function wantsStructured(query){
-      const rx = /\b(lista|listar|listado|enlistar|enlista|tabla|tabular|enumerar|ranking)\b/i;
-      return rx.test(query || "");
-    }
-    function wantsTable(query){
-      const rx = /\b(tabla|tabular)\b/i;
-      return rx.test(query || "");
-    }
-
-    /* ====== Estructurado ====== */
-    function detectRowsFromText(text){
-      let rows = parseJsonTable(text);
-      if (rows) return rows;
-      const csvBlock = extractCsvBlock(text);
-      if (csvBlock){ rows = parseDelimited(csvBlock); if (rows) return rows; }
-      rows = parseMarkdownTableStrict(text);
-      return rows || null;
-    }
-
-    function maybeRenderFromText(text, query){
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      lastRows = null;
-
-      const rows = detectRowsFromText(text);
-      if (!(rows && rows.length >= 2 && rows[0].length >= 2)) return false;
-
-      const fixed = applyHeaderOrder(rows);
-      lastRows = fixed.slice();
-
-      const showTable = wantsTable(query);
-      if (showTable){
-        tablaWrap.innerHTML = renderTable(fixed);
-        tablaWrap.hidden = false;
-      }else{
-        vlistWrap.innerHTML = renderVerticalList(fixed);
-        vlistWrap.hidden = false;
-      }
-      return true;
-    }
-
-    /* ====== Enviar ====== */
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
 
-      out.hidden = false;
       out.textContent = "Consultando...";
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = "";   // vaciamos por si quedó algo de una impresión previa
-      lastRows = null;
 
       const params = new URLSearchParams({ q: pregunta });
-      for (const s of DEFAULT_SOURCES) params.append("src", s);
+      params.append("src", DEFAULT_SRC);
 
-      let data = null, lastErr = null;
-      for (const base of ENDPOINTS){
-        try{
-          const url = `${base}?${params.toString()}`;
-          const resp = await fetch(url);
-          const txt = await resp.text();
-          try { data = JSON.parse(txt); } catch { data = { text: txt || "" }; }
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          break;
-        }catch(e){ lastErr = e; }
-      }
-      if (!data){
-        out.textContent = `No se pudo contactar al servidor. ${lastErr ? String(lastErr) : ""}`;
-        console.error(lastErr);
-        return;
-      }
+      try {
+        const resp = await fetch(`${ENDPOINT}?${params.toString()}`);
+        const data = await resp.json();
 
-      const textoRaw = data.text || data.respuesta || data.answer || "";
-      const shouldTab = wantsStructured(pregunta);
-      let huboEstructura = false;
-
-      if (shouldTab){
-        huboEstructura = maybeRenderFromText(textoRaw, pregunta);
-      }
-
-      if (huboEstructura){
-        out.hidden = true;     // no duplicar
-        stopSpeech();          // no leer tablas/listas
-      }else{
-        const clean = sanitizeForSpeech(textoRaw);
-        out.hidden = false;
-        out.textContent = clean || "No se encontró respuesta.";
-        speak(clean, ()=>video?.play(), ()=>video?.pause());
+        if (data.text) {
+          out.textContent = data.text;
+        } else {
+          out.textContent = "Sin respuesta.";
+        }
+      } catch (e) {
+        out.textContent = "Error consultando el servidor: " + e.message;
       }
     }
 
-    // Enter para enviar
-    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
-      if (e.key === "Enter"){ enviarPregunta(); }
-    });
-
-    /* ====== Micrófono ====== */
-    function startListening(){
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
-      const rec = new SR();
-      rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
-      rec.onresult = e => {
-        const t = e.results[0][0].transcript;
-        document.getElementById("pregunta").value = t;
-        enviarPregunta();
-      };
-      rec.onerror = e => {
-        alert("Error de micrófono: " + e.error + "\nDa permiso al micrófono en el candado del navegador.");
-      };
-      rec.start();
-    }
-
-    /* ====== Exportar PDF ====== */
-    function exportPDF(){
-      // Construir el contenido imprimible EN ESTE MOMENTO (nunca antes)
-      let html = "";
-      if (!vlistWrap.hidden){
-        html = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${vlistWrap.innerHTML}`;
-      } else if (!tablaWrap.hidden){
-        html = `<h2 style="margin:0 0 12px 0;font-family:Arial">Resultados</h2>${tablaWrap.innerHTML}`;
-      } else {
-        const text = out.textContent || "";
-        html = `<div style="font-family:Arial;white-space:pre-wrap">${escapeHtml(text)}</div>`;
-      }
-      printable.innerHTML = html;
-
-      // Imprimir y luego limpiar para evitar cualquier fuga visual
-      const after = () => { printable.innerHTML = ""; window.removeEventListener('afterprint', after); };
-      window.addEventListener('afterprint', after);
-      setTimeout(after, 3000); // respaldo por si el evento no dispara
-      window.print();
-    }
-
-    /* ====== Limpiar ====== */
     function limpiar(){
-      stopSpeech();
       document.getElementById("pregunta").value = "";
       out.textContent = "";
-      out.hidden = false;
-      vlistWrap.hidden = true; vlistWrap.innerHTML = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      printable.innerHTML = "";
-      lastRows = null;
     }
 
-    // Exponer funciones
-    window.startListening = startListening;
-    window.stopSpeech    = stopSpeech;
-    window.exportPDF     = exportPDF;
-    window.limpiar       = limpiar;
-    window.enviarPregunta= enviarPregunta;
+    function stopSpeech(){
+      try { window.speechSynthesis.cancel(); } catch {}
+    }
+
+    function exportPDF(){
+      window.print();
+    }
   </script>
 </body>
 </html>
