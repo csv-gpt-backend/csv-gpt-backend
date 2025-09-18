@@ -3,6 +3,7 @@
 // Acepta varios ?src=... (p.ej., src=datos/decimo.csv&src=documentos/LEXIUM.pdf)
 // Si no hay src, usa datos/decimo.csv.
 // Devuelve texto (para voz) o JSON con ?format=json.
+// ds
 
 export const config = { runtime: "nodejs" }; // asegurar Node en Vercel
 
