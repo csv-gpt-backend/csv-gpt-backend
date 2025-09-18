@@ -47,11 +47,6 @@
   </style>
 </head>
 <body>
-<div style="position:fixed;right:8px;bottom:8px;font:12px/1.2 system-ui;background:#111a;border:1px solid #334;padding:6px 8px;border-radius:8px;opacity:.85;z-index:9999">
-  build: <strong>force-2</strong>
-</div>
-
-  
   <div class="wrap">
     <div class="grid">
       <div class="card logo-box">
@@ -119,8 +114,6 @@
   const DEFAULT_FILE = "decimo.csv";                    // CSV por defecto
   const PREFERRED_MODEL = "gpt-5";                      // siempre inicia por GPT-5
   const SESSION_TTL_MS = 10 * 60 * 1000;                // sesión 10 min
-  const VIDEO_URL = "https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4";
-
 
   /* ====== REFS (tolerante a ids) ====== */
   const $q      = document.querySelector('#pregunta, #q, .toolbar input[type="text"]');
@@ -143,16 +136,15 @@
   if ($q) { $q.removeAttribute('disabled'); $q.disabled=false; $q.readOnly=false; $q.style.pointerEvents='auto'; $q.style.opacity='1'; }
 
   /* ====== Video: asignar src solo si existe /descarga.mp4 ====== */
- /* ====== Video: usar URL fija en Blob Storage ====== */
-(function ensureVideo(){
-  if (!$video) return;
-  $video.muted = true;
-  $video.playsInline = true;           // iOS friendly
-  $video.controls = true;              // puedes quitarlo si no quieres controles
-  $video.src = VIDEO_URL;              // tu URL fija en Vercel Blob
-  try { $video.pause(); } catch {}
-})();
-  
+  (function ensureVideo(){
+    if (!$video) return;
+    const CANDIDATE = '/descarga.mp4';
+    fetch(CANDIDATE, { method: 'HEAD' })
+      .then(r => { if (r.ok) $video.src = CANDIDATE; })
+      .catch(()=>{}); // si no existe, lo dejamos sin fuente
+    $video.muted = true;
+    try { $video.pause(); } catch {}
+  })();
 
   /* ====== Sesión / contexto (TTL 10 min) ====== */
   function newSessionId(){ return 'sess_' + Math.random().toString(36).slice(2) + '_' + Date.now(); }
