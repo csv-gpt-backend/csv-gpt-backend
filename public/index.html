@@ -25,26 +25,24 @@
     color:#111827;
   }
 
-  /* Header con logos */
   .brandbar{
     display:flex; align-items:center; justify-content:space-between;
     padding:10px 18px 0;
   }
   .brandbar img{ height:56px; width:auto; object-fit:contain; }
 
-  /* Video centrado y tamaño reducido un poco */
+  /* Video más pequeño */
   .hero{
     display:flex; justify-content:center; align-items:center;
     padding:8px 16px 0;
   }
   .hero video{
-    max-width:1100px; /* tamaño un poco menor del que mostraste */
-    width:92vw; height:auto;
+    max-width:880px;
+    width:80vw; height:auto;
     border-radius:14px;
     box-shadow:var(--shadow);
   }
 
-  /* Caja de interacción */
   .panel{
     max-width:1180px;
     margin:10px auto 16px;
@@ -71,18 +69,16 @@
 
   .btn-voice{
     display:flex; align-items:center; gap:8px;
-    font-size:17px; padding:12px 18px; border-radius:14px;
+    font-size:18px; padding:12px 18px; border-radius:14px;
   }
-  .btn-voice .icon{ font-size:22px; }
+  .btn-voice .icon{ font-size:24px; }
 
-  /* Respuesta */
   .card{
     background:#fff; border:1px solid var(--border); border-radius:14px;
     box-shadow:var(--shadow); padding:14px; margin-top:12px;
   }
   .answer{ white-space:pre-wrap; line-height:1.5; }
 
-  /* Tabla */
   .table-wrap{
     margin-top:12px; overflow:auto; border:1px solid var(--border);
     border-radius:14px; background:#fff;
@@ -101,11 +97,7 @@
   table.data tbody tr:nth-child(odd){
     background:#fafbfe;
   }
-  .muted{
-    color:var(--muted); font-size:13px;
-  }
-
-  /* Barra de acciones */
+  .muted{ color:var(--muted); font-size:13px; }
   .actions{
     display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:flex-start;
     margin-top:14px;
@@ -113,32 +105,24 @@
   .select{
     border:1px solid var(--border); border-radius:10px; padding:9px 10px; background:#fff;
   }
-  .btn-ghost{
-    background:#eef3fe; color:#0b62de;
-  }
-  .btn-danger{
-    background:#fef1f2; color:#c1121f;
-  }
-
-  /* Ocultos/No queremos mostrar PDF fuentes ni banner de memoria */
+  .btn-ghost{ background:#eef3fe; color:#0b62de; }
+  .btn-danger{ background:#fef1f2; color:#c1121f; }
   .hidden{ display:none !important; }
 
   @media (max-width: 760px){
     .btn{ padding:10px 14px; }
-    .btn-voice{ font-size:16px; }
-    .hero video{ width:96vw; }
+    .btn-voice{ font-size:17px; }
+    .hero video{ width:92vw; max-width:92vw; }
   }
 </style>
 </head>
 <body>
 
-  <!-- Barra marcas -->
   <div class="brandbar">
     <img src="/left.png" alt="SANTILLANA">
     <img src="/right.png" alt="COMPARTIR">
   </div>
 
-  <!-- Video -->
   <div class="hero">
     <video id="video" muted playsinline preload="metadata">
       <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4?v=2025-09-17-03" type="video/mp4">
@@ -146,25 +130,24 @@
     </video>
   </div>
 
-  <!-- Interacción -->
   <div class="panel">
     <div class="askrow">
       <div class="askbox">
         <textarea id="pregunta" placeholder=""></textarea>
       </div>
       <button class="btn" id="btnEnviar">Enviar</button>
-      <button class="btn btn-voice" id="btnVoz"><span class="icon">🎤</span>Voz</button>
+      <!-- Mic para dictar -->
+      <button class="btn btn-voice" id="btnMic"><span class="icon">🎤</span>Voz</button>
+      <!-- Leer respuesta (TTS) -->
+      <button class="btn btn-voice" id="btnLeer"><span class="icon">🔊</span>Leer</button>
     </div>
 
-    <!-- Respuesta texto -->
     <div id="respuesta" class="card answer">Aquí aparecerá la explicación...</div>
 
-    <!-- Tabla bonita -->
     <div id="tablaWrap" class="table-wrap hidden">
       <table id="tabla" class="data"></table>
     </div>
 
-    <!-- Acciones -->
     <div class="actions">
       <select id="exportFmt" class="select">
         <option value="pdf">Exportar PDF</option>
@@ -172,26 +155,25 @@
         <option value="csv">Exportar Excel (CSV)</option>
       </select>
       <button class="btn" id="btnExport">Exportar</button>
-      <button class="btn btn-ghost" id="btnPreview">Vista previa PDF</button>
-      <button class="btn btn-ghost" id="btnStopVoice">Detener voz</button>
+      <button class="btn btn-ghost" id="btnStopVoice">Detener lectura</button>
       <button class="btn btn-ghost" id="btnClear">Limpiar</button>
       <button class="btn btn-danger" id="btnClearMem">Borrar memoria</button>
-      <!-- Mensajes internos (no visibles) -->
       <span id="memNote" class="muted hidden">La memoria se conserva ~10 minutos.</span>
     </div>
   </div>
 
 <script>
-/* ================ UTILIDAD Y ESTADO ================ */
+/* ====== Config ====== */
 const ENDPOINT = "/api/ask";
 const DEFAULT_FILE = "decimo.csv";
 const video = document.getElementById("video");
 const respuestaEl = document.getElementById("respuesta");
 const tablaWrap = document.getElementById("tablaWrap");
 const tablaEl = document.getElementById("tabla");
+
 let chosenVoice = null;
 
-/* ——— Voz femenina ejecutiva (español) ——— */
+/* ====== TTS (Leer) ====== */
 const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
 const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
 const MALE_HINTS = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
@@ -209,24 +191,26 @@ function scoreVoice(v){
   if (MALE_HINTS.some(t=>name.includes(t))) s-=80;
   return s;
 }
-function pickExecutiveSpanishFemale(){
+function pickExecVoice(){
   const list = window.speechSynthesis?.getVoices?.()||[];
   if(!list.length) return null;
   return list.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0] || list[0];
 }
-function ensureVoice(){ if(!chosenVoice) chosenVoice = pickExecutiveSpanishFemale(); }
-window.speechSynthesis.onvoiceschanged = () => { chosenVoice=null; ensureVoice(); };
+function ensureVoice(){ if(!chosenVoice) chosenVoice = pickExecVoice(); }
+window.speechSynthesis.onvoiceschanged = ()=>{ chosenVoice=null; ensureVoice(); };
 
-function speak(text, onStart, onEnd){
-  if(!window.speechSynthesis) { onStart&&onStart(); onEnd&&onEnd(); return; }
+function speak(text){
+  if(!window.speechSynthesis) return;
   ensureVoice();
-  const u = new SpeechSynthesisUtterance(text);
+  // quitar asteriscos antes de leer
+  const cleantxt = String(text||"").replace(/\*/g,"");
+  const u = new SpeechSynthesisUtterance(cleantxt);
   if (chosenVoice) u.voice = chosenVoice;
   u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
   u.rate=1.12; u.pitch=1.02; u.volume=1.0;
-  u.onstart=()=> onStart && onStart();
-  u.onend=()=> onEnd && onEnd();
-  u.onerror=()=> onEnd && onEnd();
+  u.onstart=()=> video?.play?.();
+  u.onend=()=> video?.pause?.();
+  u.onerror=()=> video?.pause?.();
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(u);
 }
@@ -235,7 +219,26 @@ function stopSpeak(){
   try{ video?.pause?.(); }catch{}
 }
 
-/* ================ ENVÍO ================ */
+/* ====== Mic (dictado) ====== */
+function startListening(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
+  const rec = new SR();
+  rec.lang = "es-MX";
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+  rec.onresult = e => {
+    const t = e.results[0][0].transcript;
+    document.getElementById("pregunta").value = t;
+    enviarPregunta();
+  };
+  rec.onerror = e => {
+    alert("Error de micrófono: " + e.error + "\nVe al candado del navegador y permite el micrófono para este sitio.");
+  };
+  rec.start();
+}
+
+/* ====== Envío ====== */
 async function enviarPregunta(){
   const q = (document.getElementById("pregunta").value||"").trim();
   if(!q){ alert("Escribe una pregunta."); return; }
@@ -255,16 +258,13 @@ async function enviarPregunta(){
   }
 }
 
-/* ================ PARSE Y RENDER ================ */
-/* Limpia frases tipo 'Analizando CSV/PDF…' */
+/* ====== Render ====== */
 function cleanSystemNoise(s){
   return s
     .replace(/Analizando\s+(?:CSV|PDF).*?\n/gi,"")
     .replace(/Procesando\s+fuentes.*?\n/gi,"")
     .replace(/(Leyendo|Cargando)\s+archivo.*?\n/gi,"");
 }
-
-/* Extrae bloque markdown '|' tabla */
 function extractMarkdownTable(text){
   const lines = text.split(/\r?\n/);
   const blocks=[];
@@ -278,30 +278,22 @@ function extractMarkdownTable(text){
   }
   if(cur.length>=2) blocks.push(cur.slice());
   if(!blocks.length) return {table:null, without:text};
-  // tomamos el primer bloque de tabla
   const tbl = blocks[0];
-  // remove from text
   const blockText = tbl.join("\n");
   const without = text.replace(blockText,"").replace(/\n{3,}/g,"\n\n");
   return { table: tbl, without: without.trim() };
 }
-
-/* Convierte tabla markdown a matriz */
 function parseMarkdownRows(mdLines){
-  // quitar fila separadora si aparece
   const rows = mdLines.map(l=> l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
   const sepIdx = rows.findIndex(r => r.every(c => /^:?-{3,}:?$/.test(c)));
   if (sepIdx>=0) rows.splice(sepIdx,1);
   return rows;
 }
-
-/* Render tabla con numeración */
+function escapeHtml(s){ return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
 function renderTable(rows){
-  // rows: [header, ...]
   if(!rows || rows.length<2 || rows[0].length<1) return false;
   const head = rows[0];
   const body = rows.slice(1);
-  // Añadimos columna "#"
   const head2 = ["#", ...head];
   const thead = `<thead><tr>${head2.map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
   let idx=1;
@@ -315,56 +307,24 @@ function renderTable(rows){
   return true;
 }
 
-function escapeHtml(s){ return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
-
-/* Decide qué mostrar */
 function renderOutput(originalText){
   let text = cleanSystemNoise(originalText);
-
-  // Buscar tabla markdown
   const {table:mdBlock, without} = extractMarkdownTable(text);
   let hadTable = false;
   if (mdBlock){
     const rows = parseMarkdownRows(mdBlock);
     hadTable = renderTable(rows);
-    if (hadTable){
-      // Limpiamos la explicación de la tabla duplicada
-      text = without;
-    }
+    if (hadTable){ text = without; }
   }
-
-  // Si no hubo tabla, ocultamos contenedor
   if(!hadTable){
     tablaWrap.classList.add("hidden");
     tablaEl.innerHTML = "";
   }
-
-  // Mostrar explicación
   respuestaEl.textContent = text || (hadTable ? "" : "Sin contenido.");
-  
-  // Voz con video play/pause
-  const toSpeak = (respuestaEl.textContent||"").trim();
-  if (toSpeak){
-    speak(toSpeak, ()=>video?.play?.(), ()=>video?.pause?.());
-  }
+  // Ya no leemos automáticamente; se lee solo al tocar "Leer"
 }
 
-/* ================ ACCIONES ================ */
-function limpiar(){
-  stopSpeak();
-  document.getElementById("pregunta").value = "";
-  respuestaEl.textContent = "";
-  tablaEl.innerHTML = "";
-  tablaWrap.classList.add("hidden");
-}
-function borrarMemoria(){
-  // Aquí solo limpiamos el front. Si necesitas borrar memoria del servidor, puedes
-  // crear un endpoint y llamarlo desde aquí.
-  limpiar();
-  alert("Contexto local limpiado.");
-}
-
-/* Export helpers */
+/* ====== Export ====== */
 function currentHTMLContent(){
   const container = document.createElement("div");
   const h = document.createElement("h2");
@@ -385,7 +345,6 @@ function currentHTMLContent(){
     t.style.width="100%";
     t.style.fontFamily="Inter, Arial";
     t.style.borderCollapse="collapse";
-    // bordes simples en export
     t.querySelectorAll("th,td").forEach(td=> td.style.border="1px solid #ddd");
     t.querySelectorAll("th,td").forEach(td=> td.style.padding="6px 8px");
     container.appendChild(t);
@@ -409,7 +368,7 @@ function exportPDF(){
   doc.body.appendChild(content);
   w.document.close();
   w.focus();
-  w.print();
+  w.print(); /* diálogo de guardar como PDF */
 }
 
 function exportDOC(){
@@ -432,7 +391,6 @@ function tableToCSV(){
 }
 function exportCSV(){
   let csv = "";
-  // Agregamos explicación como comentarios al inicio
   const expl = (respuestaEl.textContent||"").trim();
   if (expl){
     csv += '# ' + expl.replace(/\n/g,"\n# ") + "\n";
@@ -446,26 +404,37 @@ function exportCSV(){
   URL.revokeObjectURL(url);
 }
 
-/* Vista previa PDF (print) */
-function previewPDF(){ exportPDF(); }
-
-/* ================ EVENTOS ================ */
+/* ====== Eventos ====== */
 document.getElementById("btnEnviar").addEventListener("click", enviarPregunta);
-document.getElementById("btnVoz").addEventListener("click", ()=>{
+document.getElementById("btnMic").addEventListener("click", startListening);
+document.getElementById("btnLeer").addEventListener("click", ()=>{
   const t = (respuestaEl.textContent||"").trim();
   if (!t){ alert("No hay respuesta para leer aún."); return; }
-  speak(t, ()=>video?.play?.(), ()=>video?.pause?.());
+  speak(t);
 });
 document.getElementById("btnStopVoice").addEventListener("click", stopSpeak);
-document.getElementById("btnClear").addEventListener("click", limpiar);
-document.getElementById("btnClearMem").addEventListener("click", borrarMemoria);
+document.getElementById("btnClear").addEventListener("click", ()=>{
+  stopSpeak();
+  document.getElementById("pregunta").value="";
+  respuestaEl.textContent="";
+  tablaEl.innerHTML="";
+  tablaWrap.classList.add("hidden");
+});
+document.getElementById("btnClearMem").addEventListener("click", ()=>{
+  stopSpeak();
+  document.getElementById("pregunta").value="";
+  respuestaEl.textContent="";
+  tablaEl.innerHTML="";
+  tablaWrap.classList.add("hidden");
+  alert("Contexto local limpiado.");
+});
 document.getElementById("btnExport").addEventListener("click", ()=>{
   const fmt = document.getElementById("exportFmt").value;
   if (fmt==="pdf") exportPDF();
   else if (fmt==="doc") exportDOC();
   else exportCSV();
 });
-document.getElementById("btnPreview").addEventListener("click", previewPDF);
+
 document.getElementById("pregunta").addEventListener("keydown",(e)=>{
   if (e.key==="Enter" && (e.ctrlKey || e.metaKey)) enviarPregunta();
 });
