@@ -1,116 +1,141 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Consulta Educativa</title>
 
   <style>
     :root{
-      --header-height: 320px;
-      --left-col: 30%;
-      --center-col: 40%;
-      --right-col: 30%;
-      --accent:#0078d7;
+      --header-height: 300px;
+      --video-shift: 5px;
+      --accent: #0078d7;
     }
-    *{ box-sizing:border-box; }
+
     body{
-      margin:0; background:#fff;
+      margin:0;
+      background:#fff;
       font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
       color:#111;
     }
 
     /* ====== Encabezado ====== */
     .header-rail{
-      display:flex; align-items:center; justify-content:center;
-      width:100%; height:var(--header-height); background:#fff; overflow:hidden;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      width:100%;
+      height:var(--header-height);
+      background:#fff;
+      overflow:hidden;
       border-bottom:1px solid #eee;
     }
     .header-rail .col{
-      display:flex; justify-content:center; align-items:center;
-      height:100%; overflow:hidden; padding:0 8px;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      height:100%;
+      overflow:hidden;
+      padding:0 8px;
     }
-    .header-rail .col.left{  flex:0 0 var(--left-col); }
-    .header-rail .col.center{flex:0 0 var(--center-col); }
-    .header-rail .col.right{ flex:0 0 var(--right-col); }
+    .header-rail .col.left,
+    .header-rail .col.right { flex:0 0 25%; }
+    .header-rail .col.center { flex:0 0 50%; position:relative; }
 
     .header-rail img{
-      max-height:100%; max-width:100%; width:auto; height:auto;
-      object-fit:contain; display:block;
+      max-height:100%;
+      max-width:100%;
+      object-fit:contain;
+      display:block;
     }
     .header-rail video{
-      max-height:100%; max-width:90%; height:100%; width:auto;
-      object-fit:contain; display:block;
-      background:#fafafa;
-    }
-
-    @media (max-width: 900px){ :root{ --header-height:280px; } }
-    @media (max-width: 640px){
-      :root{ --header-height:240px; }
-      .header-rail .col.left, .header-rail .col.right{ display:none; }
-      .header-rail .col.center{ flex:1 1 auto; }
+      max-height:100%;
+      max-width:100%;
+      object-fit:contain;
+      display:block;
+      transform:translateY(var(--video-shift));
+      background:#000;
     }
 
     /* ====== Interacción ====== */
-    .interaction{ padding:24px 16px; text-align:center; }
+    .interaction{
+      padding:24px 16px;
+      text-align:center;
+    }
     .bar{
-      display:flex; gap:8px; justify-content:center; align-items:center;
-      max-width:1100px; margin:0 auto;
+      display:flex;
+      gap:8px;
+      justify-content:center;
+      align-items:center;
+      max-width:1100px;
+      margin:0 auto;
     }
     .bar input[type="text"]{
-      flex:1 1 800px; padding:12px 14px; font-size:16px;
-      border:1px solid #d0d0d0; border-radius:8px; outline:none;
+      flex:1 1 800px;
+      padding:12px 14px;
+      font-size:16px;
+      border:1px solid #d0d0d0;
+      border-radius:8px;
+      outline:none;
     }
     .btn{
-      padding:12px 16px; border:0; border-radius:8px;
-      background:var(--accent); color:#fff; font-weight:600; cursor:pointer;
+      padding:12px 16px;
+      border:0;
+      border-radius:8px;
+      background:var(--accent);
+      color:#fff;
+      font-weight:600;
+      cursor:pointer;
     }
-    .btn:hover{ filter:brightness(0.95); }
 
+    /* Respuesta */
     #respuesta{
-      margin:20px auto 0; width:min(90%,1100px);
-      min-height:64px; padding:14px; background:#f7f7f8;
-      border:1px solid #e5e5e7; border-radius:10px;
-      text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
+      margin:20px auto 0;
+      width:min(90%,1100px);
+      min-height:64px;
+      padding:14px;
+      background:#f7f7f8;
+      border:1px solid #e5e5e7;
+      border-radius:10px;
+      text-align:left;
+      font-size:15px;
     }
 
-    .table-wrap{
-      width:min(95%,1100px); margin:16px auto 24px; overflow:auto;
-      border:1px solid #e5e5e7; border-radius:10px; background:#fff;
-    }
-    table.data{ width:100%; border-collapse:collapse; font-size:14px; }
-    table.data thead th{
-      position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6;
-      text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap;
-    }
-    table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; }
-    table.data tbody tr:nth-child(odd){ background:#fafbfc; }
-
+    /* Footer botones */
     .footer-bar{
-      width:min(95%,1100px); margin:4px auto 28px;
-      display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
+      width:min(95%,1100px);
+      margin:4px auto 28px;
+      display:flex;
+      gap:8px;
+      justify-content:center;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    @media (max-width:640px){
+      :root{ --header-height:200px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- ====== ENCABEZADO (LOGO - VIDEO - LOGO) ====== -->
+  <!-- ====== ENCABEZADO ====== -->
   <div class="header-rail" id="header">
     <div class="col left">
-      <img src="/left.png" alt="Logo izquierdo" onerror="this.style.display='none'">
+      <img src="/left.png" alt="Logo izquierdo">
     </div>
     <div class="col center">
-      <video id="video" muted playsinline autoplay loop preload="auto" poster="/left.png" aria-label="Avatar">
+      <video id="video" muted playsinline autoplay loop preload="auto" poster="/left.png">
         <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
         Tu navegador no soporta video.
       </video>
     </div>
     <div class="col right">
-      <img src="/right.png" alt="Logo derecho" onerror="this.style.display='none'">
+      <img src="/right.png" alt="Logo derecho">
     </div>
   </div>
 
-  <!-- ====== INTERFAZ ====== -->
+  <!-- ====== INTERACCIÓN ====== -->
   <div class="interaction">
     <div class="bar">
       <input id="pregunta" type="text" placeholder="Haz tu pregunta aquí..." />
@@ -120,68 +145,23 @@
 
     <div id="respuesta">Aquí aparecerá la respuesta...</div>
 
-    <div id="tabla" class="table-wrap" hidden></div>
-
     <div class="footer-bar">
-      <button class="btn" onclick="exportPDF()">Exportar PDF</button>
-      <button class="btn" onclick="stopSpeech()">Detener voz</button>
-      <button class="btn" onclick="limpiar()">Limpiar</button>
+      <button class="btn">Exportar PDF</button>
+      <button class="btn">Detener voz</button>
+      <button class="btn">Limpiar</button>
     </div>
   </div>
 
   <script>
-    // Reproducción del video (por si el navegador bloquea autoplay)
     document.addEventListener('DOMContentLoaded', () => {
       const v = document.getElementById('video');
       const tryPlay = () => v?.play?.().catch(()=>{});
       tryPlay();
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) tryPlay(); });
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) tryPlay();
+      });
     });
-
-    const ENDPOINT = "/api/ask";
-    const DEFAULT_SRC = "datos/decimo.csv";
-
-    const out = document.getElementById("respuesta");
-    const tablaWrap = document.getElementById("tabla");
-
-    async function enviarPregunta(){
-      const pregunta = document.getElementById("pregunta").value.trim();
-      if (!pregunta) return alert("Escribe una pregunta.");
-
-      out.textContent = "Consultando...";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-
-      const params = new URLSearchParams({ q: pregunta });
-      params.append("src", DEFAULT_SRC);
-
-      try {
-        const resp = await fetch(`${ENDPOINT}?${params.toString()}`);
-        const data = await resp.json();
-        out.textContent = data.text || "Sin respuesta.";
-      } catch (e) {
-        out.textContent = "Error consultando el servidor: " + e.message;
-      }
-    }
-
-    function limpiar(){
-      document.getElementById("pregunta").value = "";
-      out.textContent = "";
-      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-    }
-    function stopSpeech(){ try { window.speechSynthesis.cancel(); } catch {} }
-    function exportPDF(){ window.print(); }
-
-    // Micrófono (opcional)
-    function startListening(){
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
-      const rec = new SR();
-      rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
-      rec.onresult = e => { document.getElementById("pregunta").value = e.results[0][0].transcript; enviarPregunta(); };
-      rec.onerror = e => { alert("Error de micrófono: " + e.error); };
-      rec.start();
-    }
-    window.startListening = startListening;
   </script>
+
 </body>
 </html>
