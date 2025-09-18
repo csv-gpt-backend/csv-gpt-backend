@@ -15,8 +15,7 @@
     }
     *{ box-sizing:border-box; }
     body{
-      margin:0;
-      background:#fff;
+      margin:0; background:#fff;
       font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
       color:#111;
     }
@@ -25,16 +24,32 @@
     .header-rail{
       display:flex; align-items:center; justify-content:center;
       width:100%; height:var(--header-height); background:#fff; overflow:hidden;
+      border-bottom:1px solid #eee;
     }
-    .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
+    .header-rail .col{
+      display:flex; justify-content:center; align-items:center;
+      height:100%; overflow:hidden; padding:0 8px;
+    }
     .header-rail .col.left{  flex:0 0 var(--left-col); }
     .header-rail .col.center{flex:0 0 var(--center-col); }
     .header-rail .col.right{ flex:0 0 var(--right-col); }
-    .header-rail img{ max-height:100%; max-width:100%; object-fit:contain; display:block; }
-    .header-rail video{ max-height:100%; max-width:90%; height:100%; width:auto; object-fit:contain; display:block; }
+
+    .header-rail img{
+      max-height:100%; max-width:100%; width:auto; height:auto;
+      object-fit:contain; display:block;
+    }
+    .header-rail video{
+      max-height:100%; max-width:90%; height:100%; width:auto;
+      object-fit:contain; display:block;
+      background:#fafafa;
+    }
 
     @media (max-width: 900px){ :root{ --header-height:280px; } }
-    @media (max-width: 640px){ :root{ --header-height:240px; } }
+    @media (max-width: 640px){
+      :root{ --header-height:240px; }
+      .header-rail .col.left, .header-rail .col.right{ display:none; }
+      .header-rail .col.center{ flex:1 1 auto; }
+    }
 
     /* ====== Interacción ====== */
     .interaction{ padding:24px 16px; text-align:center; }
@@ -52,7 +67,6 @@
     }
     .btn:hover{ filter:brightness(0.95); }
 
-    /* Texto por defecto */
     #respuesta{
       margin:20px auto 0; width:min(90%,1100px);
       min-height:64px; padding:14px; background:#f7f7f8;
@@ -60,7 +74,6 @@
       text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
     }
 
-    /* ====== Tabla ====== */
     .table-wrap{
       width:min(95%,1100px); margin:16px auto 24px; overflow:auto;
       border:1px solid #e5e5e7; border-radius:10px; background:#fff;
@@ -73,7 +86,6 @@
     table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; }
     table.data tbody tr:nth-child(odd){ background:#fafbfc; }
 
-    /* ====== Botones inferiores ====== */
     .footer-bar{
       width:min(95%,1100px); margin:4px auto 28px;
       display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
@@ -82,10 +94,10 @@
 </head>
 <body>
 
-  <!-- ====== ENCABEZADO CON VIDEO ====== -->
-  <div class="header-rail">
+  <!-- ====== ENCABEZADO (LOGO - VIDEO - LOGO) ====== -->
+  <div class="header-rail" id="header">
     <div class="col left">
-      <img src="/left.png" alt="Logo izquierdo">
+      <img src="/left.png" alt="Logo izquierdo" onerror="this.style.display='none'">
     </div>
     <div class="col center">
       <video id="video" muted playsinline autoplay loop preload="auto" poster="/left.png" aria-label="Avatar">
@@ -94,11 +106,11 @@
       </video>
     </div>
     <div class="col right">
-      <img src="/right.png" alt="Logo derecho">
+      <img src="/right.png" alt="Logo derecho" onerror="this.style.display='none'">
     </div>
   </div>
 
-  <!-- ====== INTERACCIÓN ====== -->
+  <!-- ====== INTERFAZ ====== -->
   <div class="interaction">
     <div class="bar">
       <input id="pregunta" type="text" placeholder="Haz tu pregunta aquí..." />
@@ -118,19 +130,19 @@
   </div>
 
   <script>
-    const ENDPOINT = "/api/ask";
-    const DEFAULT_SRC = "datos/decimo.csv";
-
-    const out = document.getElementById("respuesta");
-    const tablaWrap = document.getElementById("tabla");
-
-    // Intentar autoplay forzado
+    // Reproducción del video (por si el navegador bloquea autoplay)
     document.addEventListener('DOMContentLoaded', () => {
       const v = document.getElementById('video');
       const tryPlay = () => v?.play?.().catch(()=>{});
       tryPlay();
       document.addEventListener('visibilitychange', () => { if (!document.hidden) tryPlay(); });
     });
+
+    const ENDPOINT = "/api/ask";
+    const DEFAULT_SRC = "datos/decimo.csv";
+
+    const out = document.getElementById("respuesta");
+    const tablaWrap = document.getElementById("tabla");
 
     async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
@@ -145,12 +157,7 @@
       try {
         const resp = await fetch(`${ENDPOINT}?${params.toString()}`);
         const data = await resp.json();
-
-        if (data.text) {
-          out.textContent = data.text;
-        } else {
-          out.textContent = "Sin respuesta.";
-        }
+        out.textContent = data.text || "Sin respuesta.";
       } catch (e) {
         out.textContent = "Error consultando el servidor: " + e.message;
       }
@@ -161,14 +168,20 @@
       out.textContent = "";
       tablaWrap.hidden = true; tablaWrap.innerHTML = "";
     }
+    function stopSpeech(){ try { window.speechSynthesis.cancel(); } catch {} }
+    function exportPDF(){ window.print(); }
 
-    function stopSpeech(){
-      try { window.speechSynthesis.cancel(); } catch {}
+    // Micrófono (opcional)
+    function startListening(){
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
+      const rec = new SR();
+      rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
+      rec.onresult = e => { document.getElementById("pregunta").value = e.results[0][0].transcript; enviarPregunta(); };
+      rec.onerror = e => { alert("Error de micrófono: " + e.error); };
+      rec.start();
     }
-
-    function exportPDF(){
-      window.print();
-    }
+    window.startListening = startListening;
   </script>
 </body>
 </html>
