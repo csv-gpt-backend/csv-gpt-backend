@@ -3,315 +3,203 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<meta http-equiv="Cache-Control" content="no-store, max-age=0"/>
 <title>Consulta Educativa</title>
+
+<!-- PDF.js para extraer texto de PDFs en el navegador (silencioso) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- jsPDF para exportar a PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
 <style>
   :root{
-    --accent:#0b72e7; --border:#e6e8ee; --muted:#6b7280;
-    --shadow:0 6px 24px rgba(16,24,40,.08); --thead:#f3f6fb;
+    --accent:#0078d7;
+    --soft:#f5f6f8;
+    --border:#e3e6ee;
+    --radius:14px;
+    --shadow:0 6px 24px rgba(0,0,0,.06);
+    --maxw: 1080px;
   }
-  *{box-sizing:border-box}
-  body{margin:0;background:#fff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;color:#111827}
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:#111;
+    background:#fff;
+  }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:16px; padding:14px 18px; border-bottom:1px solid var(--border);
+  }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .brand img{ height:46px; display:block; }
 
-  /* Riel 25/50/25 con logos y video centrados verticalmente */
-  .header-rail{display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 12px 0}
-  .header-rail .col{display:flex;align-items:center;justify-content:center}
-  .header-rail .left,.header-rail .right{flex:0 0 25%}
-  .header-rail .center{flex:0 0 50%}
-  .header-rail img{max-height:120px;max-width:85%;object-fit:contain;display:block}
-  .header-rail .center video{
-    width:100%;height:auto;max-width:880px;border-radius:14px;box-shadow:var(--shadow)
+  .wrap{ max-width: var(--maxw); margin: 16px auto 32px; padding: 0 14px; }
+
+  /* Video centrado y moderado */
+  .video-box{ display:flex; justify-content:center; margin: 10px auto 16px; }
+  video{
+    max-width: 900px; /* ajusta si quieres más grande/pequeño */
+    width: 100%;
+    height: auto;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
   }
 
-  .panel{max-width:1180px;margin:14px auto 20px;padding:0 14px}
-  .askrow{display:flex;gap:10px;align-items:flex-start}
-  .askbox{flex:1;border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:#fff}
-  .askbox textarea{width:100%;min-height:70px;max-height:140px;resize:vertical;border:0;outline:0;font-size:16px;line-height:1.35}
-  .btn{border:0;border-radius:12px;cursor:pointer;font-weight:600;background:var(--accent);color:#fff;padding:10px 16px}
-  .btn:hover{filter:brightness(.96)}
-  .btn-voice{display:flex;align-items:center;gap:8px;font-size:18px;padding:12px 18px;border-radius:14px}
-  .btn-ghost{background:#eef3fe;color:#0b62de}
-  .btn-danger{background:#fef1f2;color:#c1121f}
-  .icon{font-size:22px}
+  .askbar{
+    display:flex; gap:12px; align-items:flex-start; margin-top: 6px;
+  }
+  .askbar textarea{
+    flex:1 1 auto;
+    min-height: 56px; /* 2–3 líneas */
+    max-height: 160px;
+    resize: vertical;
+    padding: 12px 14px;
+    border:1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 16px;
+    line-height: 1.35;
+    box-shadow: var(--shadow);
+  }
+  .btn{
+    border:0; background:var(--accent); color:#fff;
+    font-weight:600; border-radius:10px;
+    padding: 12px 16px; cursor:pointer;
+    white-space:nowrap; box-shadow: var(--shadow);
+  }
+  .btn.secondary{
+    background:#fff; color:#111; border:1px solid var(--border);
+  }
+  .btn:disabled{ opacity:.6; cursor:not-allowed; }
 
-  .card{background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:14px;margin-top:12px}
-  .answer{white-space:pre-wrap;line-height:1.5}
+  .answer{
+    margin-top:14px; background: var(--soft);
+    border:1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; min-height:60px; box-shadow: var(--shadow);
+    white-space:pre-wrap;
+  }
 
-  .table-wrap{margin-top:12px;overflow:auto;border:1px solid var(--border);border-radius:14px;background:#fff}
-  table.data{width:100%;border-collapse:collapse;font-size:15px}
-  table.data thead th{position:sticky;top:0;background:var(--thead);border-bottom:1px solid var(--border);text-align:left;padding:10px;font-weight:700;white-space:nowrap}
-  table.data tbody td{border-top:1px solid var(--border);padding:9px 10px;vertical-align:top}
-  table.data tbody tr:nth-child(odd){background:#fafbfe}
+  .table-wrap{
+    margin-top: 14px; background:#fff; border:1px solid var(--border);
+    border-radius: var(--radius); overflow:auto; box-shadow: var(--shadow);
+  }
+  table.data{ width:100%; border-collapse:collapse; font-size:14px; }
+  table.data thead th{
+    position: sticky; top:0; background:#f3f5f7;
+    border-bottom:1px solid #dee1e6; text-align:left; padding:10px 8px;
+    font-weight:700; white-space:nowrap;
+  }
+  table.data tbody td{
+    border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top;
+  }
+  table.data tbody tr:nth-child(odd){ background:#fafbfc; }
 
-  .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
-  .select{border:1px solid var(--border);border-radius:10px;padding:9px 10px;background:#fff}
-  .muted{color:var(--muted);font-size:13px}
-  .hidden{display:none!important}
+  .exportbar{
+    display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    margin-top: 14px;
+  }
+  select{
+    border:1px solid var(--border); border-radius:10px;
+    padding:10px 12px; font-size:14px; background:#fff;
+  }
 
-  @media (max-width:920px){
-    .header-rail .left,.header-rail .right{display:none}
-    .header-rail .center{flex:1 1 auto}
+  @media (max-width: 700px){
+    .askbar{ flex-direction: column; }
+    .askbar .btns{ display:flex; gap:8px; }
   }
 </style>
 </head>
 <body>
 
-  <div class="header-rail">
-    <div class="col left"><img src="/left.png" alt="SANTILLANA"></div>
-    <div class="col center">
+  <div class="topbar">
+    <div class="brand"><img src="/left.png" alt="SANTILLANA"></div>
+    <div class="brand"><img src="/right.png" alt="COMPARTIR"></div>
+  </div>
+
+  <div class="wrap">
+
+    <div class="video-box">
       <video id="video" muted playsinline preload="metadata">
         <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
         Tu navegador no soporta video.
       </video>
     </div>
-    <div class="col right"><img src="/right.png" alt="COMPARTIR"></div>
-  </div>
 
-  <div class="panel">
-    <div class="askrow">
-      <div class="askbox"><textarea id="pregunta" placeholder=""></textarea></div>
-      <button class="btn" id="btnEnviar">Enviar</button>
-      <button class="btn btn-voice" id="btnMic"><span class="icon">🎤</span>Voz</button>
+    <div class="askbar">
+      <textarea id="pregunta" placeholder=""></textarea>
+      <div class="btns" style="display:flex; flex-direction:column; gap:8px;">
+        <button id="btnEnviar" class="btn">Enviar</button>
+        <button id="btnMic" class="btn secondary" title="Dictar por voz">🎤 Voz</button>
+      </div>
     </div>
 
-    <div id="respuesta" class="card answer">Aquí aparecerá la explicación...</div>
+    <div id="respuesta" class="answer">Aquí aparecerá la explicación...</div>
+    <div id="tabla" class="table-wrap" hidden></div>
 
-    <div id="tablaWrap" class="table-wrap hidden">
-      <table id="tabla" class="data"></table>
-    </div>
-
-    <div class="actions">
-      <select id="exportFmt" class="select">
+    <div class="exportbar">
+      <select id="format">
         <option value="pdf">Exportar PDF</option>
-        <option value="doc">Exportar Word (.doc)</option>
-        <option value="csv">Exportar Excel (CSV)</option>
+        <option value="doc">Exportar Word</option>
+        <option value="csv">Exportar CSV</option>
       </select>
-      <button class="btn" id="btnExport">Exportar</button>
-      <button class="btn btn-ghost" id="btnStopVoice">Detener voz</button>
-      <button class="btn btn-ghost" id="btnClear">Limpiar</button>
-      <button class="btn btn-danger" id="btnClearMem">Borrar memoria</button>
-      <span class="muted">La memoria se conserva ~10 minutos.</span>
+      <button id="btnExport" class="btn">Exportar</button>
+      <button id="btnStop" class="btn secondary">Detener voz</button>
+      <button id="btnClear" class="btn secondary">Limpiar</button>
     </div>
+
   </div>
 
 <script>
-/* ======= CONFIG ======= */
-const ENDPOINT = "/api/ask";
-const DEFAULT_CSV = "decimo.csv";
+(() => {
+  // ==========================
+  // CONFIG
+  // ==========================
+  const CSV_FILE = "decimo.csv";
+  const API_ENDPOINTS = ["/api/ask", "/api/preguntar"]; // fallback
+  const PDF_URLS = [
+    "https://csv-gpt-backend.vercel.app/lexium.pdf",
+    "https://csv-gpt-backend.vercel.app/evaluaciones.pdf"
+  ];
+  const MEMORY_MS = 10 * 60 * 1000; // 10 min
+  const MAX_PDF_TEXT_CHARS = 3000;  // resumen local de PDFs
 
-/* Si tu backend usa otra clave para PDFs, cámbiala aquí */
-const PDF_PARAM_KEY = "pdfs";
+  // Palabras que indican que el usuario QUIERE TABLA/LISTA
+  const TABLE_WORDS = ["lista","listado","listar","enlista","enlistar","tabla","cuadro","table","cuadros"];
 
-/* PDFs ocultos: se mandan en la query, no se muestran */
-const PDF_URLS = [
-  "https://csv-gpt-backend.vercel.app/lexium.pdf",
-  "https://csv-gpt-backend.vercel.app/evaluaciones.pdf"
-];
+  // ==========================
+  // UI refs
+  // ==========================
+  const pregunta = document.getElementById("pregunta");
+  const respuesta = document.getElementById("respuesta");
+  const tablaWrap = document.getElementById("tabla");
+  const btnEnviar = document.getElementById("btnEnviar");
+  const btnMic = document.getElementById("btnMic");
+  const btnExport = document.getElementById("btnExport");
+  const btnStop = document.getElementById("btnStop");
+  const btnClear = document.getElementById("btnClear");
+  const video = document.getElementById("video");
+  const formatSel = document.getElementById("format");
 
-/* ======= TTS ======= */
-let chosenVoice=null;
-const EXEC_PREF=["sabina","dalia","beatriz","abril","camila","lucia"];
-const FEMALE_HINTS=["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
-const MALE_HINTS=["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
-function scoreVoice(v){
-  const n=(v.name||"").toLowerCase(), l=(v.lang||"").toLowerCase();
-  let s=0; if(l.startsWith("es-mx")) s+=100; else if(l.startsWith("es-419")) s+=60; else if(l.startsWith("es")) s+=30;
-  if(EXEC_PREF.some(t=>n.includes(t))) s+=40;
-  if(FEMALE_HINTS.some(t=>n.includes(t))) s+=20;
-  if(/(neural|natural|online)/i.test(n)) s+=25;
-  if(MALE_HINTS.some(t=>n.includes(t))) s-=80;
-  return s;
-}
-function pickExecVoice(){const vs=window.speechSynthesis?.getVoices?.()||[]; if(!vs.length) return null; return vs.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0]||vs[0]}
-function ensureVoice(){if(!chosenVoice) chosenVoice=pickExecVoice()}
-window.speechSynthesis.onvoiceschanged=()=>{chosenVoice=null; ensureVoice()}
-
-const video=document.getElementById("video");
-function speakAuto(text){
-  if(!window.speechSynthesis) return;
-  ensureVoice();
-  const clean=String(text||"").replace(/\*/g,""); // no asteriscos
-  const u=new SpeechSynthesisUtterance(clean);
-  if(chosenVoice) u.voice=chosenVoice;
-  u.lang=chosenVoice?.lang?.startsWith("es")?chosenVoice.lang:"es-MX";
-  u.rate=1.12; u.pitch=1.02; u.volume=1;
-  u.onstart=()=>video?.play?.();
-  u.onend=()=>video?.pause?.();
-  u.onerror=()=>video?.pause?.();
-  window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
-}
-function stopSpeak(){try{window.speechSynthesis?.cancel?.()}catch{} try{video?.pause?.()}catch{}}
-
-/* ======= Mic (dictado) ======= */
-function startListening(){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){alert("Tu navegador no soporta reconocimiento de voz.");return}
-  const rec=new SR(); rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1;
-  rec.onresult=e=>{document.getElementById("pregunta").value=e.results[0][0].transcript; enviarPregunta();}
-  rec.onerror=e=>alert("Error de micrófono: "+e.error);
-  rec.start();
-}
-
-/* ======= Tabla ======= */
-const respuestaEl=document.getElementById("respuesta");
-const tablaWrap=document.getElementById("tablaWrap");
-const tablaEl=document.getElementById("tabla");
-function escapeHtml(s){return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
-function renderTable(rows){
-  if(!rows||rows.length<2) return false;
-  const head=rows[0], body=rows.slice(1);
-  const thead=`<thead><tr>${["#",...head].map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
-  let i=1; const tbody=body.map(r=>`<tr><td>${i++}</td>${r.map(c=>`<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("");
-  tablaEl.innerHTML=thead+`<tbody>${tbody}</tbody>`; tablaWrap.classList.remove("hidden"); return true;
-}
-function parseMarkdownRows(mdLines){
-  const rows=mdLines.map(l=>l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
-  const sep=rows.findIndex(r=>r.every(c=>/^:?-{3,}:?$/.test(c))); if(sep>=0) rows.splice(sep,1); return rows;
-}
-function extractMarkdownTable(text){
-  const lines=text.split(/\r?\n/); const blocks=[]; let cur=[];
-  for(const l of lines){ if(/^\|.*\|$/.test(l.trim())) cur.push(l); else{ if(cur.length>=2) blocks.push(cur.slice()); cur=[]; } }
-  if(cur.length>=2) blocks.push(cur.slice());
-  if(!blocks.length) return {table:null, without:text};
-  const tbl=blocks[0]; const blockText=tbl.join("\n");
-  return {table:tbl, without:text.replace(blockText,"").replace(/\n{3,}/g,"\n\n").trim()};
-}
-
-/* ======= Enviar ======= */
-function cleanSystemNoise(s){
-  return s.replace(/Analizando\s+(?:CSV|PDF).*?\n/gi,"").replace(/Procesando\s+fuentes.*?\n/gi,"").replace(/(Leyendo|Cargando)\s+archivo.*?\n/gi,"");
-}
-async function enviarPregunta(){
-  stopSpeak();
-  const q=(document.getElementById("pregunta").value||"").trim();
-  if(!q){alert("Escribe una pregunta.");return}
-  respuestaEl.textContent="Consultando…"; tablaEl.innerHTML=""; tablaWrap.classList.add("hidden");
-
-  const pdfStr=PDF_URLS.join(",");
-  const url=`${ENDPOINT}?q=${encodeURIComponent(q)}&file=${encodeURIComponent(DEFAULT_CSV)}&${PDF_PARAM_KEY}=${encodeURIComponent(pdfStr)}`;
-  try{
-    const r=await fetch(url); if(!r.ok) throw new Error("HTTP "+r.status);
-    const data=await r.json(); const raw=(data.text||"").trim()||"No se encontró respuesta.";
-    let text=cleanSystemNoise(raw);
-
-    const {table,without}=extractMarkdownTable(text);
-    let hadTable=false;
-    if(table){ hadTable=renderTable(parseMarkdownRows(table)); if(hadTable) text=without; }
-    else{ tablaEl.innerHTML=""; tablaWrap.classList.add("hidden"); }
-
-    respuestaEl.textContent = text || (hadTable ? "" : "Sin contenido.");
-    speakAuto(respuestaEl.textContent); // Voz automática
-  }catch(e){
-    console.error(e); respuestaEl.textContent="No se pudo contactar al servidor.";
+  // ==========================
+  // MEMORIA (oculta)
+  // ==========================
+  const MEMKEY = "ctx:last";
+  function saveCtx(q) {
+    try { localStorage.setItem(MEMKEY, JSON.stringify({ q, ts: Date.now() })); } catch {}
   }
-}
-
-/* ======= Export ======= */
-function currentHTMLContent(){
-  const wrap=document.createElement("div");
-  const h=document.createElement("h2"); h.textContent="Resultado de consulta"; h.style.margin="0 0 10px 0"; wrap.appendChild(h);
-  const p=document.createElement("div"); p.style.whiteSpace="pre-wrap"; p.textContent=(respuestaEl.textContent||"").trim(); if(p.textContent) wrap.appendChild(p);
-  if(!tablaWrap.classList.contains("hidden") && tablaEl.innerHTML.trim()){ const t=tablaEl.cloneNode(true); t.style.width="100%"; t.style.borderCollapse="collapse"; t.querySelectorAll("th,td").forEach(td=>{td.style.border="1px solid #ddd";td.style.padding="6px 8px"}); wrap.appendChild(t); }
-  return wrap;
-}
-function exportPDF(){
-  const w=window.open("","_blank"); const d=w.document;
-  d.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>PDF</title>
-  <style>body{font-family:Inter,Arial;padding:18px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #ddd;padding:6px 8px} thead th{background:#f3f6fb}</style></head><body></body></html>`);
-  d.body.appendChild(currentHTMLContent()); d.close(); w.focus(); w.print();
-}
-function exportDOC(){
-  const tmp=document.createElement("div"); tmp.appendChild(currentHTMLContent());
-  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${tmp.innerHTML}</body></html>`;
-  const blob=new Blob([html],{type:"application/msword"}), url=URL.createObjectURL(blob);
-  const a=document.createElement("a"); a.href=url; a.download="reporte.doc"; a.click(); URL.revokeObjectURL(url);
-}
-function tableToCSV(){
-  if (tablaWrap.classList.contains("hidden") || !tablaEl.querySelector("tr")) return "";
-  const rows=[...tablaEl.querySelectorAll("tr")].map(tr=>[...tr.children].map(td=> td.textContent.replace(/"/g,'""')));
-  return rows.map(r=> r.map(c=>`"${c}"`).join(",")).join("\n");
-}
-function exportCSV(){
-  let out=""; const expl=(respuestaEl.textContent||"").trim();
-  if(expl) out+="# "+expl.replace(/\n/g,"\n# ")+"\n"; out+=tableToCSV();
-  const blob=new Blob([out],{type:"text/csv;charset=utf-8"}), url=URL.createObjectURL(blob);
-  const a=document.createElement("a"); a.href=url; a.download="reporte.csv"; a.click(); URL.revokeObjectURL(url);
-}
-
-/* ======= Eventos ======= */
-document.getElementById("btnEnviar").addEventListener("click", enviarPregunta);
-document.getElementById("btnMic").addEventListener("click", startListening);
-document.getElementById("btnStopVoice").addEventListener("click", stopSpeak);
-document.getElementById("btnClear").addEventListener("click", ()=>{stopSpeak();document.getElementById("pregunta").value="";respuestaEl.textContent="";tablaEl.innerHTML="";tablaWrap.classList.add("hidden")});
-document.getElementById("btnClearMem").addEventListener("click", ()=>{stopSpeak();document.getElementById("pregunta").value="";respuestaEl.textContent="";tablaEl.innerHTML="";tablaWrap.classList.add("hidden");alert("Contexto local limpiado.")});
-document.getElementById("btnExport").addEventListener("click", ()=>{const f=document.getElementById("exportFmt").value; if(f==="pdf") exportPDF(); else if(f==="doc") exportDOC(); else exportCSV();});
-document.getElementById("pregunta").addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)) enviarPregunta()});
-</script>
-
-<script>
-(function(){
-  // === Utilidades ===
-  const norm = s => (s||"").toString().trim().toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-  function hilite(el){ if(!el) return; const prev = el.style.outline; el.style.outline="2px solid #22c55e";
-    setTimeout(()=>{ el.style.outline=prev||""; }, 2000); }
-
-  // === Detectores de elementos ===
-  function pickPregunta(){
-    return document.querySelector('#pregunta') ||
-           document.querySelector('textarea') ||
-           document.querySelector('input[type="text"]');
-  }
-  function pickRespuesta(){
-    return document.querySelector('#respuesta') ||
-           [...document.querySelectorAll('.answer,.card,div,p')].find(el=> norm(el.textContent).includes('aqui aparecera la explicacion')) ||
-           [...document.querySelectorAll('.answer,.card,div')].find(el=> getComputedStyle(el).whiteSpace.includes('pre')) ||
-           document.createElement('div');
-  }
-  function pickBtnEnviar(){
-    const byId = document.querySelector('#btnEnviar');
-    if (byId) return byId;
-    const cands = [...document.querySelectorAll('button,[role="button"]')];
-    return cands.find(b=> norm(b.textContent).includes('enviar')) || null;
-  }
-  function pickBtnMic(){
-    const byId = document.querySelector('#btnMic');
-    if (byId) return byId;
-    const cands = [...document.querySelectorAll('button,[role="button"]')];
-    return cands.find(b=>{
-      const t = norm(b.textContent);
-      return t.includes('voz') || t.includes('micro') || b.textContent.includes('🎤');
-    }) || null;
-  }
-  function pickVideo(){
-    return document.querySelector('#video') || document.querySelector('video') || null;
+  function loadCtx() {
+    try{
+      const raw = localStorage.getItem(MEMKEY);
+      if(!raw) return null;
+      const obj = JSON.parse(raw);
+      if(Date.now() - obj.ts > MEMORY_MS) return null;
+      return obj.q || null;
+    }catch{ return null }
   }
 
-  // === Asegurar IDs estándar ===
-  let pregunta = pickPregunta();
-  if (pregunta && !pregunta.id){ pregunta.id = 'pregunta'; }
-  let respuesta = pickRespuesta();
-  if (respuesta && !respuesta.id){ respuesta.id = 'respuesta'; }
-  let btnEnviar = pickBtnEnviar();
-  if (btnEnviar && !btnEnviar.id){ btnEnviar.id = 'btnEnviar'; }
-  let btnMic = pickBtnMic();
-  if (btnMic && !btnMic.id){ btnMic.id = 'btnMic'; }
-  let video = pickVideo();
-  if (video && !video.id){ video.id = 'video'; }
-
-  // Insertar respuesta si la tuvimos que crear
-  if (!document.getElementById('respuesta')) {
-    respuesta.className = (respuesta.className||'') + ' answer';
-    respuesta.style.whiteSpace = 'pre-wrap';
-    respuesta.textContent = 'Aquí aparecerá la explicación...';
-    const panel = document.querySelector('.panel') || document.body;
-    panel.appendChild(respuesta);
-  }
-
-  // Resaltar lo que detectamos
-  [pregunta, respuesta, btnEnviar, btnMic, video].forEach(hilite);
-
-  // === Voz: seleccionar femenina es-MX y fijarla ===
+  // ==========================
+  // VOZ — TTS (leer) y STT (dictar)
+  // ==========================
+  // --- selector de voz femenina es (persistente + ?voice=)
   const VOICE_WHITELIST = [
     "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
     "Microsoft Sabina - Spanish (Mexico)",
@@ -321,20 +209,21 @@ document.getElementById("pregunta").addEventListener("keydown",e=>{if(e.key==="E
   ];
   const FEMALE_HINTS = ["female","mujer","femenina","dalia","sabina","beatriz","abril","camila","lucia","paola","valentina","monica","paulina"];
   const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos","alonso","manuel"];
-
   let chosenVoice = null;
   function scoreVoice(v){
     const name = (v.name||"").toLowerCase();
     const lang = (v.lang||"").toLowerCase();
-    let s=0;
-    if (lang.startsWith("es-mx")) s+=120; else if (lang.startsWith("es-419")) s+=80; else if (lang.startsWith("es")) s+=50;
-    if (VOICE_WHITELIST.some(t=> name.includes(t.toLowerCase()))) s+=70;
-    if (/(natural|neural|online)/i.test(name)) s+=30;
-    if (FEMALE_HINTS.some(t=> name.includes(t))) s+=40;
-    if (MALE_HINTS.some(t=> name.includes(t))) s-=80;
+    let s = 0;
+    if (lang.startsWith("es-mx")) s += 120;
+    else if (lang.startsWith("es-419")) s += 80;
+    else if (lang.startsWith("es")) s += 50;
+    if (VOICE_WHITELIST.some(t => name.includes(t.toLowerCase()))) s += 70;
+    if (/(natural|neural|online)/i.test(name)) s += 30;
+    if (FEMALE_HINTS.some(t => name.includes(t))) s += 40;
+    if (MALE_HINTS.some(t => name.includes(t))) s -= 80;
     return s;
   }
-  function pickSpanishFemaleVoice(){
+  function pickVoice() {
     const voices = window.speechSynthesis?.getVoices?.() || [];
     if (!voices.length) return null;
     const urlForce = new URLSearchParams(location.search).get("voice");
@@ -344,100 +233,321 @@ document.getElementById("pregunta").addEventListener("keydown",e=>{if(e.key==="E
       const v = voices.find(v => (v.name||"").toLowerCase().includes(target));
       if (v) return v;
     }
-    for (const targetName of VOICE_WHITELIST){
-      const v = voices.find(v => (v.name||"").toLowerCase().includes(targetName.toLowerCase()));
+    for (const t of VOICE_WHITELIST){
+      const v = voices.find(v => (v.name||"").toLowerCase().includes(t.toLowerCase()));
       if (v) return v;
     }
     return voices.slice().sort((a,b)=> scoreVoice(b)-scoreVoice(a))[0] || voices[0];
   }
   function ensureVoiceSelected(){
     if (!chosenVoice){
-      chosenVoice = pickSpanishFemaleVoice();
-      if (chosenVoice){ localStorage.setItem("voiceName", chosenVoice.name); }
+      chosenVoice = pickVoice();
+      if (chosenVoice) localStorage.setItem("voiceName", chosenVoice.name);
     }
   }
-  window.speechSynthesis.onvoiceschanged = () => { chosenVoice=null; ensureVoiceSelected(); };
+  window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
 
-  // Limpiar texto para TTS (sin asteriscos ni markdown)
-  function cleanForTTS(s=""){
-    return String(s)
-      .replace(/\*\*/g,"").replace(/\*/g,"")
-      .replace(/[_`>#]/g,"").replace(/\s{2,}/g," ")
+  function sanitizeSpeakText(t){
+    return String(t||"")
+      .replace(/\*\*/g,"").replace(/\*/g,"") // quita asteriscos
+      .replace(/[_`>#]/g,"")                 // limpia markdown
+      .replace(/\s{2,}/g," ")
       .trim();
   }
-
-  // API global de voz
-  window.speakAuto = function(text){
+  function speakAuto(text){
     if(!window.speechSynthesis) return;
+    stopSpeak();
     ensureVoiceSelected();
-    const clean = cleanForTTS(text||"");
-    if (!clean) return;
-    const vid = document.getElementById('video');
-    const u = new SpeechSynthesisUtterance(clean);
+    const u = new SpeechSynthesisUtterance(sanitizeSpeakText(text));
     if (chosenVoice) u.voice = chosenVoice;
     u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-    u.rate=1.12; u.pitch=1.02; u.volume=1.0;
-    u.onstart = ()=> vid?.play?.();
-    u.onend   = ()=> vid?.pause?.();
-    u.onerror = ()=> vid?.pause?.();
-    try{ window.speechSynthesis.cancel(); }catch{}
+    u.rate = 1.12; u.pitch = 1.02; u.volume = 1.0;
+    u.onstart = ()=> video?.play?.();
+    u.onend   = ()=> video?.pause?.();
+    u.onerror = ()=> video?.pause?.();
     window.speechSynthesis.speak(u);
-  };
-  window.stopSpeak = function(){
-    try{ window.speechSynthesis.cancel(); }catch{}
-    try{ document.getElementById('video')?.pause?.(); }catch{}
-  };
+  }
+  function stopSpeak(){
+    try{ window.speechSynthesis?.cancel?.(); }catch{}
+    try{ video?.pause?.(); }catch{}
+  }
 
-  // === Dictado (🎤) y envío ===
-  function startDictation(targetEl){
+  // Dictado (🎤) → llena la pregunta y envía
+  function startDictation(){
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if(!SR){ alert("Tu navegador no soporta dictado por voz."); return; }
+    if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
     const rec = new SR();
-    rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1;
-    rec.onresult = e => {
-      const t = e.results[0][0].transcript || "";
-      (targetEl||pregunta).value = t;
-      (targetEl||pregunta).dispatchEvent(new Event("input",{bubbles:true}));
-      // intenta enviar automáticamente
-      if (typeof window.enviarPregunta === "function") window.enviarPregunta();
-      else if (btnEnviar) btnEnviar.click();
-      else {
-        // simulamos Enter
-        const ev = new KeyboardEvent("keydown", {key:"Enter", ctrlKey:true, bubbles:true});
-        (targetEl||pregunta).dispatchEvent(ev);
-      }
+    rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
+    rec.onresult = (e)=>{
+      const t = e.results[0][0].transcript;
+      pregunta.value = t;
+      enviarPregunta();
     };
-    rec.onerror = e => console.warn("STT error:", e.error);
+    rec.onerror = (e)=>{
+      alert("Error de micrófono: " + e.error + "\nVe al candado del navegador y permite el micrófono para este sitio.");
+    };
     rec.start();
   }
 
-  if (btnMic && !btnMic.dataset.bound){
-    btnMic.addEventListener('click', ()=> startDictation(pregunta));
-    btnMic.dataset.bound = "1";
+  // ==========================
+  // PDFs (carga oculta → contexto)
+  // ==========================
+  let pdfContextText = "";
+  async function loadPDFText(url){
+    try{
+      const loadingTask = pdfjsLib.getDocument({ url });
+      const pdf = await loadingTask.promise;
+      let all = "";
+      for (let i=1;i<=pdf.numPages;i++){
+        const page = await pdf.getPage(i);
+        const c = await page.getTextContent();
+        const txt = c.items.map(it=> it.str).join(" ");
+        all += txt + "\n";
+        if (all.length > MAX_PDF_TEXT_CHARS) break;
+      }
+      return all.slice(0, MAX_PDF_TEXT_CHARS);
+    }catch(e){
+      console.warn("PDF error", url, e);
+      return "";
+    }
+  }
+  async function preloadPDFs(){
+    const parts = await Promise.all(PDF_URLS.map(loadPDFText));
+    pdfContextText = parts.filter(Boolean).join("\n\n").slice(0, MAX_PDF_TEXT_CHARS);
+  }
+  preloadPDFs(); // silencioso
+
+  // ==========================
+  // Helpers tabla y export
+  // ==========================
+  function escapeHTML(s){ return String(s||"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
+  function parseMarkdownTable(text){
+    const lines = text.split(/\r?\n/).map(l=>l.trim());
+    const md = lines.filter(l => /^\|.*\|$/.test(l));
+    if (md.length < 2) return null;
+    const rows = md.map(l=>{
+      const cells = l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim());
+      return cells;
+    });
+    const sepIdx = rows.findIndex(r => r.every(c => /^:?-{3,}:?$/.test(c)));
+    if (sepIdx >= 0) rows.splice(sepIdx,1);
+    return rows.length >= 2 ? rows : null;
+  }
+  function extractCsvBlock(text){
+    const m = text.match(/```(?:csv)?\s*([\s\S]*?)```/i);
+    return m ? m[1].trim() : null;
+  }
+  function parseDelimited(text){
+    const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+    if (lines.length < 2) return null;
+    const d = [",",";","\t","|"].sort((a,b)=>{
+      const sa = lines.slice(0,10).reduce((acc,l)=> acc + (l.split(a).length-1),0);
+      const sb = lines.slice(0,10).reduce((acc,l)=> acc + (l.split(b).length-1),0);
+      return sb-sa;
+    })[0];
+    const rows = lines.map(l => l.split(d).map(c=>c.trim()));
+    const maxCols = Math.max(...rows.map(r=>r.length));
+    const norm = rows.map(r => {
+      const copy = r.slice(0, maxCols);
+      while(copy.length<maxCols) copy.push("");
+      return copy;
+    });
+    if (maxCols < 2 || norm.length < 2) return null;
+    return norm;
+  }
+  function renderTable(rows){
+    // agrega columna de numeración
+    const head = ["#", ...rows[0]];
+    const body = rows.slice(1);
+    let html = '<table class="data"><thead><tr>';
+    head.forEach(h => html += `<th>${escapeHTML(h)}</th>`);
+    html += '</tr></thead><tbody>';
+    body.forEach((r,i)=>{
+      html += '<tr><td>'+(i+1)+'</td>';
+      r.forEach(c=> html += `<td>${escapeHTML(c)}</td>`);
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+  }
+  function maybeRenderTableFromText(text){
+    tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+    let rows = parseMarkdownTable(text);
+    if (!rows){
+      const csvBlock = extractCsvBlock(text);
+      if (csvBlock) rows = parseDelimited(csvBlock);
+    }
+    if (!rows){
+      rows = parseDelimited(text);
+    }
+    if (rows && rows.length>=2 && rows[0].length>=2){
+      tablaWrap.innerHTML = renderTable(rows);
+      tablaWrap.hidden = false;
+      return true;
+    }
+    return false;
   }
 
-  // === Observa cambios de #respuesta para leer automáticamente (opcional) ===
-  // Si ya tienes tu propia llamada a speakAuto en tu código, puedes comentar este bloque.
-  if (respuesta){
-    let last = "";
-    const debounced = (()=>{ let t; return fn=>{ clearTimeout(t); t=setTimeout(fn,250);} })();
-    new MutationObserver(()=> debounced(()=>{
-      const txt = (respuesta.textContent||"").trim();
-      if (txt && txt !== last){ last = txt; window.speakAuto(txt); }
-    })).observe(respuesta, {childList:true, subtree:true, characterData:true});
+  // export helpers
+  function tableToRows(table){
+    const rows = [];
+    const ths = [...table.querySelectorAll("thead th")].map(th=>th.textContent.trim());
+    rows.push(ths);
+    [...table.querySelectorAll("tbody tr")].forEach(tr=>{
+      const r = [...tr.children].map(td => td.textContent.trim());
+      rows.push(r);
+    });
+    return rows;
+  }
+  function downloadBlob(blob, name){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 100);
+  }
+  function exportPDF(text, table){
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit:"pt", format:"a4" });
+    const margin = 36, width = 523; // 595-2*36
+    let y = margin;
+
+    const txt = (text||"") + (text ? "\n\n" : "");
+    const lines = doc.splitTextToSize(txt, width);
+    if (lines.length){
+      doc.text(lines, margin, y);
+      y += (lines.length * 14) + 12;
+    }
+    if (table){
+      const rows = tableToRows(table);
+      doc.setFont(undefined,"bold");
+      doc.text(rows[0].join("  |  "), margin, y); y+=16;
+      doc.setFont(undefined,"normal");
+      for (let i=1;i<rows.length;i++){
+        const line = doc.splitTextToSize(rows[i].join(" | "), width);
+        if (y + line.length*12 > 800){ doc.addPage(); y = margin; }
+        doc.text(line, margin, y); y += line.length*12 + 8;
+      }
+    }
+    doc.save("reporte.pdf");
+  }
+  function exportDOC(text, table){
+    let html = `<h2>Resultado</h2>`;
+    if (text) html += `<p>${escapeHTML(text).replace(/\n/g,"<br>")}</p>`;
+    if (table) html += table.outerHTML;
+    const blob = new Blob(
+      [`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`],
+      { type: "application/msword" }
+    );
+    downloadBlob(blob, "reporte.doc");
+  }
+  function exportCSV(table, text){
+    let csv = "";
+    if (table){
+      const rows = tableToRows(table);
+      csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    }else{
+      csv = `"Texto"\n"${(text||"").replace(/"/g,'""')}"\n`;
+    }
+    const blob = new Blob([csv], {type: "text/csv;charset=utf-8"});
+    downloadBlob(blob, "reporte.csv");
   }
 
-  // Log de mapeo
-  console.info("IDs fijados:", {
-    pregunta: pregunta?.id, respuesta: respuesta?.id,
-    btnEnviar: btnEnviar?.id, btnMic: btnMic?.id,
-    video: video?.id
+  // ==========================
+  // Lógica de envío y render (sin duplicados)
+  // ==========================
+  function wantsTable(q){
+    const s = (q||"").toLowerCase();
+    return TABLE_WORDS.some(w => s.includes(w));
+  }
+  function cleanResponseText(t){
+    // quita cualquier línea que diga "analizando ..." por si el backend lo incluyera
+    return String(t||"").replace(/^\s*analizando\s+(csv|pdf).*$/gim, "").trim();
+  }
+
+  async function enviarPregunta(){
+    const qRaw = pregunta.value.trim();
+    if(!qRaw) return alert("Escribe una pregunta.");
+    stopSpeak();
+    const forceTable = wantsTable(qRaw);
+
+    respuesta.textContent = "Consultando...";
+    tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+
+    // Adjuntar contexto de PDFs (silencioso)
+    const ctx = pdfContextText ? `\n\nREFERENCIAS (no mostrar):\n${pdfContextText}` : "";
+    saveCtx(qRaw);
+
+    let data = null, lastErr = null;
+    for (const base of API_ENDPOINTS){
+      try{
+        const url = `${base}?q=${encodeURIComponent(qRaw + ctx)}&file=${encodeURIComponent(CSV_FILE)}`;
+        const r = await fetch(url);
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        data = await r.json();
+        break;
+      }catch(e){ lastErr = e; }
+    }
+    if(!data){
+      respuesta.textContent = "No se pudo contactar al servidor.";
+      console.error(lastErr); return;
+    }
+
+    const textRaw = data.text || data.respuesta || "No se encontró respuesta.";
+    const texto = cleanResponseText(textRaw);
+
+    // Mostrar tabla SOLO si el usuario lo pidió (palabras clave)
+    if (forceTable){
+      const ok = maybeRenderTableFromText(texto);
+      if (ok){
+        // no duplicar texto si se presentó tabla
+        respuesta.textContent = "Puede exportar su información.";
+      }else{
+        // el modelo no devolvió tabla: dejamos texto + nota
+        respuesta.textContent = texto + "\n\nPuede exportar su información.";
+      }
+    }else{
+      // Mostrar texto corrido (aunque el modelo haya enviado tabla)
+      respuesta.textContent = texto + "\n\nPuede exportar su información.";
+      tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+    }
+
+    // Leer en voz alta el texto visible (no la tabla cruda)
+    speakAuto(respuesta.textContent || "");
+  }
+
+  // enter para enviar (Shift+Enter hace salto de línea)
+  pregunta.addEventListener("keydown", (e)=>{
+    if(e.key === "Enter" && !e.shiftKey){
+      e.preventDefault();
+      enviarPregunta();
+    }
   });
+  btnEnviar.addEventListener("click", enviarPregunta);
+  btnMic.addEventListener("click", startDictation);
+
+  // Exportar
+  btnExport.addEventListener("click", ()=>{
+    const which = formatSel.value;
+    const table = tablaWrap.hidden ? null : tablaWrap.querySelector("table");
+    // Quitamos la línea final "Puede exportar..." del texto
+    const visibleText = (respuesta.textContent||"").replace(/\s*Puede exportar su información\.\s*$/,"").trim();
+    if (which === "pdf") exportPDF(visibleText, table);
+    else if (which === "doc") exportDOC(visibleText, table);
+    else if (which === "csv") exportCSV(table, visibleText);
+  });
+  btnStop.addEventListener("click", stopSpeak);
+  btnClear.addEventListener("click", ()=>{
+    stopSpeak();
+    pregunta.value = "";
+    respuesta.textContent = "";
+    tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+  });
+
+  // Inicializa voz
+  ensureVoiceSelected();
 })();
 </script>
 
-
-  
-<!-- build: v9-compact -->
 </body>
 </html>
