@@ -13,6 +13,39 @@ const API_KEY =
   process.env.CLAVE_API_DE_OPENAI ||
   process.env["CLAVE API DE OPENAI"];
 
+
+const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
+const format = (req.query.format || "").toString().toLowerCase();
+// ============ FILTRO DE FUENTES ============
+let srcs = req.query.src;
+
+// Si no se recibe 'src', se usa decimo.csv por defecto
+if (!srcs) {
+  const legacy = (req.query.file || req.query.f || "decimo.csv").toString();
+  srcs = [`datos/${legacy}`];
+}
+
+// Asegura que sea un array
+if (!Array.isArray(srcs)) srcs = [srcs];
+
+// Normaliza rutas para evitar '..', '\' o URLs externas
+srcs = srcs.map(s => safePathParam(s));
+
+// 🚫 Lista negra: archivos que no queremos procesar
+const BLOCKLIST = new Set([
+  "documentos/auxiliar.pdf",
+  "/documentos/auxiliar.pdf"
+]);
+
+// Filtra cualquier archivo bloqueado
+srcs = srcs.filter(s => !BLOCKLIST.has(s));
+
+// 👀 Log para depurar en Vercel (Functions → /api/ask → Recent Logs)
+console.log("Fuentes filtradas:", srcs);
+// ===========================================
+
+
+
 const CACHE_MS = 5 * 60 * 1000;
 const cache = new Map(); // url -> { ts, text }
 
