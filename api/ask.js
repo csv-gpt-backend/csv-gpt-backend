@@ -3,49 +3,18 @@
 // Acepta varios ?src=... (p.ej., src=datos/decimo.csv&src=documentos/LEXIUM.pdf)
 // Si no hay src, usa datos/decimo.csv.
 // Devuelve texto (para voz) o JSON con ?format=json.
-// ds
-    
+
 export const config = { runtime: "nodejs" }; // asegurar Node en Vercel
 
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+// ===== Modelo y clave =====
+const MODEL = process.env.OPENAI_MODEL || "gpt-5.1"; // usa tu GPT-5
 const API_KEY =
   process.env.OPENAI_API_KEY ||
   process.env.CLAVE_API_DE_OPENAI ||
-  process.env["CLAVE API DE OPENAI"];
+  process.env["CLAVE API DE OPENAI"] ||
+  process.env["CLAVE API DE APERTURA"]; // <- tu variable previa
 
-
-const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
-const format = (req.query.format || "").toString().toLowerCase();
-// ============ FILTRO DE FUENTES ============
-let srcs = req.query.src;
-
-// Si no se recibe 'src', se usa decimo.csv por defecto
-if (!srcs) {
-  const legacy = (req.query.file || req.query.f || "decimo.csv").toString();
-  srcs = [`datos/${legacy}`];
-}
-
-// Asegura que sea un array
-if (!Array.isArray(srcs)) srcs = [srcs];
-
-// Normaliza rutas para evitar '..', '\' o URLs externas
-srcs = srcs.map(s => safePathParam(s));
-
-// 🚫 Lista negra: archivos que no queremos procesar
-const BLOCKLIST = new Set([
-  "documentos/auxiliar.pdf",
-  "/documentos/auxiliar.pdf"
-]);
-
-// Filtra cualquier archivo bloqueado
-srcs = srcs.filter(s => !BLOCKLIST.has(s));
-
-// 👀 Log para depurar en Vercel (Functions → /api/ask → Recent Logs)
-console.log("Fuentes filtradas:", srcs);
-// ===========================================
-
-
-
+// ===== Cache simple =====
 const CACHE_MS = 5 * 60 * 1000;
 const cache = new Map(); // url -> { ts, text }
 
@@ -54,7 +23,7 @@ async function loadPdfParse() {
   if (pdfParseModule !== undefined) return pdfParseModule;
   try {
     const mod = await import("pdf-parse"); // dynamic optional
-    pdfParseModule = mod.default || mod;
+    pdfParseModule = mod?.default || mod;
   } catch {
     pdfParseModule = null; // seguirá funcionando sin PDF-parse
   }
@@ -68,11 +37,11 @@ function safePathParam(s, def = "datos/decimo.csv") {
   x = x.replace(/^\/+/, ""); // sin slash inicial
   return x;
 }
-
 function extOf(path) {
   return (path.split(".").pop() || "").toLowerCase();
 }
 
+// Lee texto desde /public (CSV o PDF). Cachea y maneja PDFs opcionalmente.
 async function getTextFromPublicUrl(publicUrl) {
   const hit = cache.get(publicUrl);
   const now = Date.now();
@@ -93,9 +62,7 @@ async function getTextFromPublicUrl(publicUrl) {
       const buf = Buffer.from(ab);
       const parsed = await mod(buf).catch(() => ({ text: "" }));
       text = (parsed.text || "").trim();
-      if (!text) {
-        text = "[No se pudo extraer texto del PDF (¿escaneado/imagen?).]";
-      }
+      if (!text) text = "[No se pudo extraer texto del PDF (¿escaneado/imagen?).]";
     }
   } else {
     text = await r.text(); // CSV/Texto
@@ -113,7 +80,7 @@ function detectDelim(firstLine) {
   return ",";
 }
 
-// --- Prompts
+// --- Prompts (texto)
 function systemPromptText() {
   return [
     "Eres una asesora educativa clara y ejecutiva (español México).",
@@ -128,7 +95,6 @@ function systemPromptText() {
     "7) Extensión ~150–180 palabras, español (MX).",
   ].join(" ");
 }
-
 function userPromptText(query, sourcesText) {
   const blocks = sourcesText
     .map((s, i) => {
@@ -154,6 +120,7 @@ function userPromptText(query, sourcesText) {
   ].join("\n");
 }
 
+// --- Prompts (JSON)
 function systemPromptJSON() {
   return [
     "Eres una asesora educativa clara y ejecutiva (español México).",
@@ -161,7 +128,6 @@ function systemPromptJSON() {
     "diagnostico, fortalezas, oportunidades, recomendaciones_corto_plazo, recomendaciones_mediano_plazo, riesgos.",
   ].join(" ");
 }
-
 function userPromptJSON(query, sourcesText) {
   const blocks = sourcesText
     .map((s, i) => {
@@ -183,7 +149,7 @@ function userPromptJSON(query, sourcesText) {
 
 async function callOpenAI(messages, forceJson = false) {
   if (!API_KEY) {
-    return { ok: false, text: "Falta configurar OPENAI_API_KEY en Vercel." };
+    return { ok: false, text: "Falta configurar la clave de OpenAI en el servidor." };
   }
   const body = { model: MODEL, messages, temperature: 0.35 };
   if (forceJson) body.response_format = { type: "json_object" };
@@ -202,12 +168,13 @@ async function callOpenAI(messages, forceJson = false) {
   return { ok: true, text };
 }
 
-// --- Handler
+// --- Handler principal ---
 export default async function handler(req, res) {
   try {
     const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
     const format = (req.query.format || "").toString().toLowerCase(); // "json" | ""
 
+    // ============ FILTRO DE FUENTES ============
     let srcs = req.query.src;
     if (!srcs) {
       const legacy = (req.query.file || req.query.f || "decimo.csv").toString();
@@ -215,18 +182,49 @@ export default async function handler(req, res) {
     }
     if (!Array.isArray(srcs)) srcs = [srcs];
 
+    // Normaliza y bloquea rutas no deseadas
+    srcs = srcs.map(s => safePathParam(s));
+    const BLOCKLIST = new Set([
+      "documentos/auxiliar.pdf",
+      "/documentos/auxiliar.pdf",
+    ]);
+    srcs = srcs.filter(s => !BLOCKLIST.has(s));
+
+    // Construye URLs públicas y carga texto, pero si una falla la salta
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers.host;
 
     const sourcesText = [];
-    for (const raw of srcs) {
-      const p = safePathParam(raw);
+    const skipped = [];
+    for (const p of srcs) {
       const publicUrl = `${proto}://${host}/${encodeURI(p)}`;
-      const t = await getTextFromPublicUrl(publicUrl); // puede lanzar si 404
-      const type = extOf(p) === "pdf" ? "pdf" : "csv";
-      sourcesText.push({ label: p, type, text: t });
+      try {
+        const t = await getTextFromPublicUrl(publicUrl); // puede lanzar si 404
+        const type = extOf(p) === "pdf" ? "pdf" : "csv";
+        sourcesText.push({ label: p, type, text: t });
+      } catch (err) {
+        skipped.push(`${p} (${String(err?.message || err)})`);
+      }
     }
 
+    // Si no quedó ninguna fuente válida, devolvemos explicación amable
+    if (!sourcesText.length) {
+      return res.status(200).json({
+        ok: false,
+        text: `No encontré fuentes válidas: ${skipped.join(" | ")}`,
+        fuentes: srcs,
+        formato: format || "texto",
+      });
+    }
+
+    // Modo ping rápido (para probar sin gastar tokens)
+    if (q.toLowerCase() === "ping") {
+      return res.status(200).json({
+        ok: true, text: "pong", fuentes: srcs, formato: "texto", omitidas: skipped
+      });
+    }
+
+    // Arma mensajes para OpenAI
     let messages, forceJson = false;
     if (format === "json") {
       messages = [
@@ -241,18 +239,20 @@ export default async function handler(req, res) {
       ];
     }
 
+    // Llama a OpenAI
     const ai = await callOpenAI(messages, forceJson);
 
+    // Respuesta final
     return res.status(200).json({
+      ok: ai.ok !== false,
       text: ai.text,
       fuentes: srcs,
+      omitidas: skipped,       // útil para depurar si se saltó algo
       formato: format || "texto",
     });
   } catch (e) {
-    console.error(e);
-    // Regresa 200 con explicación para que el front no muestre el genérico
-    return res
-      .status(200)
-      .json({ text: `Error interno al preparar fuentes: ${String(e)}` });
+    console.error("Error interno en /api/ask:", e);
+    // Regresa 200 con explicación para que el front no muestre un genérico
+    return res.status(200).json({ ok: false, text: `Error interno: ${String(e)}` });
   }
 }
