@@ -4,25 +4,7 @@
 // Si no hay src, usa datos/decimo.csv.
 // Devuelve texto (para voz) o JSON con ?format=json.
 // ds
-    let srcs = req.query.src;
-    if (!srcs) {
-      const legacy = (req.query.file || req.query.f || "decimo.csv").toString();
-      srcs = [`datos/${legacy}`];
-    }
-    if (!Array.isArray(srcs)) srcs = [srcs];
-
-    // 🔹 Normaliza rutas
-    srcs = srcs.map(s => safePathParam(s));
-
-    // 🔹 Lista negra: aquí definimos lo que NO queremos procesar
-    const BLOCKLIST = new Set(["documentos/auxiliar.pdf", "/documentos/auxiliar.pdf"]);
-
-    // 🔹 Filtra todo lo que esté en la lista negra
-    srcs = srcs.filter(s => !BLOCKLIST.has(s));
-
-    // 👀 Para depuración: ver en logs qué fuentes quedaron activas
-    console.log("Fuentes filtradas:", srcs);
-
+    
 export const config = { runtime: "nodejs" }; // asegurar Node en Vercel
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
