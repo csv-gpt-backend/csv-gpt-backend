@@ -1,252 +1,187 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<meta http-equiv="Cache-Control" content="no-store, max-age=0"/>
-<title>Consulta Educativa</title>
-<style>
-  :root{
-    --accent:#0b72e7; --border:#e6e8ee; --muted:#6b7280;
-    --shadow:0 6px 24px rgba(16,24,40,.08); --thead:#f3f6fb;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:#fff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;color:#111827}
-
-  /* Riel 25/50/25 con logos y video centrados verticalmente */
-  .header-rail{display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 12px 0}
-  .header-rail .col{display:flex;align-items:center;justify-content:center}
-  .header-rail .left,.header-rail .right{flex:0 0 25%}
-  .header-rail .center{flex:0 0 50%}
-  .header-rail img{max-height:120px;max-width:85%;object-fit:contain;display:block}
-  .header-rail .center video{
-    width:100%;height:auto;max-width:880px;border-radius:14px;box-shadow:var(--shadow)
-  }
-
-  .panel{max-width:1180px;margin:14px auto 20px;padding:0 14px}
-  .askrow{display:flex;gap:10px;align-items:flex-start}
-  .askbox{flex:1;border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:#fff}
-  .askbox textarea{width:100%;min-height:70px;max-height:140px;resize:vertical;border:0;outline:0;font-size:16px;line-height:1.35}
-  .btn{border:0;border-radius:12px;cursor:pointer;font-weight:600;background:var(--accent);color:#fff;padding:10px 16px}
-  .btn:hover{filter:brightness(.96)}
-  .btn-voice{display:flex;align-items:center;gap:8px;font-size:18px;padding:12px 18px;border-radius:14px}
-  .btn-ghost{background:#eef3fe;color:#0b62de}
-  .btn-danger{background:#fef1f2;color:#c1121f}
-  .icon{font-size:22px}
-
-  .card{background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:14px;margin-top:12px}
-  .answer{white-space:pre-wrap;line-height:1.5}
-
-  .table-wrap{margin-top:12px;overflow:auto;border:1px solid var(--border);border-radius:14px;background:#fff}
-  table.data{width:100%;border-collapse:collapse;font-size:15px}
-  table.data thead th{position:sticky;top:0;background:var(--thead);border-bottom:1px solid var(--border);text-align:left;padding:10px;font-weight:700;white-space:nowrap}
-  table.data tbody td{border-top:1px solid var(--border);padding:9px 10px;vertical-align:top}
-  table.data tbody tr:nth-child(odd){background:#fafbfe}
-
-  .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
-  .select{border:1px solid var(--border);border-radius:10px;padding:9px 10px;background:#fff}
-  .muted{color:var(--muted);font-size:13px}
-  .hidden{display:none!important}
-
-  @media (max-width:920px){
-    .header-rail .left,.header-rail .right{display:none}
-    .header-rail .center{flex:1 1 auto}
-  }
-</style>
-</head>
-<body>
-
-  <div class="header-rail">
-    <div class="col left"><img src="/left.png" alt="SANTILLANA"></div>
-    <div class="col center">
-      <video id="video" muted playsinline preload="metadata">
-        <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
-        Tu navegador no soporta video.
-      </video>
-    </div>
-    <div class="col right"><img src="/right.png" alt="COMPARTIR"></div>
-  </div>
-
-  <div class="panel">
-    <div class="askrow">
-      <div class="askbox"><textarea id="pregunta" placeholder=""></textarea></div>
-      <button class="btn" id="btnEnviar">Enviar</button>
-      <button class="btn btn-voice" id="btnMic"><span class="icon">🎤</span>Voz</button>
-    </div>
-
-    <div id="respuesta" class="card answer">Aquí aparecerá la explicación...</div>
-
-    <div id="tablaWrap" class="table-wrap hidden">
-      <table id="tabla" class="data"></table>
-    </div>
-
-    <div class="actions">
-      <select id="exportFmt" class="select">
-        <option value="pdf">Exportar PDF</option>
-        <option value="doc">Exportar Word (.doc)</option>
-        <option value="csv">Exportar Excel (CSV)</option>
-      </select>
-      <button class="btn" id="btnExport">Exportar</button>
-      <button class="btn btn-ghost" id="btnStopVoice">Detener voz</button>
-      <button class="btn btn-ghost" id="btnClear">Limpiar</button>
-      <button class="btn btn-danger" id="btnClearMem">Borrar memoria</button>
-      <span class="muted">La memoria se conserva ~10 minutos.</span>
-    </div>
-  </div>
-
 <script>
-/* ======= CONFIG ======= */
-const ENDPOINT = "/api/ask";
-const DEFAULT_CSV = "decimo.csv";
+(function(){
+  // === Utilidades ===
+  const norm = s => (s||"").toString().trim().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  function hilite(el){ if(!el) return; const prev = el.style.outline; el.style.outline="2px solid #22c55e";
+    setTimeout(()=>{ el.style.outline=prev||""; }, 2000); }
 
-/* Si tu backend usa otra clave para PDFs, cámbiala aquí */
-const PDF_PARAM_KEY = "pdfs";
-
-/* PDFs ocultos: se mandan en la query, no se muestran */
-const PDF_URLS = [
-  "https://csv-gpt-backend.vercel.app/lexium.pdf",
-  "https://csv-gpt-backend.vercel.app/evaluaciones.pdf"
-];
-
-/* ======= TTS ======= */
-let chosenVoice=null;
-const EXEC_PREF=["sabina","dalia","beatriz","abril","camila","lucia"];
-const FEMALE_HINTS=["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
-const MALE_HINTS=["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
-function scoreVoice(v){
-  const n=(v.name||"").toLowerCase(), l=(v.lang||"").toLowerCase();
-  let s=0; if(l.startsWith("es-mx")) s+=100; else if(l.startsWith("es-419")) s+=60; else if(l.startsWith("es")) s+=30;
-  if(EXEC_PREF.some(t=>n.includes(t))) s+=40;
-  if(FEMALE_HINTS.some(t=>n.includes(t))) s+=20;
-  if(/(neural|natural|online)/i.test(n)) s+=25;
-  if(MALE_HINTS.some(t=>n.includes(t))) s-=80;
-  return s;
-}
-function pickExecVoice(){const vs=window.speechSynthesis?.getVoices?.()||[]; if(!vs.length) return null; return vs.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0]||vs[0]}
-function ensureVoice(){if(!chosenVoice) chosenVoice=pickExecVoice()}
-window.speechSynthesis.onvoiceschanged=()=>{chosenVoice=null; ensureVoice()}
-
-const video=document.getElementById("video");
-function speakAuto(text){
-  if(!window.speechSynthesis) return;
-  ensureVoice();
-  const clean=String(text||"").replace(/\*/g,""); // no asteriscos
-  const u=new SpeechSynthesisUtterance(clean);
-  if(chosenVoice) u.voice=chosenVoice;
-  u.lang=chosenVoice?.lang?.startsWith("es")?chosenVoice.lang:"es-MX";
-  u.rate=1.12; u.pitch=1.02; u.volume=1;
-  u.onstart=()=>video?.play?.();
-  u.onend=()=>video?.pause?.();
-  u.onerror=()=>video?.pause?.();
-  window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
-}
-function stopSpeak(){try{window.speechSynthesis?.cancel?.()}catch{} try{video?.pause?.()}catch{}}
-
-/* ======= Mic (dictado) ======= */
-function startListening(){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){alert("Tu navegador no soporta reconocimiento de voz.");return}
-  const rec=new SR(); rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1;
-  rec.onresult=e=>{document.getElementById("pregunta").value=e.results[0][0].transcript; enviarPregunta();}
-  rec.onerror=e=>alert("Error de micrófono: "+e.error);
-  rec.start();
-}
-
-/* ======= Tabla ======= */
-const respuestaEl=document.getElementById("respuesta");
-const tablaWrap=document.getElementById("tablaWrap");
-const tablaEl=document.getElementById("tabla");
-function escapeHtml(s){return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
-function renderTable(rows){
-  if(!rows||rows.length<2) return false;
-  const head=rows[0], body=rows.slice(1);
-  const thead=`<thead><tr>${["#",...head].map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
-  let i=1; const tbody=body.map(r=>`<tr><td>${i++}</td>${r.map(c=>`<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("");
-  tablaEl.innerHTML=thead+`<tbody>${tbody}</tbody>`; tablaWrap.classList.remove("hidden"); return true;
-}
-function parseMarkdownRows(mdLines){
-  const rows=mdLines.map(l=>l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
-  const sep=rows.findIndex(r=>r.every(c=>/^:?-{3,}:?$/.test(c))); if(sep>=0) rows.splice(sep,1); return rows;
-}
-function extractMarkdownTable(text){
-  const lines=text.split(/\r?\n/); const blocks=[]; let cur=[];
-  for(const l of lines){ if(/^\|.*\|$/.test(l.trim())) cur.push(l); else{ if(cur.length>=2) blocks.push(cur.slice()); cur=[]; } }
-  if(cur.length>=2) blocks.push(cur.slice());
-  if(!blocks.length) return {table:null, without:text};
-  const tbl=blocks[0]; const blockText=tbl.join("\n");
-  return {table:tbl, without:text.replace(blockText,"").replace(/\n{3,}/g,"\n\n").trim()};
-}
-
-/* ======= Enviar ======= */
-function cleanSystemNoise(s){
-  return s.replace(/Analizando\s+(?:CSV|PDF).*?\n/gi,"").replace(/Procesando\s+fuentes.*?\n/gi,"").replace(/(Leyendo|Cargando)\s+archivo.*?\n/gi,"");
-}
-async function enviarPregunta(){
-  stopSpeak();
-  const q=(document.getElementById("pregunta").value||"").trim();
-  if(!q){alert("Escribe una pregunta.");return}
-  respuestaEl.textContent="Consultando…"; tablaEl.innerHTML=""; tablaWrap.classList.add("hidden");
-
-  const pdfStr=PDF_URLS.join(",");
-  const url=`${ENDPOINT}?q=${encodeURIComponent(q)}&file=${encodeURIComponent(DEFAULT_CSV)}&${PDF_PARAM_KEY}=${encodeURIComponent(pdfStr)}`;
-  try{
-    const r=await fetch(url); if(!r.ok) throw new Error("HTTP "+r.status);
-    const data=await r.json(); const raw=(data.text||"").trim()||"No se encontró respuesta.";
-    let text=cleanSystemNoise(raw);
-
-    const {table,without}=extractMarkdownTable(text);
-    let hadTable=false;
-    if(table){ hadTable=renderTable(parseMarkdownRows(table)); if(hadTable) text=without; }
-    else{ tablaEl.innerHTML=""; tablaWrap.classList.add("hidden"); }
-
-    respuestaEl.textContent = text || (hadTable ? "" : "Sin contenido.");
-    speakAuto(respuestaEl.textContent); // Voz automática
-  }catch(e){
-    console.error(e); respuestaEl.textContent="No se pudo contactar al servidor.";
+  // === Detectores de elementos ===
+  function pickPregunta(){
+    return document.querySelector('#pregunta') ||
+           document.querySelector('textarea') ||
+           document.querySelector('input[type="text"]');
   }
-}
+  function pickRespuesta(){
+    return document.querySelector('#respuesta') ||
+           [...document.querySelectorAll('.answer,.card,div,p')].find(el=> norm(el.textContent).includes('aqui aparecera la explicacion')) ||
+           [...document.querySelectorAll('.answer,.card,div')].find(el=> getComputedStyle(el).whiteSpace.includes('pre')) ||
+           document.createElement('div');
+  }
+  function pickBtnEnviar(){
+    const byId = document.querySelector('#btnEnviar');
+    if (byId) return byId;
+    const cands = [...document.querySelectorAll('button,[role="button"]')];
+    return cands.find(b=> norm(b.textContent).includes('enviar')) || null;
+  }
+  function pickBtnMic(){
+    const byId = document.querySelector('#btnMic');
+    if (byId) return byId;
+    const cands = [...document.querySelectorAll('button,[role="button"]')];
+    return cands.find(b=>{
+      const t = norm(b.textContent);
+      return t.includes('voz') || t.includes('micro') || b.textContent.includes('🎤');
+    }) || null;
+  }
+  function pickVideo(){
+    return document.querySelector('#video') || document.querySelector('video') || null;
+  }
 
-/* ======= Export ======= */
-function currentHTMLContent(){
-  const wrap=document.createElement("div");
-  const h=document.createElement("h2"); h.textContent="Resultado de consulta"; h.style.margin="0 0 10px 0"; wrap.appendChild(h);
-  const p=document.createElement("div"); p.style.whiteSpace="pre-wrap"; p.textContent=(respuestaEl.textContent||"").trim(); if(p.textContent) wrap.appendChild(p);
-  if(!tablaWrap.classList.contains("hidden") && tablaEl.innerHTML.trim()){ const t=tablaEl.cloneNode(true); t.style.width="100%"; t.style.borderCollapse="collapse"; t.querySelectorAll("th,td").forEach(td=>{td.style.border="1px solid #ddd";td.style.padding="6px 8px"}); wrap.appendChild(t); }
-  return wrap;
-}
-function exportPDF(){
-  const w=window.open("","_blank"); const d=w.document;
-  d.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>PDF</title>
-  <style>body{font-family:Inter,Arial;padding:18px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #ddd;padding:6px 8px} thead th{background:#f3f6fb}</style></head><body></body></html>`);
-  d.body.appendChild(currentHTMLContent()); d.close(); w.focus(); w.print();
-}
-function exportDOC(){
-  const tmp=document.createElement("div"); tmp.appendChild(currentHTMLContent());
-  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${tmp.innerHTML}</body></html>`;
-  const blob=new Blob([html],{type:"application/msword"}), url=URL.createObjectURL(blob);
-  const a=document.createElement("a"); a.href=url; a.download="reporte.doc"; a.click(); URL.revokeObjectURL(url);
-}
-function tableToCSV(){
-  if (tablaWrap.classList.contains("hidden") || !tablaEl.querySelector("tr")) return "";
-  const rows=[...tablaEl.querySelectorAll("tr")].map(tr=>[...tr.children].map(td=> td.textContent.replace(/"/g,'""')));
-  return rows.map(r=> r.map(c=>`"${c}"`).join(",")).join("\n");
-}
-function exportCSV(){
-  let out=""; const expl=(respuestaEl.textContent||"").trim();
-  if(expl) out+="# "+expl.replace(/\n/g,"\n# ")+"\n"; out+=tableToCSV();
-  const blob=new Blob([out],{type:"text/csv;charset=utf-8"}), url=URL.createObjectURL(blob);
-  const a=document.createElement("a"); a.href=url; a.download="reporte.csv"; a.click(); URL.revokeObjectURL(url);
-}
+  // === Asegurar IDs estándar ===
+  let pregunta = pickPregunta();
+  if (pregunta && !pregunta.id){ pregunta.id = 'pregunta'; }
+  let respuesta = pickRespuesta();
+  if (respuesta && !respuesta.id){ respuesta.id = 'respuesta'; }
+  let btnEnviar = pickBtnEnviar();
+  if (btnEnviar && !btnEnviar.id){ btnEnviar.id = 'btnEnviar'; }
+  let btnMic = pickBtnMic();
+  if (btnMic && !btnMic.id){ btnMic.id = 'btnMic'; }
+  let video = pickVideo();
+  if (video && !video.id){ video.id = 'video'; }
 
-/* ======= Eventos ======= */
-document.getElementById("btnEnviar").addEventListener("click", enviarPregunta);
-document.getElementById("btnMic").addEventListener("click", startListening);
-document.getElementById("btnStopVoice").addEventListener("click", stopSpeak);
-document.getElementById("btnClear").addEventListener("click", ()=>{stopSpeak();document.getElementById("pregunta").value="";respuestaEl.textContent="";tablaEl.innerHTML="";tablaWrap.classList.add("hidden")});
-document.getElementById("btnClearMem").addEventListener("click", ()=>{stopSpeak();document.getElementById("pregunta").value="";respuestaEl.textContent="";tablaEl.innerHTML="";tablaWrap.classList.add("hidden");alert("Contexto local limpiado.")});
-document.getElementById("btnExport").addEventListener("click", ()=>{const f=document.getElementById("exportFmt").value; if(f==="pdf") exportPDF(); else if(f==="doc") exportDOC(); else exportCSV();});
-document.getElementById("pregunta").addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)) enviarPregunta()});
+  // Insertar respuesta si la tuvimos que crear
+  if (!document.getElementById('respuesta')) {
+    respuesta.className = (respuesta.className||'') + ' answer';
+    respuesta.style.whiteSpace = 'pre-wrap';
+    respuesta.textContent = 'Aquí aparecerá la explicación...';
+    const panel = document.querySelector('.panel') || document.body;
+    panel.appendChild(respuesta);
+  }
+
+  // Resaltar lo que detectamos
+  [pregunta, respuesta, btnEnviar, btnMic, video].forEach(hilite);
+
+  // === Voz: seleccionar femenina es-MX y fijarla ===
+  const VOICE_WHITELIST = [
+    "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
+    "Microsoft Sabina - Spanish (Mexico)",
+    "Google español (Latinoamérica)",
+    "Google español de Estados Unidos",
+    "Dalia","Sabina","Beatriz","Abril","Camila","Lucia","Paulina","Monica","Lupe"
+  ];
+  const FEMALE_HINTS = ["female","mujer","femenina","dalia","sabina","beatriz","abril","camila","lucia","paola","valentina","monica","paulina"];
+  const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos","alonso","manuel"];
+
+  let chosenVoice = null;
+  function scoreVoice(v){
+    const name = (v.name||"").toLowerCase();
+    const lang = (v.lang||"").toLowerCase();
+    let s=0;
+    if (lang.startsWith("es-mx")) s+=120; else if (lang.startsWith("es-419")) s+=80; else if (lang.startsWith("es")) s+=50;
+    if (VOICE_WHITELIST.some(t=> name.includes(t.toLowerCase()))) s+=70;
+    if (/(natural|neural|online)/i.test(name)) s+=30;
+    if (FEMALE_HINTS.some(t=> name.includes(t))) s+=40;
+    if (MALE_HINTS.some(t=> name.includes(t))) s-=80;
+    return s;
+  }
+  function pickSpanishFemaleVoice(){
+    const voices = window.speechSynthesis?.getVoices?.() || [];
+    if (!voices.length) return null;
+    const urlForce = new URLSearchParams(location.search).get("voice");
+    const saved = localStorage.getItem("voiceName");
+    const target = (urlForce || saved || "").toLowerCase();
+    if (target){
+      const v = voices.find(v => (v.name||"").toLowerCase().includes(target));
+      if (v) return v;
+    }
+    for (const targetName of VOICE_WHITELIST){
+      const v = voices.find(v => (v.name||"").toLowerCase().includes(targetName.toLowerCase()));
+      if (v) return v;
+    }
+    return voices.slice().sort((a,b)=> scoreVoice(b)-scoreVoice(a))[0] || voices[0];
+  }
+  function ensureVoiceSelected(){
+    if (!chosenVoice){
+      chosenVoice = pickSpanishFemaleVoice();
+      if (chosenVoice){ localStorage.setItem("voiceName", chosenVoice.name); }
+    }
+  }
+  window.speechSynthesis.onvoiceschanged = () => { chosenVoice=null; ensureVoiceSelected(); };
+
+  // Limpiar texto para TTS (sin asteriscos ni markdown)
+  function cleanForTTS(s=""){
+    return String(s)
+      .replace(/\*\*/g,"").replace(/\*/g,"")
+      .replace(/[_`>#]/g,"").replace(/\s{2,}/g," ")
+      .trim();
+  }
+
+  // API global de voz
+  window.speakAuto = function(text){
+    if(!window.speechSynthesis) return;
+    ensureVoiceSelected();
+    const clean = cleanForTTS(text||"");
+    if (!clean) return;
+    const vid = document.getElementById('video');
+    const u = new SpeechSynthesisUtterance(clean);
+    if (chosenVoice) u.voice = chosenVoice;
+    u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
+    u.rate=1.12; u.pitch=1.02; u.volume=1.0;
+    u.onstart = ()=> vid?.play?.();
+    u.onend   = ()=> vid?.pause?.();
+    u.onerror = ()=> vid?.pause?.();
+    try{ window.speechSynthesis.cancel(); }catch{}
+    window.speechSynthesis.speak(u);
+  };
+  window.stopSpeak = function(){
+    try{ window.speechSynthesis.cancel(); }catch{}
+    try{ document.getElementById('video')?.pause?.(); }catch{}
+  };
+
+  // === Dictado (🎤) y envío ===
+  function startDictation(targetEl){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR){ alert("Tu navegador no soporta dictado por voz."); return; }
+    const rec = new SR();
+    rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1;
+    rec.onresult = e => {
+      const t = e.results[0][0].transcript || "";
+      (targetEl||pregunta).value = t;
+      (targetEl||pregunta).dispatchEvent(new Event("input",{bubbles:true}));
+      // intenta enviar automáticamente
+      if (typeof window.enviarPregunta === "function") window.enviarPregunta();
+      else if (btnEnviar) btnEnviar.click();
+      else {
+        // simulamos Enter
+        const ev = new KeyboardEvent("keydown", {key:"Enter", ctrlKey:true, bubbles:true});
+        (targetEl||pregunta).dispatchEvent(ev);
+      }
+    };
+    rec.onerror = e => console.warn("STT error:", e.error);
+    rec.start();
+  }
+
+  if (btnMic && !btnMic.dataset.bound){
+    btnMic.addEventListener('click', ()=> startDictation(pregunta));
+    btnMic.dataset.bound = "1";
+  }
+
+  // === Observa cambios de #respuesta para leer automáticamente (opcional) ===
+  // Si ya tienes tu propia llamada a speakAuto en tu código, puedes comentar este bloque.
+  if (respuesta){
+    let last = "";
+    const debounced = (()=>{ let t; return fn=>{ clearTimeout(t); t=setTimeout(fn,250);} })();
+    new MutationObserver(()=> debounced(()=>{
+      const txt = (respuesta.textContent||"").trim();
+      if (txt && txt !== last){ last = txt; window.speakAuto(txt); }
+    })).observe(respuesta, {childList:true, subtree:true, characterData:true});
+  }
+
+  // Log de mapeo
+  console.info("IDs fijados:", {
+    pregunta: pregunta?.id, respuesta: respuesta?.id,
+    btnEnviar: btnEnviar?.id, btnMic: btnMic?.id,
+    video: video?.id
+  });
+})();
 </script>
-<!-- build: v9-compact -->
-</body>
-</html>
