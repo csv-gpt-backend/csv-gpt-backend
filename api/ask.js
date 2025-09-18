@@ -1,239 +1,203 @@
-// /api/inspect.js — Diagnóstico de columnas y mapeo (sin GPT)
-// Lee /datos/<file>.csv por URL pública del mismo host, detecta delimitador,
-// normaliza encabezados a canónicos, y calcula estadísticas por columna.
+// /api/ask.js
+// Lee el CSV /public/datos/<file>.csv (cache 5 min), agrega texto de PDFs predefinidos,
+// maneja memoria (10 min) y consulta OpenAI. Devuelve texto final listo para leer.
+// Requiere: OPENAI_API_KEY (y opcional OPENAI_MODEL).
 
-const CACHE_MS = 5 * 60 * 1000;
-const csvCache = new Map(); // url -> { ts, text }
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const API_KEY =
+  process.env.OPENAI_API_KEY ||
+  process.env.CLAVE_API_DE_OPENAI ||
+  process.env["CLAVE API DE OPENAI"];
 
-// ======= Esquema canónico (tu lista exacta) =======
-const CANON = [
-  "NOMBRE","EDAD","CURSO","PARALELO",
-  "AUTOESTIMA","MANEJO DE LA TENSIÓN","BIENESTAR FÍSICO",
-  "PROMEDIO DE HABILIDADES INTRAPERSONALES",
-  "ASERTIVIDAD","CONCIENCIA DE LOS DEMÁS","EMPATÍA",
-  "PROMEDIO DE HABILIDADES INTERPERSONALES",
-  "MOTIVACIÓN","COMPROMISO","ADMINISTRACIÓN DEL TIEMPO",
-  "TOMA DE DECISIONES","LIDERAZGO",
-  "PROMEDIO DE HABILIDADES PARA LA VIDA",
-  "PROMEDIO DE INTELIGENCIA EMOCIONAL",
-  "AGRESIÓN","TIMIDEZ","PROPENSIÓN AL CAMBIO",
+// PDFs “ocultos” que se analizarán automáticamente:
+const PDF_URLS = [
+  process.env.PDF_LEXIUM_URL || "https://csv-gpt-backend.vercel.app/lexium.pdf",
+  process.env.PDF_EVALUACIONES_URL || "https://csv-gpt-backend.vercel.app/evaluaciones.pdf",
 ];
 
-const ALIASES = {
-  "NOMBRE": ["nombre","alumno","estudiante","apellidos y nombres","nombres y apellidos","nombre y apellido","nombres","apellidos"],
-  "EDAD": ["edad","años","anos","edad (años)"],
-  "CURSO": ["curso","grado","año","anio","nivel"],
-  "PARALELO": ["paralelo","seccion","sección","grupo"],
-  "AUTOESTIMA": ["autoestima","auto estima"],
-  "MANEJO DE LA TENSIÓN": ["manejo de la tension","manejo del estres","manejo del estrés","estres","estrés","regulacion del estres","regulación del estrés","tension","tensión","control del estrés"],
-  "BIENESTAR FÍSICO": ["bienestar fisico","salud fisica","salud física","bienestar físico"],
-  "PROMEDIO DE HABILIDADES INTRAPERSONALES": ["promedio habilidades intrapersonales","promedio de habilidades intra personales","intrapersonales (promedio)","promedio intrapersonales"],
-  "ASERTIVIDAD": ["asertividad","conducta asertiva"],
-  "CONCIENCIA DE LOS DEMÁS": ["conciencia de los demas","conciencia social","percepcion social","percepción social","conciencia de los demás"],
-  "EMPATÍA": ["empatia","empatía","empatia (habilidad)"],
-  "PROMEDIO DE HABILIDADES INTERPERSONALES": ["promedio de  habilidades interpersonales","promedio habilidades interpersonales","interpersonales (promedio)","promedio interpersonal","promedio de habilidades  interpersonales"],
-  "MOTIVACIÓN": ["motivacion","motivación"],
-  "COMPROMISO": ["compromiso","engagement","compromiso escolar"],
-  "ADMINISTRACIÓN DEL TIEMPO": ["administracion del tiempo","gestión del tiempo","gestion del tiempo","organizacion del tiempo","organización del tiempo","admin del tiempo","administración del tiempo"],
-  "TOMA DE DECISIONES": ["toma de decisiones","decision making","decisiones","capacidad de decisión"],
-  "LIDERAZGO": ["liderazgo","liderazgo escolar"],
-  "PROMEDIO DE HABILIDADES PARA LA VIDA": ["habilidades para la vida (promedio)","promedio habilidades para la vida","promedio de habilidades para la vida"],
-  "PROMEDIO DE INTELIGENCIA EMOCIONAL": ["promedio de inteligencia emocional","promedio ie","ie (promedio)","promedio de iinteligencia emocional","promedio inteligencia emocional"],
-  "AGRESIÓN": ["agresion","conducta agresiva","agresividad"],
-  "TIMIDEZ": ["timidez","inhibicion social","inhibición social","timidez social"],
-  "PROPENSIÓN AL CAMBIO": ["propension al cambio","apertura al cambio","propensión al cambio"]
-};
+const CACHE_MS = 5 * 60 * 1000;
+const cacheCSV = new Map();   // url -> { ts, text }
+const sessions = new Map();   // sid -> { ts, history: [{role,content}, ...] }
 
-// ========= Utils =========
-function stripBOM(s){ return String(s||"").replace(/^\uFEFF/, ""); }
-function normalizeField(s){
-  return stripBOM(String(s||""))
-    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-    .toLowerCase().replace(/[^a-z0-9]+/g," ")
-    .replace(/\s+/g," ").trim();
-}
-const ALIAS_INDEX = (() => {
-  const idx = new Map();
-  for (const canon of CANON) {
-    idx.set(normalizeField(canon), canon);
-    const list = ALIASES[canon] || [];
-    for (const a of list) idx.set(normalizeField(a), canon);
-  }
-  return idx;
-})();
-
-function tokenSet(str){ return new Set(normalizeField(str).split(" ").filter(Boolean)); }
-function jaccard(aSet, bSet){
-  const inter = new Set([...aSet].filter(x => bSet.has(x)));
-  const union = new Set([...aSet, ...bSet]);
-  return union.size ? (inter.size / union.size) : 0;
-}
-function fuzzyResolve(header, threshold=0.6){
-  const hSet = tokenSet(header);
-  let best = {canon:null, score:0};
-  for (const canon of CANON){
-    const cSet = tokenSet(canon);
-    const s = jaccard(hSet, cSet);
-    if (s > best.score) best = {canon, score:s};
-  }
-  return best.score >= threshold ? best.canon : null;
-}
-
-function detectDelim(sample) {
-  if (!sample) return ",";
-  if (sample.includes(";")) return ";";
-  if (sample.includes("\t")) return "\t";
-  if (sample.includes("|")) return "|";
-  return ",";
-}
-
-// parse “suave” (sin comillas escapadas). Si usas comillas en celdas, avísame y uso un parser completo.
-function parseRows(csvText, delim) {
-  const lines = csvText.split(/\r?\n/).filter(l => l.length);
-  return lines.map(l => l.split(delim));
+function safeFileParam(s, def = "decimo.csv") {
+  const x = (s || "").toString().trim();
+  if (!x) return def;
+  if (x.includes("..") || x.includes("/") || x.includes("\\")) return def;
+  return x;
 }
 
 async function getCSVText(publicUrl) {
-  const hit = csvCache.get(publicUrl);
+  const hit = cacheCSV.get(publicUrl);
   const now = Date.now();
   if (hit && now - hit.ts < CACHE_MS) return hit.text;
+
   const r = await fetch(publicUrl);
   if (!r.ok) throw new Error(`No pude leer CSV ${publicUrl} (HTTP ${r.status})`);
   const text = await r.text();
-  csvCache.set(publicUrl, { ts: now, text });
+  cacheCSV.set(publicUrl, { ts: now, text });
   return text;
 }
 
-// número “inteligente” (maneja 10,5 o 10.5; tolera %)
-function toNumberSmart(v) {
-  if (v == null) return null;
-  let s = String(v).trim().replace(/%/g,"");
-  if (!s) return null;
-  // si tiene coma y no punto → coma como decimal
-  if (/,/.test(s) && !/\./.test(s)) s = s.replace(/\./g,"").replace(",",".");
-  // si tiene ambos, intenta quitar miles comunes
-  if (/\d\.\d{3}(?:\.|,)/.test(s)) s = s.replace(/\./g,"");
-  const n = parseFloat(s);
-  return Number.isFinite(n) ? n : null;
+function detectDelim(firstLine) {
+  if (!firstLine) return ",";
+  if (firstLine.includes(";")) return ";";
+  if (firstLine.includes("\t")) return "\t";
+  if (firstLine.includes("|")) return "|";
+  return ",";
 }
 
-function percentile(arr, p) {
-  if (!arr.length) return null;
-  const a = arr.slice().sort((x,y) => x-y);
-  const idx = Math.min(a.length-1, Math.max(0, Math.floor((p/100)*(a.length-1))));
-  return a[idx];
+function systemPromptText() {
+  return [
+    "Eres una asesora educativa clara y ejecutiva (español México).",
+    "Recibirás: 1) un CSV completo con columnas variables; 2) (si es posible) texto extraído de 2 PDFs adjuntos por el sistema.",
+    "Tareas generales:",
+    "- No menciones procesos internos (no digas 'analicé PDFs' ni 'analicé CSV').",
+    "- Responde con datos REALES del dataset. Si falta info, dilo.",
+    "- Si la petición pide lista/tabla (palabras: lista, listar, enlistar, tabla), devuelve TABLA ordenada y numerada (#).",
+    "- Si no pide tabla, devuelve una EXPLICACIÓN breve (~150-180 palabras) y agrega tabla solo si es imprescindible.",
+    "- Para 'grupos homogéneos' utiliza clustering simple con distancias euclidianas sobre columnas relevantes (ej.: Agresión, Empatía).",
+    "- Para correlación usa Pearson/Spearman, e incluye interpretación breve y r o r² si aplica.",
+    "- En tablas: cabeceras fieles al CSV; orden lógico; sin duplicar la misma info arriba y abajo.",
+    "- No leas ni muestres asteriscos; evita caracteres superfluos.",
+  ].join(" ");
 }
 
-// ======= Remap headers y stats =======
-function remapAndStats(csvText, limit=1000) {
-  const sample = csvText.slice(0, 2000);
-  const delim = detectDelim(sample);
-  const rows = parseRows(csvText, delim);
-  if (!rows.length) return { delim, headers: [], mapped: {}, stats: {}, samples: [] };
+function userPrompt(q, csvText, pdfTexts) {
+  const first = (csvText.split(/\r?\n/)[0] || "").slice(0, 500);
+  const delim = detectDelim(first);
 
-  // encabezados
-  const rawHeaders = rows[0].map(h => stripBOM(h.trim()));
-  const usedCanon = new Map();
-  const mapped = {};
-  const headersCanon = rawHeaders.map(h => {
-    const norm = normalizeField(h);
-    let canon = ALIAS_INDEX.get(norm) || fuzzyResolve(h, 0.6);
-    if (!canon) return h; // deja el original si no sabemos
-    const n = (usedCanon.get(canon)||0) + 1;
-    usedCanon.set(canon, n);
-    const finalName = n===1 ? canon : `${canon} (${n})`;
-    mapped[h] = finalName;
-    return finalName;
+  const bundle = [
+    `PREGUNTA: ${q}`,
+    "",
+    `DELIMITADOR_APROX: ${JSON.stringify(delim)}`,
+    "",
+    "CSV completo entre triple backticks. Analízalo tal cual:",
+    "```csv",
+    csvText,
+    "```",
+  ];
+
+  // Adjunta texto de PDFs si existe
+  if (pdfTexts && pdfTexts.length) {
+    bundle.push("", "EXTRACTOS DE PDFs (texto plano, para contexto, no lo menciones explícitamente):");
+    pdfTexts.forEach((t, i) => {
+      if (t && t.trim()) {
+        const chunk = t.length > 20000 ? t.slice(0, 20000) + "\n[...]" : t; // recorte por tokens
+        bundle.push("", `--- PDF ${i + 1} ---`, chunk);
+      }
+    });
+  }
+
+  return bundle.join("\n");
+}
+
+// Extraer texto de PDFs con pdf-parse (si disponible)
+async function tryExtractPDF(url) {
+  try {
+    const pdfParse = (await import("pdf-parse")).default;
+    const r = await fetch(url);
+    if (!r.ok) return "";
+    const buf = await r.arrayBuffer();
+    const data = await pdfParse(Buffer.from(buf));
+    return data?.text || "";
+  } catch (e) {
+    // Si no está pdf-parse o falla, seguimos sin PDF
+    return "";
+  }
+}
+
+// Memoria: 10 minutos por sesión simple (por IP+UA)
+function sessionId(req) {
+  const ua = (req.headers["user-agent"] || "").slice(0, 80);
+  const ip = req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "ip";
+  return `${ip}|${ua}`;
+}
+function getSession(sid){
+  const now = Date.now();
+  const item = sessions.get(sid);
+  if (item && (now - item.ts) <= (10 * 60 * 1000)) return item;
+  const fresh = { ts: now, history: [] };
+  sessions.set(sid, fresh);
+  return fresh;
+}
+
+async function callOpenAI(messages) {
+  if (!API_KEY) {
+    return { ok: false, text: "Falta configurar OPENAI_API_KEY en Vercel." };
+  }
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      temperature: 0.35,
+    }),
   });
-
-  // índice de columnas
-  const idxOf = Object.fromEntries(headersCanon.map((h,i)=>[h,i]));
-
-  // recolecta stats
-  const stats = {};
-  const numericSet = new Set(CANON.filter(c => c !== "NOMBRE" && c !== "CURSO" && c !== "PARALELO")); // EDAD incluida como num
-  for (const h of headersCanon) {
-    const col = idxOf[h];
-    const nums = [], texts = [];
-    const scan = Math.min(limit, rows.length-1);
-    for (let r=1; r<=scan; r++){
-      const v = rows[r][col] ?? "";
-      const n = toNumberSmart(v);
-      if (n!=null && (numericSet.has(h) || /[0-9]/.test(String(v)))) nums.push(n);
-      else if (String(v).trim()) texts.push(String(v).trim());
-    }
-    if (nums.length >= texts.length) {
-      const mean = nums.reduce((a,b)=>a+b,0)/ (nums.length||1);
-      stats[h] = {
-        type: "numeric",
-        scanned: scan,
-        count: nums.length,
-        min: Math.min(...nums),
-        max: Math.max(...nums),
-        mean: +mean.toFixed(3),
-        p50: percentile(nums,50),
-        p90: percentile(nums,90),
-        non_numeric: texts.length,
-        examples: nums.slice(0,5)
-      };
-    } else {
-      // top K valores de texto
-      const freq = new Map();
-      for (const t of texts){ freq.set(t, (freq.get(t)||0)+1); }
-      const top = [...freq.entries()].sort((a,b)=> b[1]-a[1]).slice(0,5).map(([v,c])=>({v,c}));
-      stats[h] = {
-        type: "text",
-        scanned: scan,
-        count: texts.length,
-        top_values: top,
-        examples: texts.slice(0,5)
-      };
-    }
-  }
-
-  // muestras de filas (hasta 5)
-  const samples = [];
-  for (let r=1; r<Math.min(rows.length, 6); r++){
-    const obj = {};
-    headersCanon.forEach((h,i)=> obj[h] = rows[r][i] ?? "");
-    samples.push(obj);
-  }
-
-  return {
-    delim,
-    headers_originales: rawHeaders,
-    headers_canonicos: headersCanon,
-    mapped,
-    stats,
-    samples
-  };
+  const data = await r.json().catch(() => null);
+  const text =
+    data?.choices?.[0]?.message?.content?.trim() ||
+    `No pude consultar OpenAI (HTTP ${r.status}).`;
+  return { ok: true, text };
 }
 
-// ======= handler =======
 export default async function handler(req, res) {
   try {
-    const file = (req.query.file || "decimo.csv").toString();
-    const limit = Math.max(10, Math.min(100000, parseInt(req.query.limit||"1000",10)));
+    const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
+    const file = safeFileParam(req.query.file || req.query.f || "decimo.csv");
 
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host;
+    const host  = req.headers.host;
     const publicUrl = `${proto}://${host}/datos/${encodeURIComponent(file)}`;
 
+    // 1) CSV
     const csvText = await getCSVText(publicUrl);
-    const diag = remapAndStats(csvText, limit);
+    const lines = csvText.split(/\r?\n/).filter(Boolean).length;
 
+    // 2) PDFs (silencioso; no romper si fallan)
+    const pdfTexts = [];
+    for (const url of PDF_URLS){
+      try{
+        const t = await tryExtractPDF(url);
+        if (t && t.trim()) pdfTexts.push(t);
+      }catch{}
+    }
+
+    // 3) Memoria y mensajes
+    const sid = sessionId(req);
+    const sess = getSession(sid);
+    // recorta historial si creció demasiado
+    if (sess.history.length > 12) sess.history.splice(0, sess.history.length - 12);
+
+    const messages = [
+      { role: "system", content: systemPromptText() },
+      ...sess.history, // memoria previa útil
+      { role: "user", content: userPrompt(q, csvText, pdfTexts) },
+    ];
+
+    // 4) OpenAI
+    const ai = await callOpenAI(messages);
+
+    // 5) Actualiza memoria (solo si no es ping básico)
+    sess.ts = Date.now();
+    sess.history.push({ role:"user", content: q });
+    sess.history.push({ role:"assistant", content: ai.text });
+
+    // 6) Devuelve
     return res.status(200).json({
+      text: ai.text,
       archivo: file,
-      filas_aprox: csvText.split(/\r?\n/).filter(Boolean).length,
-      delimitador: diag.delim,
-      columnas_mapeadas: diag.mapped,
-      headers_originales: diag.headers_originales,
-      headers_canonicos: diag.headers_canonicos,
-      stats: diag.stats,
-      samples: diag.samples
+      filas_aprox: lines,
+      formato: "texto",
     });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ error: "Error interno", details: String(e) });
+    return res.status(200).json({
+      text: "No se encontró respuesta.",
+      error: String(e),
+    });
   }
 }
