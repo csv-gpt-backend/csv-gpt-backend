@@ -193,19 +193,37 @@ export default async function handler(req, res) {
     // Construye URLs públicas y carga texto, pero si una falla la salta
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers.host;
+const sourcesText = [];
+const skipped = [];
+for (const p of srcs) {
+  const publicUrl = `${proto}://${host}/${encodeURI(p)}`;
+  try {
+    const t = await getTextFromPublicUrl(publicUrl);   // si 404, entra al catch
+    const type = extOf(p) === "pdf" ? "pdf" : "csv";
+    sourcesText.push({ label: p, type, text: t });
+  } catch (err) {
+    skipped.push(`${p} (${String(err?.message || err)})`);
+  }
+}
 
-    const sourcesText = [];
-    const skipped = [];
-    for (const p of srcs) {
-      const publicUrl = `${proto}://${host}/${encodeURI(p)}`;
-      try {
-        const t = await getTextFromPublicUrl(publicUrl); // puede lanzar si 404
-        const type = extOf(p) === "pdf" ? "pdf" : "csv";
-        sourcesText.push({ label: p, type, text: t });
-      } catch (err) {
-        skipped.push(`${p} (${String(err?.message || err)})`);
-      }
-    }
+if (!sourcesText.length) {
+  return res.status(200).json({
+    ok: false,
+    text: `No encontré fuentes válidas: ${skipped.join(" | ")}`,
+    fuentes: srcs, formato: format || "texto",
+  });
+}
+
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  }
 
     // Si no quedó ninguna fuente válida, devolvemos explicación amable
     if (!sourcesText.length) {
