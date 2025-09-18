@@ -33,19 +33,19 @@
 
   /* ====== Interacción ====== */
   .interaction{ padding:24px 16px; text-align:center; }
-  .bar{ display:flex; gap:8px; justify-content:center; align-items:center; max-width:1100px; margin:0 auto; }
+  .bar{ display:flex; gap:8px; justify-content:center; align-items:center; max-width:1200px; margin:0 auto; flex-wrap:wrap; }
   .bar input[type="text"]{
-    flex:1 1 800px; padding:12px 14px; font-size:16px; border:1px solid #d0d0d0; border-radius:8px; outline:none;
+    flex:1 1 820px; padding:12px 14px; font-size:16px; border:1px solid #d0d0d0; border-radius:8px; outline:none;
   }
   .btn{ padding:12px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
   .btn:hover{ filter:brightness(0.95); }
 
   #respuesta{
-    margin:20px auto 0; width:min(90%,1100px); min-height:64px;
+    margin:20px auto 0; width:min(90%,1200px); min-height:64px;
     padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; text-align:left; line-height:1.45; white-space:pre-wrap;
   }
   .table-wrap{
-    width:min(95%,1100px); margin:16px auto 24px; overflow:auto; border:1px solid #e5e5e7; border-radius:10px; background:#fff;
+    width:min(95%,1200px); margin:16px auto 24px; overflow:auto; border:1px solid #e5e5e7; border-radius:10px; background:#fff;
   }
   table.data{ width:100%; border-collapse:collapse; font-size:14px; }
   table.data thead th{
@@ -53,6 +53,22 @@
   }
   table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; }
   table.data tbody tr:nth-child(odd){ background:#fafbfc; }
+
+  /* ====== Panel de PDFs ====== */
+  .pdf-panel{
+    width:min(95%,1200px); margin:16px auto; display:grid; grid-template-columns: 320px 1fr; gap:16px; align-items:start;
+  }
+  .pdf-list{
+    border:1px solid #e5e5e7; border-radius:10px; padding:12px; background:#fff;
+  }
+  .pdf-item{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .pdf-item input{ transform:scale(1.1); }
+  .pdf-item a{ color:#0a5; text-decoration:none; font-size:13px; }
+  .pdf-view{
+    border:1px solid #e5e5e7; border-radius:10px; background:#fff; padding:8px;
+  }
+  .pdf-canvas{ width:100%; max-height:520px; display:block; background:#fafafa; }
+  .muted{ color:#666; font-size:13px; }
 
   /* ====== PDF / impresión ====== */
   @media print { .no-print{display:none!important;} }
@@ -64,12 +80,11 @@
   .pdf-avoid-break{ break-inside:avoid; page-break-inside:avoid; }
   .pdf-page{ width:210mm; max-width:210mm; margin:0 auto; }
 
-  /* por si en algún momento alguien reintroduce placeholder */
+  /* Sin placeholder */
   #pregunta::placeholder{ color:transparent!important; }
 
-  @media (max-width: 640px){
-    :root{ --header-height:320px; --video-scale:1.25; }
-  }
+  @media (max-width: 900px){ .pdf-panel{ grid-template-columns: 1fr; } }
+  @media (max-width: 640px){ :root{ --header-height:320px; --video-scale:1.25; } }
 </style>
 </head>
 <body>
@@ -98,6 +113,44 @@
     <div id="respuesta">Aquí aparecerá la explicación...</div>
     <div id="tabla" class="table-wrap" hidden></div>
 
+    <!-- ====== PANEL PDFs ====== -->
+    <div class="pdf-panel">
+      <div class="pdf-list">
+        <div style="font-weight:700;margin-bottom:8px;">PDFs disponibles (marca para incluir en el análisis):</div>
+        <div class="pdf-item">
+          <input type="checkbox" class="pdf-check" data-url="https://csv-gpt-backend.vercel.app/lexium.pdf" checked>
+          <span>LEXIUM.pdf</span>
+          <a href="https://csv-gpt-backend.vercel.app/lexium.pdf" target="_blank" rel="noopener">abrir</a>
+        </div>
+        <div class="pdf-item">
+          <input type="checkbox" class="pdf-check" data-url="https://csv-gpt-backend.vercel.app/evaluaciones.pdf" checked>
+          <span>EVALUACIONES.pdf</span>
+          <a href="https://csv-gpt-backend.vercel.app/evaluaciones.pdf" target="_blank" rel="noopener">abrir</a>
+        </div>
+        <div class="pdf-item">
+          <input type="checkbox" class="pdf-check" data-url="https://csv-gpt-backend.vercel.app/emocionales.pdf" checked>
+          <span>EMOCIONALES.pdf</span>
+          <a href="https://csv-gpt-backend.vercel.app/emocionales.pdf" target="_blank" rel="noopener">abrir</a>
+        </div>
+
+        <hr style="margin:10px 0;">
+        <div style="font-weight:700;margin-bottom:6px;">Agregar PDF por URL</div>
+        <div style="display:flex; gap:6px;">
+          <input id="pdfUrlInput" type="text" placeholder="https://…" style="flex:1;padding:8px;border:1px solid #d0d0d0;border-radius:8px;">
+          <button class="btn" onclick="addPdfUrl()">Agregar</button>
+        </div>
+        <p class="muted" style="margin-top:8px;">El texto de los PDFs marcados se extrae en el navegador (máx. 30 páginas por PDF) y se envía junto a tu pregunta.</p>
+      </div>
+
+      <div class="pdf-view">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-weight:700;">Vista previa (pág. 1)</div>
+          <select id="pdfSelect" style="padding:8px;border:1px solid #d0d0d0;border-radius:8px;"></select>
+        </div>
+        <canvas id="pdfCanvas" class="pdf-canvas"></canvas>
+      </div>
+    </div>
+
     <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">
       <select id="exportFmt" class="no-print" style="padding:10px;border:1px solid #d0d0d0;border-radius:8px;">
         <option value="pdf" selected>Exportar PDF</option>
@@ -108,11 +161,14 @@
       <button class="btn no-print" onclick="borrarMemoria()">Borrar memoria</button>
     </div>
 
-    <p style="margin-top:10px;color:#666;font-size:13px;">La memoria se conserva por ~10 minutos para dar contexto entre preguntas.</p>
+    <p class="muted">La memoria se conserva por ~10 minutos para dar contexto entre preguntas.</p>
   </div>
 
-<!-- Librería para PDF -->
+<!-- Librerías -->
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
+
 <script>
   /* ====== AJUSTES ====== */
   const ENDPOINTS = ["/api/ask", "/api/preguntar"];
@@ -214,22 +270,113 @@
     if(rows && rows.length>=2 && rows[0].length>=2){ tablaWrap.innerHTML = renderTable(rows); tablaWrap.hidden = false; }
   }
 
-  /* ====== Enviar pregunta ====== */
+  /* ====== PDFs: listado, preview y extracción ====== */
+  const pdfSelect = document.getElementById('pdfSelect');
+  const pdfCanvas = document.getElementById('pdfCanvas');
+  const DEFAULT_PDFS = [
+    "https://csv-gpt-backend.vercel.app/lexium.pdf",
+    "https://csv-gpt-backend.vercel.app/evaluaciones.pdf",
+    "https://csv-gpt-backend.vercel.app/emocionales.pdf",
+  ];
+  function refreshPdfSelect(){
+    const checks = [...document.querySelectorAll('.pdf-check')];
+    const urls = checks.map(c=>c.dataset.url);
+    pdfSelect.innerHTML = urls.map(u=>`<option value="${u}">${u.split('/').pop()}</option>`).join('');
+    if (urls.length) loadPdfPreview(urls[0]);
+  }
+  async function loadPdfPreview(url){
+    try{
+      const pdf = await pdfjsLib.getDocument({ url, withCredentials:false }).promise;
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 1.4 });
+      const ctx = pdfCanvas.getContext('2d');
+      pdfCanvas.height = viewport.height; pdfCanvas.width = viewport.width;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+    }catch(e){
+      const ctx = pdfCanvas.getContext('2d');
+      ctx.clearRect(0,0,pdfCanvas.width,pdfCanvas.height);
+      ctx.font = '14px Arial'; ctx.fillText('No se pudo previsualizar el PDF.', 10, 24);
+      console.error(e);
+    }
+  }
+  pdfSelect.addEventListener('change', (e)=> loadPdfPreview(e.target.value));
+
+  async function extractTextFromPdf(url, maxPages=30){
+    const pdf = await pdfjsLib.getDocument({ url, withCredentials:false }).promise;
+    const total = Math.min(pdf.numPages, maxPages);
+    let text = '';
+    for(let p=1;p<=total;p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const strings = content.items.map(it => it.str).join(' ');
+      text += `\n\n[PDF:${url.split('/').pop()} pág.${p}]\n${strings}`;
+    }
+    return text.replace(/\s+/g,' ').trim();
+  }
+
+  function addPdfUrl(){
+    const input = document.getElementById('pdfUrlInput');
+    const url = (input.value||'').trim();
+    if(!url) return;
+    const list = document.querySelector('.pdf-list');
+    const div = document.createElement('div');
+    div.className = 'pdf-item';
+    div.innerHTML = `
+      <input type="checkbox" class="pdf-check" data-url="${escapeHtml(url)}" checked>
+      <span>${escapeHtml(url.split('/').pop())}</span>
+      <a href="${escapeHtml(url)}" target="_blank" rel="noopener">abrir</a>`;
+    list.insertBefore(div, list.querySelector('hr'));
+    input.value='';
+    refreshPdfSelect();
+  }
+
+  window.addEventListener('DOMContentLoaded', ()=>{
+    const present = [...document.querySelectorAll('.pdf-check')].map(x=>x.dataset.url);
+    DEFAULT_PDFS.forEach(u=>{
+      if(!present.includes(u)){
+        const list = document.querySelector('.pdf-list');
+        const div = document.createElement('div');
+        div.className = 'pdf-item';
+        div.innerHTML = `
+          <input type="checkbox" class="pdf-check" data-url="${u}" checked>
+          <span>${u.split('/').pop()}</span>
+          <a href="${u}" target="_blank" rel="noopener">abrir</a>`;
+        list.insertBefore(div, list.querySelector('hr'));
+      }
+    });
+    refreshPdfSelect();
+  });
+
+  /* ====== Enviar pregunta (POST con pdfctx) ====== */
   async function enviarPregunta(){
     const pregunta = document.getElementById("pregunta").value.trim();
     if(!pregunta) return alert("Escribe una pregunta.");
     const out = document.getElementById("respuesta");
-    out.textContent = "Consultando...";
+    out.textContent = "Procesando...";
     tablaWrap.hidden = true; tablaWrap.innerHTML = "";
 
-    // Detecta intención de tabla
-    const wantsTable = /\b(tabla|listar|lista|desplegar|muestra|muestrame|tabla ordenada)\b/i.test(pregunta);
+    const wantsTable = /\b(tabla|listar|lista|desplegar|muestrame|muestra|tabla ordenada)\b/i.test(pregunta);
+
+    const checks = [...document.querySelectorAll('.pdf-check:checked')];
+    let pdfctx = '';
+    if (checks.length){
+      out.textContent = "Procesando PDFs…";
+      for (const c of checks){
+        try{
+          const txt = await extractTextFromPdf(c.dataset.url, 30);
+          if (txt) pdfctx += `\n\n=== CONTEXTO DESDE PDF: ${c.dataset.url.split('/').pop()} ===\n${txt.slice(0, 50000)}`;
+        }catch(e){ console.warn("PDF fallo:", c.dataset.url, e); }
+      }
+    }
 
     let data=null,lastErr=null;
     for(const base of ENDPOINTS){
       try{
-        const url = `${base}?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}${wantsTable ? "&mode=tabla" : ""}`;
-        const resp = await fetch(url);
+        const resp = await fetch(base + (wantsTable ? "?mode=tabla" : ""), {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({ q: pregunta, file: DEFAULT_FILE, pdfctx })
+        });
         if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
         data = await resp.json();
         break;
@@ -241,7 +388,6 @@
     out.textContent = texto;
     maybeRenderTableFromText(texto);
 
-    // Voz + video
     speak(texto, ()=>video?.play(), ()=>video?.pause());
   }
   document.getElementById("pregunta").addEventListener("keydown", (e)=>{ if(e.key==="Enter") enviarPregunta(); });
