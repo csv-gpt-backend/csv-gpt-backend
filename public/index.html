@@ -22,4 +22,301 @@
     video{width:100%;max-width:640px;border-radius:12px;display:block}
     .toolbar{display:flex;gap:8px;flex-wrap:wrap}
     .toolbar input[type="text"]{flex:1 1 360px;background:#0f1420;border:1px solid #273142;border-radius:10px;color:var(--text);padding:12px 14px;outline:none}
-    .toolbar button{bac
+    .toolbar button{background:var(--accent);color:white;border:0;border-radius:10px;padding:12px 14px;font-weight:600;cursor:pointer}
+    .toolbar button.secondary{background:#273142}
+    .status{font-size:12px;color:var(--muted)}
+    .answer{white-space:pre-wrap;line-height:1.4;background:var(--card);border:1px solid #1b2432;border-radius:12px;padding:12px}
+    .tbl{width:100%;border-collapse:collapse;margin:10px 0;border:1px solid #283142;border-radius:8px;overflow:hidden}
+    .tbl th,.tbl td{padding:8px 10px;border-bottom:1px solid #283142;text-align:left;font-size:13px}
+    .tbl th{background:#131a25;font-weight:600}
+    .small{font-size:12px;color:var(--muted)}
+    .row{display:flex;align-items:center;gap:8px}
+    .badge{font-size:12px;background:#192234;border:1px solid #223049;padding:4px 8px;border-radius:999px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="grid">
+      <!-- Izquierda: logo -->
+      <div class="card logo-box">
+        <!-- Reemplaza src por tu logo -->
+        <img class="logo" src="logo-izq.png" alt="Logo izquierdo" onerror="this.style.opacity=0.3;this.alt='Logo izquierdo (faltante)';" />
+      </div>
+
+      <!-- Centro: video + controles -->
+      <div class="center">
+        <div class="card video-wrap">
+          <video id="video" src="descarga.mp4" controls preload="metadata"></video>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <input id="q" type="text" placeholder="Escribe tu pregunta… p.ej., ¿Qué contiene el CSV por columnas?" />
+            <button id="askBtn">Preguntar</button>
+            <button id="stopVoiceBtn" class="secondary" title="Detener lectura">Detener voz</button>
+            <span class="badge" id="voiceBadge" title="Voz fija">Voz: es-MX (femenina)</span>
+          </div>
+          <div class="row small">
+            <span id="status" class="status">Listo.</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="answer" id="answer">La respuesta aparecerá aquí.</div>
+          <div id="tables"></div>
+        </div>
+
+        <div class="small">
+          Backend: <strong>https://csv-gpt-backend.vercel.app/api/ask</strong> · Archivo: <code>public/index.html</code>
+        </div>
+      </div>
+
+      <!-- Derecha: logo -->
+      <div class="card logo-box">
+        <!-- Reemplaza src por tu logo -->
+        <img class="logo" src="logo-der.png" alt="Logo derecho" onerror="this.style.opacity=0.3;this.alt='Logo derecho (faltante)';" />
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ======== CONFIG ========
+    const API_BASE = "https://csv-gpt-backend.vercel.app";
+    const DEFAULT_FILE = "decimo.csv"; // Cambia si usas otro CSV por defecto
+    const AUTO_PLAY_VIDEO_WHEN_SPEAKS = true;  // Reproduce el video al iniciar la voz
+    const AUTO_PAUSE_VIDEO_AT_END = true;      // Pausa el video al terminar la voz
+
+    // ======== UI refs ========
+    const $q = document.getElementById('q');
+    const $ask = document.getElementById('askBtn');
+    const $stopVoice = document.getElementById('stopVoiceBtn');
+    const $ans = document.getElementById('answer');
+    const $tables = document.getElementById('tables');
+    const $status = document.getElementById('status');
+    const $video = document.getElementById('video');
+    const $voiceBadge = document.getElementById('voiceBadge');
+
+    // ======== VOZ FIJA: Femenina es-MX ========
+    // Estrategia:
+    // 1) Preferimos voices con lang "es-MX".
+    // 2) Filtramos nombres típicos femeninos (Google, Microsoft, Samsung).
+    // 3) Fallback: otras "es-*" femeninas (es-ES), manteniendo timbre femenino.
+    // 4) Reintento si Chrome aún no cargó voces.
+    const VOICE_PREFER_NAMES = [
+      // Google
+      "Google español de México", "español (México)", "Google US Español (Mexican)", "es-MX-Standard-A", "es-MX-Standard-B", "es-MX-Standard-C", "es-MX-Standard-D", "es-MX-Neural2-A", "es-MX-Neural2-B",
+      // Microsoft (Edge)
+      "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
+      "Microsoft Larissa Online (Natural) - Spanish (Mexico)",
+      // Samsung / otros catálogos
+      "Mexican Spanish", "es-MX Female"
+    ];
+    function isLikelyFemaleName(n) {
+      const needles = ["Female","Femenina","Mujer","A","C","Larissa","Dalia"];
+      return needles.some(k => (n||"").toLowerCase().includes(k.toLowerCase()));
+    }
+    function pickEsMxFemaleVoice() {
+      const vs = speechSynthesis.getVoices() || [];
+      if (!vs.length) return null;
+
+      // 1) es-MX exactas por nombre preferido
+      let cand = vs.find(v => v.lang && v.lang.toLowerCase()==="es-mx" && VOICE_PREFER_NAMES.some(n => (v.name||"").includes(n)));
+      if (cand) return cand;
+
+      // 2) es-MX cualquiera con "femenina" probable
+      cand = vs.find(v => v.lang && v.lang.toLowerCase()==="es-mx" && isLikelyFemaleName(v.name));
+      if (cand) return cand;
+
+      // 3) es-MX cualquiera
+      cand = vs.find(v => v.lang && v.lang.toLowerCase()==="es-mx");
+      if (cand) return cand;
+
+      // 4) fallback: otras es-* femeninas
+      cand = vs.find(v => (v.lang||"").toLowerCase().startsWith("es-") && isLikelyFemaleName(v.name));
+      if (cand) return cand;
+
+      // 5) última opción: cualquier es-*
+      cand = vs.find(v => (v.lang||"").toLowerCase().startsWith("es-"));
+      return cand || null;
+    }
+
+    let FIXED_VOICE = null;
+    let voicesReady = false;
+
+    function ensureVoiceReady(maxTries=8) {
+      return new Promise((resolve) => {
+        let tries = 0;
+        const tick = () => {
+          const list = speechSynthesis.getVoices();
+          if (list && list.length) {
+            FIXED_VOICE = pickEsMxFemaleVoice();
+            voicesReady = !!FIXED_VOICE;
+            if (voicesReady) {
+              $voiceBadge.textContent = `Voz: ${FIXED_VOICE.lang} (${FIXED_VOICE.name || 'femenina'})`;
+              resolve(true);
+              return;
+            }
+          }
+          if (++tries >= maxTries) {
+            resolve(false);
+          } else {
+            setTimeout(tick, 250);
+          }
+        };
+        tick();
+      });
+    }
+
+    // Llamamos al menos una vez y también escuchamos el evento
+    ensureVoiceReady();
+    window.speechSynthesis.onvoiceschanged = () => ensureVoiceReady();
+
+    function speak(text) {
+      if (!text || !('speechSynthesis' in window)) return;
+
+      // Cancelar cualquier lectura en curso
+      window.speechSynthesis.cancel();
+
+      const u = new SpeechSynthesisUtterance(text);
+      // Forzar español MX y timbre femenino seleccionado
+      if (FIXED_VOICE) u.voice = FIXED_VOICE;
+      u.lang = (FIXED_VOICE && FIXED_VOICE.lang) ? FIXED_VOICE.lang : "es-MX";
+      u.rate = 1.0;
+      u.pitch = 1.05; // leve brillo
+      u.volume = 1.0;
+
+      u.onstart = () => {
+        if (AUTO_PLAY_VIDEO_WHEN_SPEAKS) try { $video.play(); } catch {}
+        $status.textContent = "Hablando…";
+      };
+      u.onend = () => {
+        if (AUTO_PAUSE_VIDEO_AT_END) try { $video.pause(); } catch {}
+        $status.textContent = "Listo.";
+      };
+      u.onerror = (e) => {
+        console.warn("TTS error:", e);
+        $status.textContent = "No se pudo reproducir la voz (TTS).";
+      };
+
+      window.speechSynthesis.speak(u);
+    }
+
+    $stopVoice.addEventListener('click', () => {
+      window.speechSynthesis.cancel();
+      $status.textContent = "Voz detenida.";
+    });
+
+    // ======== RENDER DE TABLAS (Markdown / JSON array) ========
+    function clearTables(){ $tables.innerHTML = ""; }
+
+    function renderMarkdownTable(md) {
+      const lines = md.trim().split(/\r?\n/).filter(Boolean);
+      // Debe tener al menos 2 filas (encabezado + separador)
+      if (lines.length < 2 || !/\|/.test(lines[0])) return false;
+
+      // Detectar separador "---" en la segunda línea
+      if (!/^(\s*\|)?\s*:?-{3,}/.test(lines[1])) return false;
+
+      const parseRow = (row) => row.split("|").map(c => c.trim()).filter((_,i,arr)=>!(i===0 && arr.length>1 && c===""));
+      const header = parseRow(lines[0]).filter(Boolean);
+      const bodyLines = lines.slice(2);
+
+      const table = document.createElement('table'); table.className = 'tbl';
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      header.forEach(h => {
+        const th = document.createElement('th'); th.textContent = h; trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      bodyLines.forEach(line=>{
+        if(!line.trim()) return;
+        const cols = parseRow(line);
+        const tr = document.createElement('tr');
+        header.forEach((_,i)=>{
+          const td = document.createElement('td');
+          td.textContent = (cols[i] ?? "");
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      $tables.appendChild(table);
+      return true;
+    }
+
+    function renderJsonArray(text) {
+      try {
+        const data = JSON.parse(text);
+        if (!Array.isArray(data) || data.length===0 || typeof data[0] !== 'object') return false;
+        const cols = Array.from(new Set(data.flatMap(o => Object.keys(o))));
+        const table = document.createElement('table'); table.className = 'tbl';
+        const thead = document.createElement('thead'); const trh = document.createElement('tr');
+        cols.forEach(k => { const th=document.createElement('th'); th.textContent=k; trh.appendChild(th); });
+        thead.appendChild(trh); table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        data.forEach(row=>{
+          const tr=document.createElement('tr');
+          cols.forEach(k => { const td=document.createElement('td'); td.textContent = (row[k] ?? ""); tr.appendChild(td); });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        $tables.appendChild(table);
+        return true;
+      } catch { return false; }
+    }
+
+    function autoRenderTablesFrom(text) {
+      clearTables();
+      // 1) Fenced code blocks ```json / ```csv / ``` (markdown)
+      const codeBlocks = [...text.matchAll(/```(\w+)?\s*([\s\S]*?)```/g)];
+      for (const m of codeBlocks) {
+        const lang = (m[1]||"").toLowerCase();
+        const body = m[2]||"";
+        if (lang === 'json' && renderJsonArray(body)) continue;
+        if ((lang==='md'||lang==='markdown'||lang==='table'||lang==='') && renderMarkdownTable(body)) continue;
+      }
+      // 2) Markdown table inline (sin fences)
+      const mdTable = text.match(/(^\|.+\|\s*\r?\n\|?\s*:?-{3,}.*\r?\n(?:.*\r?\n?)*)/m);
+      if (mdTable) renderMarkdownTable(mdTable[1]);
+
+      // 3) JSON array inline
+      const jsonArray = text.match(/(\[\s*\{[\s\S]*?\}\s*\])/m);
+      if (jsonArray) renderJsonArray(jsonArray[1]);
+    }
+
+    // ======== FETCH ========
+    async function ask(q) {
+      const url = `${API_BASE}/api/ask?q=${encodeURIComponent(q)}&file=${encodeURIComponent(DEFAULT_FILE)}`;
+      $status.textContent = "Consultando…";
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        const text = (typeof data === 'string') ? data : (data.answer || data.result || JSON.stringify(data, null, 2));
+        $ans.textContent = text;
+        autoRenderTablesFrom(text);
+        speak(text);
+        $status.textContent = "Listo.";
+      } catch (e) {
+        console.error(e);
+        $ans.textContent = "Error consultando el backend.";
+        $status.textContent = "Error.";
+      }
+    }
+
+    $ask.addEventListener('click', () => {
+      const query = $q.value.trim();
+      if (!query) { $q.focus(); return; }
+      ask(query);
+    });
+    $q.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') $ask.click();
+    });
+
+    // Demo inicial opcional:
+    // ask("ping");
+  </script>
+</body>
+</html>
