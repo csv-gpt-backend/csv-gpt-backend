@@ -138,15 +138,16 @@
   if ($q) { $q.removeAttribute('disabled'); $q.disabled=false; $q.readOnly=false; $q.style.pointerEvents='auto'; $q.style.opacity='1'; }
 
   /* ====== Video: asignar src solo si existe /descarga.mp4 ====== */
-  (function ensureVideo(){
-    if (!$video) return;
-    const CANDIDATE = '/descarga.mp4';
-    fetch(CANDIDATE, { method: 'HEAD' })
-      .then(r => { if (r.ok) $video.src = CANDIDATE; })
-      .catch(()=>{}); // si no existe, lo dejamos sin fuente
-    $video.muted = true;
-    try { $video.pause(); } catch {}
-  })();
+ /* ====== Video: usar URL fija en Blob Storage ====== */
+(function ensureVideo(){
+  if (!$video) return;
+  $video.muted = true;
+  $video.playsInline = true;           // iOS friendly
+  $video.controls = true;              // puedes quitarlo si no quieres controles
+  $video.src = VIDEO_URL;              // tu URL fija en Vercel Blob
+  try { $video.pause(); } catch {}
+})();
+  
 
   /* ====== Sesión / contexto (TTL 10 min) ====== */
   function newSessionId(){ return 'sess_' + Math.random().toString(36).slice(2) + '_' + Date.now(); }
