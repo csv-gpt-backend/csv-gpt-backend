@@ -222,5 +222,93 @@ $q && $q.addEventListener('keydown', e => { if (e.key === 'Enter') window.enviar
 
 console.log('frontend listo');
 </script>
+  <!-- ===== Versión / Sello ===== -->
+<script>
+  console.log("CSV-GPT Frontend build: 2025-09-18 11:59 (frontend-ok2)");
+</script>
+
+<!-- ===== Script principal (con voz es-MX + video + tablas + sesión 10min) ===== -->
+<script>
+/* === CONFIG === */
+const API_BASE = location.origin;
+const DEFAULT_FILE = "decimo.csv";
+const PREFERRED_MODEL = "gpt-5";
+const SESSION_TTL_MS = 10*60*1000;
+
+/* === REFS === */
+const $q      = document.querySelector('#pregunta, #q, .toolbar input[type="text"]');
+const $out    = document.querySelector('#respuesta, #answer, .answer') || (()=>{const d=document.createElement('div'); d.id='respuesta'; document.body.appendChild(d); return d;})();
+const $video  = document.getElementById('video');
+const $status = document.getElementById('status') || { textContent: '' };
+const $tables = document.getElementById('tables') || (()=>{const d=document.createElement('div'); d.id='tables'; $out.parentNode.insertBefore(d,$out.nextSibling); return d;})();
+
+/* endurecer input */
+if ($q) { $q.removeAttribute('disabled'); $q.disabled=false; $q.readOnly=false; $q.style.pointerEvents='auto'; $q.style.opacity='1'; }
+
+/* === SESIÓN === */
+function newSessionId(){ return 'sess_'+Math.random().toString(36).slice(2)+'_'+Date.now(); }
+function getSession(){ const s=JSON.parse(localStorage.getItem('session')||'{}'); const now=Date.now();
+  if(!s.id || (now-(s.last||0))>SESSION_TTL_MS){ const n={id:newSessionId(),last:now,hist:[]}; localStorage.setItem('session',JSON.stringify(n)); return n; }
+  return s;
+}
+function touch(){ const s=getSession(); s.last=Date.now(); localStorage.setItem('session',JSON.stringify(s)); }
+function push(role,text){ const s=getSession(); s.hist=s.hist||[]; s.hist.push({role,text,t:Date.now()}); if(s.hist.length>16)s.hist.shift(); localStorage.setItem('session',JSON.stringify(s)); }
+function context(){ const s=getSession(); const last=(s.hist||[]).slice(-12); return last.map(h=>`${h.role==='user'?'Usuario':'Asistente'}: ${h.text}`).join('\n').slice(-1500); }
+
+/* === VOZ FEMENINA es-MX + VIDEO === */
+const FEMALE_HINTS=["Dalia","Larissa","Elena","Lucia","Helena","Camila","Mia","Paloma","Valentina","Female","Femenina","Mujer","A","C"];
+const MALE_NEG=["Male","Masculina","Hombre","Diego","Jorge","Juan","Miguel","Javier","Manuel","B","D"];
+let FIXED_VOICE=null, guard=null;
+function pickVoice(){ const vs=speechSynthesis.getVoices()||[]; if(!vs.length)return;
+  const score=v=>{let s=0; const L=(v.lang||'').toLowerCase(),N=(v.name||'').toLowerCase();
+    if(L==='es-mx')s+=120; else if(L.startsWith('es-'))s+=60; if(FEMALE_HINTS.some(k=>N.includes(k.toLowerCase())))s+=80; if(MALE_NEG.some(k=>N.includes(k.toLowerCase())))s-=120; return s;};
+  FIXED_VOICE=[...vs].sort((a,b)=>score(b)-score(a))[0]||null;
+}
+speechSynthesis.onvoiceschanged=pickVoice; pickVoice();
+function cleanTTS(t){return (t||"").replace(/```[\s\S]*?```/g," ").replace(/\*\*/g,"").replace(/\*/g,"").replace(/^[\s•\-–·]\s*/gm,"").replace(/\s{2,}/g," ").trim();}
+function speak(text){
+  if(!text)return; speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(cleanTTS(text));
+  u.lang='es-MX'; u.rate=1.0; u.pitch=1.05; u.volume=1.0; if(FIXED_VOICE)u.voice=FIXED_VOICE;
+  u.onstart=()=>{ try{$video&&$video.play();}catch{}; clearInterval(guard); guard=setInterval(()=>{ if($video&&speechSynthesis.speaking&&$video.paused)try{$video.play();}catch{} },500); $status.textContent='Hablando…'; };
+  u.onend=()=>{ clearInterval(guard); try{$video&&$video.pause();}catch{}; $status.textContent='Listo.'; };
+  u.onerror=()=>{ clearInterval(guard); try{$video&&$video.pause();}catch{}; $status.textContent='Error al hablar.'; };
+  speechSynthesis.speak(u);
+}
+
+/* === TABLAS === */
+function clearTables(){ $tables.innerHTML=''; }
+function renderMarkdownTable(md){
+  const lines=md.trim().split(/\r?\n/); if(lines.length<2||!/\|/.test(lines[0])||!/^(\s*\|)?\s*:?-{3,}/.test(lines[1])) return false;
+  const parse=r=>r.split("|").map(c=>c.trim()); const headRaw=parse(lines[0]).filter(Boolean); const head=['#',...headRaw];
+  const tbl=document.createElement('table'); tbl.style.width='100%'; tbl.style.borderCollapse='collapse'; tbl.style.margin='10px 0';
+  const thd=document.createElement('thead'); const trh=document.createElement('tr'); head.forEach(h=>{const th=document.createElement('th'); th.textContent=h; th.style.borderBottom='1px solid #283142'; th.style.textAlign='left'; th.style.padding='6px 8px'; trh.appendChild(th);}); thd.appendChild(trh); tbl.appendChild(thd);
+  const tbd=document.createElement('tbody'); let n=1;
+  lines.slice(2).forEach(l=>{ if(!l.trim())return; const cols=parse(l); const tr=document.createElement('tr');
+    const tdN=document.createElement('td'); tdN.textContent=n++; tdN.style.padding='6px 8px'; tdN.style.borderBottom='1px solid #283142'; tr.appendChild(tdN);
+    headRaw.forEach((_,i)=>{const td=document.createElement('td'); td.textContent=cols[i]??""; td.style.padding='6px 8px'; td.style.borderBottom='1px solid #283142'; tr.appendChild(td);});
+    tbd.appendChild(tr);
+  }); tbl.appendChild(tbd); $tables.appendChild(tbl); return true;
+}
+function stripTables(text){ let out=(text||"").replace(/```[\s\S]*?```/g," ").trim(); out=out.replace(/(^\|.+\|\s*\r?\n\|?\s*:?-{3,}.*\r?\n(?:.*\r?\n?)*)/gm," ").trim(); return out; }
+function autoTables(text){ clearTables(); const md=text.match(/(^\|.+\|\s*\r?\n\|?\s*:?-{3,}.*\r?\n(?:.*\r?\n?)*)/m); if(md) renderMarkdownTable(md[1]); }
+
+/* === BACKEND === */
+async function ask(query){
+  const s=getSession(); touch();
+  const ctx=context(); const composed=ctx?`Contexto reciente:\n${ctx}\n\nPregunta:\n${query}`:query;
+  const url=`${API_BASE}/api/ask?q=${encodeURIComponent(composed)}&file=${encodeURIComponent(DEFAULT_FILE)}&model=${encodeURIComponent(PREFERRED_MODEL)}&session=${encodeURIComponent(s.id)}`;
+  try{
+    const r=await fetch(url); const data=await r.json(); const raw=data.answer||data.text||JSON.stringify(data,null,2);
+    autoTables(raw); const texto=stripTables(raw); $out.textContent=texto; speak(texto); push('user',query); push('assistant',texto);
+  }catch(e){ console.error(e); $out.textContent='Error consultando el backend.'; }
+}
+
+/* === BOTÓN ENVIAR (compat con onclick="enviarPregunta()") === */
+window.enviarPregunta=function(){ if(!$q||!$q.value.trim()){ $q&&$q.focus(); return; } ask($q.value.trim()); };
+$q && $q.addEventListener('keydown',e=>{ if(e.key==='Enter') window.enviarPregunta(); });
+
+console.log('frontend listo ✅');
+</script>
+
 </body>
 </html>
