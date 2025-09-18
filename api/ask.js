@@ -1,4 +1,4 @@
-// /api/ask.js
+// /pages/api/ask.js
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const API_KEY =
   process.env.OPENAI_API_KEY ||
@@ -40,38 +40,47 @@ function detectDelim(line) {
 function systemPromptText() {
   return [
     "Eres una asesora educativa clara y ejecutiva (español México).",
-    "Recibirás un CSV completo con columnas variables (no asumas nombres fijos).",
-    "Instrucciones:",
-    "1) Detecta el delimitador (coma/; /tab/|) y analiza la tabla tal cual.",
-    "2) Si preguntan por una persona, localízala por coincidencia del nombre en cualquier columna.",
-    "3) No inventes datos: basar todo en el CSV entregado. Si falta info, dilo.",
-    "4) Responde breve (~150-180 palabras), tono profesional.",
-    "5) Si la petición requiere teoría/explicación + resultados, primero explica y luego lista resultados.",
+    "Cuentas con: (a) un CSV completo, y (b) opcionalmente bloques de texto extraídos de PDFs.",
+    "Reglas:",
+    "1) Detecta el delimitador (coma/; /tab/|) y analiza el CSV tal cual.",
+    "2) No inventes datos: usa SOLO el CSV y, para definiciones/criterios/teoría, apóyate en los PDFs provistos.",
+    "3) Si piden tabla/lista, estructura resultados en la salida; si no, responde breve (120–180 palabras), tono profesional.",
+    "4) Si no hay resultados para un filtro, devuelve exactamente: No existe información.",
   ].join(" ");
 }
 
-function userPromptText(query, csvText) {
+function userPromptText(query, csvText, pdfctx) {
   const first = (csvText.split(/\r?\n/)[0] || "").slice(0, 500);
   const delim = detectDelim(first);
-  return [
+  const blocks = [
     `PREGUNTA: ${query}`,
     "",
     `DELIMITADOR_APROX: ${JSON.stringify(delim)}`,
     "",
-    "A continuación va el CSV completo entre triple backticks. Analízalo tal cual:",
+    "CSV completo entre ```csv``` (analízalo tal cual):",
     "```csv",
     csvText,
     "```",
-  ].join("\n");
+  ];
+  if ((pdfctx || "").trim()) {
+    blocks.push(
+      "",
+      "A continuación, EXTRACTOS de PDFs (texto plano) para apoyo teórico/criterios. NO inventes fuera de estos textos:",
+      "```pdf",
+      String(pdfctx).slice(0, 120000),
+      "```"
+    );
+  }
+  return blocks.join("\n");
 }
 
 /* === Tabla forzada (Markdown) === */
 function systemPromptTable() {
   return [
     "Devuelve SOLO una tabla Markdown bien formada, sin texto antes ni después.",
-    "Usa la información del CSV tal cual. No inventes encabezados.",
-    "Ordena y filtra según lo que pida la pregunta.",
-    "No incluyas explicación ni comentarios, SOLO la tabla.",
+    "Usa la información del CSV tal cual; si se requiere teoría, ignórala en esta respuesta.",
+    "Apóyate en encabezados reales del CSV; si piden filtro por curso/paralelo, aplícalo.",
+    "Si no hay resultados, devuelve exactamente: No existe información.",
   ].join(" ");
 }
 function userPromptTable(query, csvText) {
@@ -137,9 +146,10 @@ async function callOpenAI(messages) {
 export default async function handler(req, res) {
   try {
     const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
-    const file = safeFileParam(req.query.file || req.query.f || "decimo.csv");
-    const format = (req.query.format || "").toString().toLowerCase(); // "json" | ""
-    const mode = (req.query.mode || "").toString().toLowerCase();   // "tabla" | ""
+    const file = safeFileParam(req.query.file || req.body?.file || req.query.f || "decimo.csv");
+    const format = (req.query.format || req.body?.format || "").toString().toLowerCase(); // "json" | ""
+    const mode = (req.query.mode || req.body?.mode || "").toString().toLowerCase();       // "tabla" | ""
+    const pdfctx = (req.body?.pdfctx || "").toString();                                   // texto desde PDFs
 
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers.host;
@@ -162,7 +172,7 @@ export default async function handler(req, res) {
     } else {
       messages = [
         { role: "system", content: systemPromptText() },
-        { role: "user", content: userPromptText(q, csvText) },
+        { role: "user", content: userPromptText(q, csvText, pdfctx) },
       ];
     }
 
@@ -173,6 +183,7 @@ export default async function handler(req, res) {
       archivo: file,
       filas_aprox: lines,
       formato: format || (mode === "tabla" ? "tabla" : "texto"),
+      used_pdfctx: !!pdfctx
     });
   } catch (e) {
     console.error(e);
