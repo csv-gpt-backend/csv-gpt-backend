@@ -5,7 +5,5 @@
   "engines": {
     "node": ">=18"
   },
-  "dependencies": {
-    "pdf-parse": "^1.1.1"
-  }
+  "dependencies": {}
 }
