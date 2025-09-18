@@ -6,120 +6,62 @@
   <title>Consulta Educativa</title>
 
   <style>
-    :root {
+    :root{
       --header-height: 260px;
-      --video-shift: 5px;
-      --accent: #0078d7;
+      --accent:#0078d7;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0; background:#fff;
+      font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
+      color:#111;
     }
 
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      background: #fff;
-      font-family: Arial, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
-      color: #111;
+    /* ====== Encabezado 25/50/25 ====== */
+    .header-rail{
+      display:flex; align-items:center; justify-content:center;
+      width:100%; height:var(--header-height); background:#fff; overflow:hidden;
+      border-bottom:1px solid #e9e9ec;
+    }
+    .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
+    .header-rail .col.left, .header-rail .col.right{ flex:0 0 25%; }
+    .header-rail .col.center{ flex:0 0 50%; position:relative; }
+    .header-rail .col.left img, .header-rail .col.right img,
+    .header-rail .col.center video{
+      max-height:100%; max-width:100%; height:auto; width:auto; object-fit:contain; display:block;
     }
 
-    /* ====== ENCABEZADO 25/50/25 ====== */
-    .header-rail {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 100%;
-      height: var(--header-height);
-      background: #fff;
-      overflow: hidden;
-      border-bottom: 1px solid #ddd;
+    /* ====== Interacción ====== */
+    .interaction{ padding:24px 16px; text-align:center; }
+    .bar{
+      display:flex; gap:8px; justify-content:center; align-items:center;
+      max-width:1100px; margin:0 auto;
+    }
+    .bar input[type="text"]{
+      flex:1 1 800px; padding:12px 14px; font-size:16px;
+      border:1px solid #d0d0d0; border-radius:8px; outline:none;
+    }
+    .btn{
+      padding:12px 16px; border:0; border-radius:8px;
+      background:var(--accent); color:#fff; font-weight:600; cursor:pointer;
+    }
+    .btn:hover{ filter:brightness(0.95); }
+
+    #respuesta{
+      margin:20px auto 0; width:min(90%,1100px);
+      min-height:64px; padding:14px; background:#f7f7f8;
+      border:1px solid #e5e5e7; border-radius:10px;
+      text-align:left; line-height:1.45; white-space:pre-wrap; font-size:15px;
     }
 
-    .header-rail .col {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100%;
-      overflow: hidden;
-      padding: 0 8px;
+    .footer-bar{
+      width:min(95%,1100px); margin:20px auto;
+      display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;
     }
 
-    .header-rail .col.left,
-    .header-rail .col.right {
-      flex: 0 0 25%;
-    }
-
-    .header-rail .col.center {
-      flex: 0 0 50%;
-      position: relative;
-    }
-
-    .header-rail img,
-    .header-rail video {
-      max-height: 100%;
-      max-width: 100%;
-      height: auto;
-      width: auto;
-      object-fit: contain;
-      display: block;
-    }
-
-    /* ====== INTERACCIÓN ====== */
-    .interaction {
-      padding: 24px 16px;
-      text-align: center;
-    }
-
-    .bar {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      align-items: center;
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    .bar input[type="text"] {
-      flex: 1 1 600px;
-      padding: 12px 14px;
-      font-size: 16px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      outline: none;
-    }
-
-    .btn {
-      padding: 12px 16px;
-      border: 0;
-      border-radius: 8px;
-      background: var(--accent);
-      color: #fff;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .btn:hover { filter: brightness(0.95); }
-
-    #respuesta {
-      margin: 20px auto 0;
-      width: min(90%, 900px);
-      min-height: 64px;
-      padding: 14px;
-      background: #f7f7f8;
-      border: 1px solid #e5e5e7;
-      border-radius: 10px;
-      text-align: left;
-      line-height: 1.45;
-      white-space: pre-wrap;
-      font-size: 15px;
-    }
-
-    .footer-bar {
-      width: min(95%, 900px);
-      margin: 20px auto;
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
+    /* Responsive */
+    @media (max-width: 900px){ :root{ --header-height: 220px; } }
+    @media (max-width: 640px){ :root{ --header-height: 180px; } }
   </style>
 </head>
 <body>
@@ -127,16 +69,16 @@
   <!-- ====== ENCABEZADO ====== -->
   <div class="header-rail">
     <div class="col left">
-      <img src="/left.png" alt="Logo Izquierda">
+      <img src="/left.png" alt="Logo izquierdo" />
     </div>
     <div class="col center">
-      <video id="video" autoplay muted loop playsinline>
+      <video id="video" muted playsinline autoplay loop preload="auto" aria-label="Avatar">
         <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
         Tu navegador no soporta video.
       </video>
     </div>
     <div class="col right">
-      <img src="/right.png" alt="Logo Derecha">
+      <img src="/right.png" alt="Logo derecho" />
     </div>
   </div>
 
@@ -157,139 +99,150 @@
     </div>
   </div>
 
-  <!-- ====== SCRIPT PRINCIPAL ====== -->
+  <!-- ====== SCRIPT APLICACIÓN ====== -->
   <script>
+    /* =================== Config =================== */
     const ENDPOINT = "/api/ask";
     const DEFAULT_FILE = "datos/decimo.csv";
-
-    const video = document.getElementById("video");
+    const videoEl = document.getElementById("video");
     const out = document.getElementById("respuesta");
 
-    // ====== Voz ======
-    let chosenVoice = null;
+    /* =================== Voz fija: femenina es-MX =================== */
+    const PREFERRED_VOICES = [
+      // Windows / Edge / Chrome
+      "Microsoft Sabina - Spanish (Mexico)",
+      // Chrome TTS (nombres habituales)
+      "Google español de México (Femenino)",
+      "es-MX-Standard-A", "es-MX-Standard-C",
+      "es-MX-Neural2-A", "es-MX-Neural2-C",
+      // macOS
+      "Paulina", "Mónica"
+    ];
+
+    let FIXED_VOICE = null;
+
+    function pickFixedVoice() {
+      const voices = window.speechSynthesis.getVoices() || [];
+
+      // 1) Nombre exacto en lista
+      for (const name of PREFERRED_VOICES) {
+        const hit = voices.find(v => v.name === name);
+        if (hit) return hit;
+      }
+      // 2) Heurística femenina es-MX
+      const femHint = /female|femen|mujer|paulina|sabina/i;
+      const esmxFemale = voices.find(v => v.lang === "es-MX" && femHint.test(v.name));
+      if (esmxFemale) return esmxFemale;
+
+      // 3) Cualquier es-MX
+      const esmxAny = voices.find(v => v.lang === "es-MX");
+      if (esmxAny) return esmxAny;
+
+      // 4) Cualquier español
+      const esAny = voices.find(v => /^es(-|$)/i.test(v.lang));
+      if (esAny) return esAny;
+
+      return null;
+    }
+
     function ensureVoiceSelected() {
-      const voices = window.speechSynthesis.getVoices();
-      if (!voices.length) return null;
-      chosenVoice = voices.find(v => v.lang.startsWith("es")) || voices[0];
+      FIXED_VOICE = pickFixedVoice();
+      try {
+        const list = (window.speechSynthesis.getVoices()||[])
+          .map(v => `${v.name} — ${v.lang}`).join(" | ");
+        console.log("[VOICES DISPONIBLES]", list);
+        console.log("[VOZ SELECCIONADA]", FIXED_VOICE?.name, FIXED_VOICE?.lang);
+      } catch {}
     }
+
     window.speechSynthesis.onvoiceschanged = ensureVoiceSelected;
+    setTimeout(ensureVoiceSelected, 0);
 
-    function speak(text) {
-      if (!window.speechSynthesis) return;
+    function speak(text){
+      const synth = window.speechSynthesis;
+      synth.cancel();
+
       const u = new SpeechSynthesisUtterance(text);
-      if (chosenVoice) u.voice = chosenVoice;
       u.lang = "es-MX";
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
-      video.play();
-      u.onend = () => video.pause();
+      u.rate = 1;
+      u.pitch = 1;
+
+      if (!FIXED_VOICE) ensureVoiceSelected();
+      if (FIXED_VOICE) {
+        u.voice = FIXED_VOICE;
+      } else {
+        alert("⚠️ No encontré voz femenina es-MX. Se usará la mejor voz en español disponible.");
+      }
+
+      u.onstart = () => { try{ videoEl.play(); }catch{} };
+      u.onend   = () => { try{ videoEl.pause(); }catch{} };
+
+      synth.speak(u);
     }
 
-    function stopSpeech() {
+    function stopSpeech(){
       try { window.speechSynthesis.cancel(); } catch {}
-      try { video.pause(); } catch {}
+      try { videoEl.pause(); } catch {}
     }
 
-    // ====== Enviar pregunta ======
-    async function enviarPregunta() {
+    /* =================== Enviar pregunta =================== */
+    async function enviarPregunta(){
       const pregunta = document.getElementById("pregunta").value.trim();
       if (!pregunta) return alert("Escribe una pregunta.");
 
       out.textContent = "Consultando...";
 
       const params = new URLSearchParams({ q: pregunta, src: DEFAULT_FILE });
-      const resp = await fetch(`${ENDPOINT}?${params.toString()}`);
-      const data = await resp.json();
+      let data = null;
 
-      const texto = data.text || "Sin respuesta.";
+      try{
+        const resp = await fetch(`${ENDPOINT}?${params.toString()}`);
+        data = await resp.json();
+      }catch(e){
+        out.textContent = "No se pudo contactar al servidor.";
+        return;
+      }
+
+      const texto = data?.text || "Sin respuesta.";
       out.textContent = texto;
       speak(texto);
     }
-function speak(text) {
-  const synth = window.speechSynthesis;
-  synth.cancel(); // detener cualquier voz que esté sonando
 
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "es-MX"; // Español México
-  utterance.pitch = 1;       // tono natural
-  utterance.rate = 1;        // velocidad normal
+    // Enter para enviar
+    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
+      if (e.key === "Enter"){ enviarPregunta(); }
+    });
 
-  // Buscar solo voces en español México
-  let voices = synth.getVoices().filter(v => v.lang === "es-MX");
-
-  // Intentar encontrar alguna voz explícitamente femenina
-  let femaleVoices = voices.filter(v =>
-    v.name.toLowerCase().includes("female") ||
-    v.name.toLowerCase().includes("mujer") ||
-    v.name.toLowerCase().includes("woman")
-  );
-
-  if (femaleVoices.length > 0) {
-    // Si hay voz femenina, usarla
-    utterance.voice = femaleVoices[0];
-  } else if (voices.length > 0) {
-    // Si no hay voz etiquetada como femenina, usar la primera voz en es-MX
-    utterance.voice = voices[0];
-  } else {
-    alert("No se encontró voz en español México. Verifica la configuración del navegador.");
-    return;
-  }
-
-  console.log("Voz seleccionada:", utterance.voice.name, utterance.voice.lang);
-  synth.speak(utterance);
-}
-
-    // ====== Exportar PDF ======
-    function exportPDF() {
-      const texto = out.textContent || "";
-      const win = window.open("", "_blank");
-      win.document.write(`<pre>${texto}</pre>`);
-      win.print();
-    }
-function speak(text) {
-  const synth = window.speechSynthesis;
-  synth.cancel(); // detener cualquier voz previa
-  
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "es-MX";            // Español México
-  utterance.pitch = 1;                  // Tono natural
-  utterance.rate = 1;                   // Velocidad normal
-
-  // Filtrar para usar solo voces femeninas disponibles en español México
-  const voices = synth.getVoices().filter(
-    v => v.lang === "es-MX" && v.name.toLowerCase().includes("female")
-  );
-
-  if (voices.length > 0) {
-    utterance.voice = voices[0]; // Primera voz femenina encontrada
-  } else {
-    // Si no hay voz marcada como female, usa la predeterminada de es-MX
-    const fallback = synth.getVoices().find(v => v.lang === "es-MX");
-    if (fallback) utterance.voice = fallback;
-  }
-
-  synth.speak(utterance);
-}
-
-    // ====== Limpiar ======
-    function limpiar() {
-      stopSpeech();
-      document.getElementById("pregunta").value = "";
-      out.textContent = "Aquí aparecerá la respuesta...";
-    }
-
-    // ====== Micrófono ======
-    function startListening() {
+    /* =================== Micrófono =================== */
+    function startListening(){
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) return alert("Tu navegador no soporta reconocimiento de voz.");
+      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
       const rec = new SR();
-      rec.lang = "es-MX";
+      rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
       rec.onresult = e => {
         const t = e.results[0][0].transcript;
         document.getElementById("pregunta").value = t;
         enviarPregunta();
       };
+      rec.onerror = e => {
+        alert("Error de micrófono: " + e.error + "\nDa permiso al micrófono en el candado del navegador.");
+      };
       rec.start();
+    }
+
+    /* =================== Exportar e higiene =================== */
+    function exportPDF(){
+      const texto = out.textContent || "";
+      const win = window.open("", "_blank");
+      win.document.write(`<pre style="font-family:Arial;white-space:pre-wrap">${texto.replace(/[&<>]/g, s=>({ "&":"&amp;","<":"&lt;",">":"&gt;" }[s]))}</pre>`);
+      win.print();
+      win.close();
+    }
+
+    function limpiar(){
+      stopSpeech();
+      document.getElementById("pregunta").value = "";
+      out.textContent = "Aquí aparecerá la respuesta...";
     }
   </script>
 </body>
