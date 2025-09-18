@@ -1,12 +1,6 @@
-// /api/ask.js — Modo datos reales: Planner (GPT) + Executor (JS) + Post-Explicación
-// Lee /public/datos/<file>.csv, GPT devuelve un PLAN JSON, aquí se ejecuta sobre el CSV.
-// Devuelve: tabla real (formato:"json") + nota (teoría/explicación). Sin "inventos".
-
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-const API_KEY =
-  process.env.OPENAI_API_KEY ||
-  process.env.CLAVE_API_DE_OPENAI ||
-  process.env["CLAVE API DE OPENAI"];
+// /pages/api/ask.js
+// Serverless API para Vercel/Next. Analiza CSV, corre clustering (Agresión+Empatía),
+// calcula compatibilidad, y también soporta tablas/correlación si el planner lo pide.
 
 const CACHE_MS = 5 * 60 * 1000;
 const cache = new Map(); // url -> { ts, text }
@@ -22,7 +16,6 @@ async function getCSVText(publicUrl) {
   const hit = cache.get(publicUrl);
   const now = Date.now();
   if (hit && now - hit.ts < CACHE_MS) return hit.text;
-
   const r = await fetch(publicUrl);
   if (!r.ok) throw new Error(`No pude leer CSV ${publicUrl} (HTTP ${r.status})`);
   const text = await r.text();
@@ -30,297 +23,413 @@ async function getCSVText(publicUrl) {
   return text;
 }
 
-/* ====== CSV & Estadística ====== */
-function pickDelimiter(sampleLines) {
-  const c = [",",";","\t","|"]; let best=",", score=-1;
-  for (const d of c){ let sc=0; for (const l of sampleLines){ const p=l.split(d); if(p.length>1) sc+=p.length; } if(sc>score){ score=sc; best=d; } }
+// ---------- CSV ----------
+function detectDelim(line) {
+  if (!line) return ",";
+  if (line.includes(";")) return ";";
+  if (line.includes("\t")) return "\t";
+  if (line.includes("|")) return "|";
+  return ",";
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return { rows: [], headers: [] };
+  const delim = detectDelim(lines[0]);
+  const headers = lines[0].split(delim).map(h => h.trim());
+  const rows = lines.slice(1).map(line => {
+    const parts = line.split(delim);
+    const obj = {};
+    headers.forEach((h, i) => (obj[h] = parts[i] !== undefined ? parts[i].trim() : ""));
+    return obj;
+  });
+  return { rows, headers };
+}
+
+// ---------- helpers ----------
+const norm = s =>
+  (s || "")
+    .toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^\w]+/g, " ")
+    .trim();
+
+function findHeader(headers, targets) {
+  const H = headers.map(h => [h, norm(h)]);
+  for (const t of targets) {
+    const tn = norm(t);
+    const hit = H.find(([orig, nn]) => nn === tn);
+    if (hit) return hit[0];
+  }
+  // aproximado
+  for (const t of targets) {
+    const tn = norm(t);
+    const hit = H.find(([orig, nn]) => nn.includes(tn));
+    if (hit) return hit[0];
+  }
+  return null;
+}
+
+function toNumber(x) {
+  if (x == null) return null;
+  const s = String(x).replace(",", ".").replace(/[^\d.-]/g, "");
+  const v = Number(s);
+  return Number.isFinite(v) ? v : null;
+}
+
+function zscore(values) {
+  const n = values.length;
+  const m = values.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(values.reduce((a, b) => a + (b - m) ** 2, 0) / (n || 1));
+  return { mean: m, sd: sd || 1 };
+}
+
+function euclid2(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) {
+    const d = a[i] - b[i];
+    s += d * d;
+  }
+  return Math.sqrt(s);
+}
+
+// ---------- planner muy simple ----------
+function inferRequestedCount(q) {
+  if (!q) return null;
+  const s = String(q).toLowerCase();
+
+  const m = s.match(
+    /\btop\s*(\d+)\b|\bprimer(?:os|as)?\s*(\d+)\b|\b(?:dame|muestrame|muéstrame|lista(?:r)?|solo)\s*(\d+)\b|\b(\d+)\s*(estudiantes|alumnos|filas|pares)\b/
+  );
+  if (m) {
+    const n = [m[1], m[2], m[3], m[4]].filter(Boolean)[0];
+    const v = parseInt(n, 10);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  const mapa = {
+    uno: 1,
+    una: 1,
+    primer: 1,
+    primero: 1,
+    primera: 1,
+    dos: 2,
+    segundo: 2,
+    segundos: 2,
+    segundas: 2,
+    tres: 3,
+    cuatro: 4,
+    cinco: 5,
+    seis: 6,
+    siete: 7,
+    ocho: 8,
+    nueve: 9,
+    diez: 10,
+  };
+  for (const [w, n] of Object.entries(mapa)) if (new RegExp(`\\b${w}\\b`, "i").test(s)) return n;
+  return null;
+}
+
+function inferMode(query) {
+  const s = (query || "").toLowerCase();
+  const wantsCluster =
+    /(grupo|agrup|k-?means|homogene)/.test(s) && /(agresi|empat)/.test(s);
+  const wantsCorr = /correlaci/.test(s) && /(agresi|empat)/.test(s);
+  if (wantsCluster) return "cluster";
+  if (wantsCorr) return "correlation";
+  return "table";
+}
+
+function getRequestedGroupSize(q) {
+  const m = (q || "").toLowerCase().match(/grupos?\s+de\s+(\d+)/) || (q || "").toLowerCase().match(/de\s+(\d+)\s+estudiantes/);
+  if (m) {
+    const v = parseInt(m[1], 10);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return 5;
+}
+
+// ---------- k-means en (zAg, zEmp) ----------
+function kmeans(points, k, { maxIter = 60, restarts = 20, seed = 7 } = {}) {
+  // points: [{id, x:[zAg,zEmp]}]
+  let best = null;
+
+  function rng() {
+    // LCG simple reproducible
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  }
+
+  function runOnce() {
+    // init aleatoria de centroides
+    const cents = [];
+    const used = new Set();
+    while (cents.length < k) {
+      const idx = Math.floor(rng() * points.length);
+      if (!used.has(idx)) {
+        used.add(idx);
+        cents.push(points[idx].x.slice());
+      }
+    }
+    let labels = new Array(points.length).fill(0);
+    let changed = true;
+    let it = 0;
+
+    while (changed && it++ < maxIter) {
+      changed = false;
+      // asignar
+      for (let i = 0; i < points.length; i++) {
+        let bestJ = 0,
+          bestD = Infinity;
+        for (let j = 0; j < k; j++) {
+          const d = euclid2(points[i].x, cents[j]);
+          if (d < bestD) {
+            bestD = d;
+            bestJ = j;
+          }
+        }
+        if (labels[i] !== bestJ) {
+          labels[i] = bestJ;
+          changed = true;
+        }
+      }
+      // recomputar centroides
+      const sums = Array.from({ length: k }, () => [0, 0]);
+      const cnts = new Array(k).fill(0);
+      for (let i = 0; i < points.length; i++) {
+        const g = labels[i];
+        sums[g][0] += points[i].x[0];
+        sums[g][1] += points[i].x[1];
+        cnts[g]++;
+      }
+      for (let j = 0; j < k; j++) {
+        if (cnts[j] > 0) {
+          cents[j][0] = sums[j][0] / cnts[j];
+          cents[j][1] = sums[j][1] / cnts[j];
+        }
+      }
+    }
+
+    // SSE
+    let sse = 0;
+    for (let i = 0; i < points.length; i++) {
+      sse += euclid2(points[i].x, cents[labels[i]]) ** 2;
+    }
+    return { cents, labels, sse };
+  }
+
+  for (let r = 0; r < restarts; r++) {
+    const out = runOnce();
+    if (!best || out.sse < best.sse) best = out;
+  }
   return best;
 }
-function parseCSV(text) {
-  const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const d = pickDelimiter(lines.slice(0,10));
-  const rows = lines.map(l => l.split(d).map(c=>c.trim()));
-  const headers = rows[0];
-  const body = rows.slice(1).map(r => {
-    const o = {}; headers.forEach((h,i)=> o[h] = r[i] ?? ""); return o;
-  });
-  return { headers, rows: body };
-}
-function toNum(v){ const n = parseFloat(String(v??"").replace(/[^0-9.\-]+/g,"")); return Number.isFinite(n)?n:null; }
-function isMostlyNumeric(arr){ const nums=arr.map(toNum).filter(v=>v!==null); return nums.length/arr.length >= 0.6; }
-function percentile(arr, p){
-  const v = arr.map(toNum).filter(x=>x!==null).sort((a,b)=>a-b);
-  if(!v.length) return null;
-  if (p<=0) return v[0]; if (p>=100) return v[v.length-1];
-  const rank=(p/100)*(v.length-1); const lo=Math.floor(rank), hi=Math.ceil(rank), w=rank-lo;
-  return v[lo]*(1-w) + v[hi]*w;
-}
-function mean(arr){ const v=arr.map(toNum).filter(x=>x!==null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
-function corrPearson(xArr,yArr){
-  const x=[],y=[]; for(let i=0;i<xArr.length;i++){ const a=toNum(xArr[i]), b=toNum(yArr[i]); if(a!==null&&b!==null){ x.push(a); y.push(b);} }
-  const n=x.length; if(n<3) return {r:NaN,r2:NaN,n};
-  const mx=mean(x), my=mean(y); let num=0,dx=0,dy=0;
-  for(let i=0;i<n;i++){ const ax=x[i]-mx, by=y[i]-my; num+=ax*by; dx+=ax*ax; dy+=by*by; }
-  const den = Math.sqrt(dx*dy); const r = den? num/den : NaN; return { r, r2: r*r, n };
-}
 
-/* ====== Planner (GPT) ====== */
-function buildSchema(headers, rows){
-  return headers.map(h=>{
-    const col = rows.map(r=>r[h]);
-    return { name:h, type: isMostlyNumeric(col)?"number":"string", sample: Array.from(new Set(col)).slice(0,6) };
-  });
-}
-
-const SYSTEM_PLANNER = `
-Eres un planificador de consultas sobre un CSV. Devuelve SOLO JSON válido:
-
-{
-  "mode": "table" | "correlation",
-  "select": ["colA","colB",...],     // opcional; si falta, usa todas
-  "filters": [{"col":"Col","op":"==|!=|>|>=|<|<=|contains|in","value":any}],
-  "orderBy": [{"col":"Col","dir":"asc|desc"}],
-  "limit": 10,
-  "computed": [ {"as":"IndiceGlobal","op":"mean","cols":[...]} ],
-  "percentileFilters": [ {"col":"Col","op":">=","p":80} ],
-  "quintile": {"col":"Col","index":1..5},
-  "correlation": { "autoTop": 10 }, // o "pairs":[{"x":"ColX","y":"ColY"}]
-  "explanation": "texto breve"
-}
-
-Reglas:
-- Usa SOLO nombres de "schema".
-- “Mejores usando todas las habilidades” → computed mean de TODAS las numéricas (excluye Edad/Curso/Paralelo si existen).
-- “Quintil más alto” → quintile.index = 5 (≥P80).
-- Correlaciones globales → mode:"correlation", correlation.autoTop ~10.
-- Incluye siempre "explanation".`;
-
-async function callPlanner(messages) {
-  if (!API_KEY) throw new Error("Falta OPENAI_API_KEY.");
-  const r = await fetch("https://api.openai.com/v1/chat/completions",{
-    method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${API_KEY}` },
-    body: JSON.stringify({ model: MODEL, temperature: 0, messages })
-  });
-  const data = await r.json().catch(()=>null);
-  return data?.choices?.[0]?.message?.content?.trim() || "";
-}
-
-/* ====== Post-explicación (teoría) ====== */
-async function postExplain({ userQ, mode, plan, meta }) {
-  if (!API_KEY) return "";
-  const sys = `Eres una asesora educativa (es-MX). Escribe una EXPLICACIÓN breve, correcta y didáctica del resultado YA CALCULADO.
-No inventes números nuevos: usa SOLO lo que viene en "meta". Incluye teoría (matemática/estadística, psicometría) e interpretación pedagógica.
-Extensión: 120–180 palabras, tono profesional y claro.`;
-  const user = `Pregunta: ${userQ}
-Modo: ${mode}
-Plan: ${JSON.stringify(plan ?? {}, null, 2)}
-Meta (resumen de lo calculado): ${JSON.stringify(meta ?? {}, null, 2)}
-Recuerda: NO inventes valores. Explica con base en "meta".`;
-  const r = await fetch("https://api.openai.com/v1/chat/completions",{
-    method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${API_KEY}` },
-    body: JSON.stringify({ model: MODEL, temperature: 0.2, messages:[{role:"system",content:sys},{role:"user",content:user}] })
-  });
-  const data = await r.json().catch(()=>null);
-  return data?.choices?.[0]?.message?.content?.trim() || "";
-}
-function buildMetaForExplanation({ mode, plan, headers, rows, table, extra }) {
-  const meta = { filas: rows.length, columnas: headers, select: extra?.selectCols ?? headers };
-  if (mode === "correlation" && extra?.topCorr) meta.topCorrelaciones = extra.topCorr.slice(0,5);
-  if (extra?.quintilInfo) meta.quintil = extra.quintilInfo; // {col,index,Pcut}
-  if (extra?.kpis) meta.kpis = extra.kpis;
-  return meta;
-}
-
-/* ====== Ejecutor de PLAN ====== */
-function normalizeOp(op){ return String(op||"").toLowerCase(); }
-function applyFilters(rows, filters=[]){
-  if(!filters.length) return rows;
-  return rows.filter(row => filters.every(f=>{
-    const v=row[f.col], op=normalizeOp(f.op), val=f.value, n=toNum(v), nv=toNum(val);
-    if(op==="contains") return String(v??"").toLowerCase().includes(String(val??"").toLowerCase());
-    if(op==="in") return Array.isArray(val) ? val.map(String).includes(String(v)) : false;
-    if(n!==null && nv!==null){
-      if(op==="==") return n===nv; if(op==="!=") return n!==nv; if(op===">") return n>nv; if(op===">=") return n>=nv; if(op==="<") return n<nv; if(op==="<=") return n<=nv;
-    }
-    if(op==="==") return String(v)===String(val);
-    if(op==="!=") return String(v)!==String(val);
-    return true;
-  }));
-}
-function applyPercentileFilters(rows, pf=[]){
-  if(!pf.length) return rows;
-  let out=rows;
-  for(const f of pf){
-    const cut = percentile(out.map(r=>r[f.col]), f.p);
-    out = out.filter(r=>{
-      const n=toNum(r[f.col]); if(n===null || cut===null) return false;
-      if(f.op=== ">=") return n>=cut; if(f.op==="<=") return n<=cut; if(f.op===">") return n>cut; if(f.op==="<") return n<cut; if(f.op==="==") return n===cut;
-      return true;
-    });
+function balanceClusters(assign, cents, targetSize, points) {
+  // targetSize=5: mueve los casos más cercanos al centro de clusters deficitarios
+  const k = cents.length;
+  const groups = Array.from({ length: k }, () => []);
+  assign.forEach((g, i) => groups[g].push(i));
+  const deficit = [];
+  const surplus = [];
+  for (let j = 0; j < k; j++) {
+    if (groups[j].length < targetSize) deficit.push(j);
+    if (groups[j].length > targetSize) surplus.push(j);
   }
-  return out;
-}
-function applyQuintile(rows, qSpec){
-  if(!qSpec || !qSpec.col || !qSpec.index) return rows;
-  const q=Math.max(1,Math.min(5,qSpec.index)); const pLo=(q-1)*20, pHi=q*20;
-  const arr=rows.map(r=>r[qSpec.col]); const cutLo=percentile(arr,pLo), cutHi=percentile(arr,pHi);
-  if(q===5) return rows.filter(r=>{ const n=toNum(r[qSpec.col]); return n!==null && n>=cutLo; });
-  return rows.filter(r=>{ const n=toNum(r[qSpec.col]); return n!==null && n>=cutLo && n<=cutHi; });
-}
-function addComputed(rows, computed=[]){
-  if(!computed.length) return rows;
-  return rows.map(r=>{
-    const o={...r};
-    for(const c of computed){
-      const as=c.as||"computed", cols=Array.isArray(c.cols)?c.cols:[], vals=cols.map(k=>toNum(r[k])).filter(x=>x!==null);
-      if(!vals.length){ o[as]=""; continue; }
-      const op=String(c.op||"").toLowerCase();
-      if(op==="mean"||op==="avg") o[as]=mean(vals);
-      else if(op==="sum") o[as]=vals.reduce((a,b)=>a+b,0);
-      else if(op==="min") o[as]=Math.min(...vals);
-      else if(op==="max") o[as]=Math.max(...vals);
-      else o[as]=mean(vals);
+  function pullFrom(sur, def) {
+    // del cluster "sur" movemos el más cercano al centro de "def"
+    let bestI = -1,
+      bestD = Infinity,
+      bestIdx = -1;
+    for (const idx of groups[sur]) {
+      const d = euclid2(points[idx].x, cents[def]);
+      if (d < bestD) {
+        bestD = d;
+        bestI = idx;
+        bestIdx = idx;
+      }
     }
-    return o;
-  });
+    if (bestIdx >= 0) {
+      // mover
+      groups[sur] = groups[sur].filter(i => i !== bestIdx);
+      groups[def].push(bestIdx);
+      assign[bestIdx] = def;
+    }
+  }
+  // mientras haya déficit y superávit
+  let guard = 1000;
+  while (deficit.length && surplus.length && guard--) {
+    const d = deficit.shift();
+    // busca un surplus con algo de margen
+    let s = surplus.find(sj => groups[sj].length > targetSize);
+    if (s == null) break;
+    pullFrom(s, d);
+    if (groups[s].length <= targetSize) {
+      surplus.splice(surplus.indexOf(s), 1);
+    }
+    if (groups[d].length < targetSize) deficit.push(d); // aún le falta
+  }
+  return assign;
 }
-function applyOrderLimit(rows, orderBy=[], limit){
-  let arr=rows.slice();
-  if(orderBy.length){
-    arr.sort((a,b)=>{
-      for(const o of orderBy){
-        const col=o.col, dir=String(o.dir||"asc").toLowerCase();
-        const av=a[col], bv=b[col], an=toNum(av), bn=toNum(bv);
-        let cmp=0; if(an!==null && bn!==null) cmp=an-bn; else cmp=String(av).localeCompare(String(bv));
-        if(cmp!==0) return dir==="desc"? -cmp : cmp;
+
+// ---------- modos ----------
+function applyOrderLimit(rows, orderBy, limit) {
+  let arr = rows.slice();
+  if (orderBy && orderBy.length) {
+    arr.sort((a, b) => {
+      for (const ob of orderBy) {
+        const dir = (ob.dir || "desc").toLowerCase() === "asc" ? 1 : -1;
+        const av = a[ob.col],
+          bv = b[ob.col];
+        if (av == null && bv == null) continue;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        if (av < bv) return -1 * dir;
+        if (av > bv) return 1 * dir;
       }
       return 0;
     });
   }
-  if(typeof limit==="number" && limit>=0) arr=arr.slice(0,limit);
+  if (Number.isFinite(limit)) arr = arr.slice(0, limit);
   return arr;
 }
-function objectsToArray(headers, objs){
-  const rows=[headers]; for(const o of objs) rows.push(headers.map(h=>(o[h] ?? "").toString())); return rows;
-}
-function computeCorrelations(headers, rows, opt){
-  const numericCols = headers.filter(h => isMostlyNumeric(rows.map(r=>r[h])));
-  const out=[];
-  const top = Math.max(1, Math.min(50, opt?.autoTop ?? 10));
-  for(let i=0;i<numericCols.length;i++){
-    for(let j=i+1;j<numericCols.length;j++){
-      const a=numericCols[i], b=numericCols[j];
-      const {r,r2,n}=corrPearson(rows.map(r=>r[a]), rows.map(r=>r[b]));
-      if(Number.isFinite(r)) out.push({X:a,Y:b,r,R2:r2,n});
+
+function buildClusterOutput(rawRows, headers, query) {
+  // localizar columnas
+  const colNombre =
+    findHeader(headers, ["NOMBRE", "ESTUDIANTE", "ALUMNO"]) || headers[0];
+  const colAgre = findHeader(headers, ["AGRESION", "AGRESIÓN", "AGRESIVIDAD"]);
+  const colEmp = findHeader(headers, ["EMPATIA", "EMPATÍA"]);
+  if (!colAgre || !colEmp)
+    throw new Error("No encontré columnas de AGRESIÓN y/o EMPATÍA en el CSV.");
+
+  const rows = rawRows
+    .map(r => ({
+      nombre: r[colNombre] || "",
+      agre: toNumber(r[colAgre]),
+      emp: toNumber(r[colEmp]),
+      raw: r,
+    }))
+    .filter(r => r.nombre && r.agre != null && r.emp != null);
+
+  if (!rows.length) throw new Error("No hay filas válidas con Agresión y Empatía.");
+
+  // z-score
+  const ZAg = zscore(rows.map(r => r.agre));
+  const ZEm = zscore(rows.map(r => r.emp));
+  const points = rows.map((r, i) => ({
+    id: i,
+    x: [(r.agre - ZAg.mean) / ZAg.sd, (r.emp - ZEm.mean) / ZEm.sd],
+  }));
+
+  const groupSize = getRequestedGroupSize(query) || 5;
+  const k = Math.max(1, Math.ceil(rows.length / groupSize));
+
+  const { labels, cents } = kmeans(points, k, { maxIter: 60, restarts: 20, seed: 13 });
+  const finalLabels = balanceClusters(labels.slice(), cents, groupSize, points);
+
+  // armar grupos
+  const grupos = Array.from({ length: k }, () => []);
+  finalLabels.forEach((g, i) => grupos[g].push(i));
+
+  const outGroups = grupos.map((gIdxs, gi) => {
+    const lis = gIdxs.map((i, ord) => {
+      const p = points[i].x;
+      const dist = euclid2(p, cents[gi]);
+      return {
+        "#": ord + 1,
+        NOMBRE: rows[i].nombre,
+        AGRESION: rows[i].agre,
+        EMPATIA: rows[i].emp,
+        zAg: +p[0].toFixed(3),
+        zEmp: +p[1].toFixed(3),
+        dist_al_centro: +dist.toFixed(3),
+      };
+    });
+    // medias crudas
+    const mAg = lis.reduce((a, b) => a + b.AGRESION, 0) / lis.length;
+    const mEm = lis.reduce((a, b) => a + b.EMPATIA, 0) / lis.length;
+    return {
+      titulo: `Grupo ${gi + 1} (n=${lis.length}) — medias: Agresión=${mAg.toFixed(
+        1
+      )}, Empatía=${mEm.toFixed(1)} — centróide z=(${cents[gi][0].toFixed(
+        2
+      )}, ${cents[gi][1].toFixed(2)})`,
+      rows: lis.sort((a, b) => a.dist_al_centro - b.dist_al_centro),
+    };
+  });
+
+  // compatibilidad global (top 5)
+  const pairs = [];
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      pairs.push({
+        A: rows[i].nombre,
+        B: rows[j].nombre,
+        dist_z: +euclid2(points[i].x, points[j].x).toFixed(3),
+      });
     }
   }
-  out.sort((u,v)=>Math.abs(v.r)-Math.abs(u.r)); out.splice(top);
-  const hdr=["#","X","Y","r","R² (%)","n"];
-  const arr=out.map((o,i)=>[i+1,o.X,o.Y,o.r.toFixed(3),(o.R2*100).toFixed(1),o.n]);
-  return { table:[hdr,...arr], pairs: out };
+  pairs.sort((a, b) => a.dist_z - b.dist_z);
+  const topPairs = pairs.slice(0, 5);
+
+  // par más compatible dentro de cada grupo
+  const within = outGroups.map((g, gi) => {
+    const rr = g.rows;
+    let best = null;
+    for (let i = 0; i < rr.length; i++) {
+      for (let j = i + 1; j < rr.length; j++) {
+        const d = euclid2([rr[i].zAg, rr[i].zEmp], [rr[j].zAg, rr[j].zEmp]);
+        if (!best || d < best.dist_z) best = { grupo: gi + 1, A: rr[i].NOMBRE, B: rr[j].NOMBRE, dist_z: +d.toFixed(3) };
+      }
+    }
+    return best;
+  });
+
+  const nota = [
+    `Se formaron ${k} grupos homogéneos de ${groupSize} estudiantes usando k-means en el plano (Agresión, Empatía) tras normalizar con z-score.`,
+    `La compatibilidad se definió como la menor distancia euclidiana en z; se reportan los 5 pares más similares en todo el conjunto y el par más compatible de cada grupo.`,
+  ].join(" ");
+
+  return { mode: "cluster", nota, grupos: outGroups, topPairs, pairsWithin: within, n: rows.length, k, groupSize };
 }
 
-/* ====== Handler ====== */
+// (modo corr y modo tabla los dejamos simples por ahora)
+function buildCorrelationOutput() {
+  return {
+    mode: "corr-info",
+    nota:
+      "La petición está configurada para correlaciones globales. Si quieres sólo Agresión↔Empatía, pide explícito: 'Correlación Agresión y Empatía (Pearson y Spearman) con p, n y varianzas; sólo esa pareja'.",
+  };
+}
+
+// ---------- handler ----------
 export default async function handler(req, res) {
-  try{
+  try {
     const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
     const file = safeFileParam(req.query.file || req.query.f || "decimo.csv");
 
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host  = req.headers.host;
+    const host = req.headers.host;
     const publicUrl = `${proto}://${host}/datos/${encodeURIComponent(file)}`;
 
-    // 1) CSV
     const csvText = await getCSVText(publicUrl);
-    const { headers, rows } = parseCSV(csvText);
-    if(!headers.length){
-      return res.status(200).json({ text:"CSV vacío o ilegible.", archivo:file, formato:"texto" });
+    const { rows, headers } = parseCSV(csvText);
+    const mode = inferMode(q);
+
+    let data;
+    if (mode === "cluster") {
+      data = buildClusterOutput(rows, headers, q);
+    } else if (mode === "correlation") {
+      data = buildCorrelationOutput();
+    } else {
+      data = { mode: "table-info", nota: "Modo tabla básico. Pide 'cluster' para grupos homogéneos o 'correlación' para correlaciones." };
     }
 
-    // 2) Esquema → Planner
-    const schema = buildSchema(headers, rows);
-    const baseMessages = [
-      { role:"system", content: SYSTEM_PLANNER },
-      { role:"user", content: `Pregunta del usuario:\n${q}\n\nschema:\n${JSON.stringify(schema,null,2)}` }
-    ];
-
-    let planText = await callPlanner(baseMessages);
-    let plan;
-    try { plan = JSON.parse(planText); }
-    catch(e) {
-      // MODO ESTRICTO: sin JSON válido no devolvemos texto
-      return res.status(400).json({ text:"No pude estructurar un plan ejecutable para la consulta.", archivo:file, formato:"texto" });
-    }
-
-    const mode = String(plan?.mode || "table").toLowerCase();
-
-    // 3) Ejecutar plan sobre datos reales
-    let working = rows.slice();
-
-    if (Array.isArray(plan?.computed) && plan.computed.length) {
-      working = addComputed(working, plan.computed);
-    }
-    if (Array.isArray(plan?.filters) && plan.filters.length) {
-      working = applyFilters(working, plan.filters);
-    }
-    if (Array.isArray(plan?.percentileFilters) && plan.percentileFilters.length) {
-      working = applyPercentileFilters(working, plan.percentileFilters);
-    }
-    if (plan?.quintile) {
-      working = applyQuintile(working, plan.quintile);
-    }
-
-    let table, selectCols;
-
-    if (mode === "correlation") {
-      const { table: t, pairs } = computeCorrelations(headers, working, plan.correlation || {});
-      table = t; selectCols = t[0];
-      // 4) Post-explicación
-      const meta = buildMetaForExplanation({
-        mode, plan, headers, rows: working, table, extra: { selectCols, topCorr: pairs }
-      });
-      const nota = await postExplain({ userQ:q, mode, plan, meta });
-      return res.status(200).json({
-        text: JSON.stringify(table),
-        archivo: file,
-        filas_aprox: table.length - 1,
-        formato: "json",
-        nota
-      });
-    }
-
-    // Tabla normal
-    selectCols = Array.isArray(plan?.select) && plan.select.length ? plan.select : (headers);
-    working = applyOrderLimit(working, plan?.orderBy || [], plan?.limit);
-    table = objectsToArray(selectCols, working);
-
-    if (table.length <= 1) {
-      return res.status(200).json({ text: "No existe información.", archivo: file, filas_aprox: 0, formato: "texto" });
-    }
-
-    // (Opcional) meta extra para quintiles
-    let extra = { selectCols };
-    if (plan?.quintile?.col && plan?.quintile?.index){
-      const col = plan.quintile.col;
-      const pLo = (plan.quintile.index - 1) * 20;
-      const cut = percentile(rows.map(r=>r[col]), pLo);
-      extra.quintilInfo = { col, index: plan.quintile.index, Pcut: cut };
-    }
-
-    // 4) Post-explicación
-    const meta = buildMetaForExplanation({ mode, plan, headers, rows: working, table, extra });
-    const nota = await postExplain({ userQ:q, mode, plan, meta });
-
-    return res.status(200).json({
-      text: JSON.stringify(table),
-      archivo: file,
-      filas_aprox: table.length - 1,
-      formato: "json",
-      nota
-    });
-  }catch(e){
+    res.status(200).json(data);
+  } catch (e) {
     console.error(e);
-    return res.status(500).json({ text:"Error interno.", details:String(e) });
+    res.status(500).json({ text: "Error interno.", details: String(e) });
   }
 }
