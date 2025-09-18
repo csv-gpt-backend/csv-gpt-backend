@@ -213,6 +213,30 @@
       win.document.write(`<pre>${texto}</pre>`);
       win.print();
     }
+function speak(text) {
+  const synth = window.speechSynthesis;
+  synth.cancel(); // detener cualquier voz previa
+  
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "es-MX";            // Español México
+  utterance.pitch = 1;                  // Tono natural
+  utterance.rate = 1;                   // Velocidad normal
+
+  // Filtrar para usar solo voces femeninas disponibles en español México
+  const voices = synth.getVoices().filter(
+    v => v.lang === "es-MX" && v.name.toLowerCase().includes("female")
+  );
+
+  if (voices.length > 0) {
+    utterance.voice = voices[0]; // Primera voz femenina encontrada
+  } else {
+    // Si no hay voz marcada como female, usa la predeterminada de es-MX
+    const fallback = synth.getVoices().find(v => v.lang === "es-MX");
+    if (fallback) utterance.voice = fallback;
+  }
+
+  synth.speak(utterance);
+}
 
     // ====== Limpiar ======
     function limpiar() {
