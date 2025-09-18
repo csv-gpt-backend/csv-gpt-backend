@@ -130,7 +130,7 @@
       $q.addEventListener('keydown',e=>{ if(e.key==='Enter') enviarPregunta(); });
     }
 
-    // ===== SESIÓN Y CONTEXTO =====
+    // ===== SESIÓN Y CONTEXTO ========
     function newSessionId(){ return 'sess_'+Math.random().toString(36).slice(2)+'_'+Date.now(); }
     function getSession(){
       const saved=JSON.parse(localStorage.getItem('session')||'{}'); const now=Date.now();
