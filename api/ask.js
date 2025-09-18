@@ -1,4 +1,7 @@
-// /api/ask.js  (MODO SEGURO: solo CSV + memoria 10min)
+// /api/ask.js
+// Analiza un CSV completo y responde con texto. Incluye rutas de diagnóstico y timeout.
+// 2025-09-17 – versión con "ping" rápido + timeout + mensajes claros.
+
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const API_KEY =
   process.env.OPENAI_API_KEY ||
@@ -6,109 +9,207 @@ const API_KEY =
   process.env["CLAVE API DE OPENAI"];
 
 const CACHE_MS = 5 * 60 * 1000;
-const csvCache = new Map();
-const sessions = new Map(); // memoria 10 minutos
+const cache = new Map(); // url -> { ts, text }
 
-function sid(req){
-  const ua = (req.headers["user-agent"] || "").slice(0,80);
-  const ip = req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "ip";
-  return `${ip}|${ua}`;
-}
-function getSess(req){
-  const id = sid(req), now = Date.now();
-  const it = sessions.get(id);
-  if (it && now - it.ts <= 10*60*1000) return it;
-  const fresh = { ts: now, history: [] };
-  sessions.set(id, fresh); 
-  return fresh;
-}
-function safeFile(s, def = "decimo.csv"){
+// ---------- Utilidades ----------
+function safeFileParam(s, def = "decimo.csv") {
   const x = (s || "").toString().trim();
   if (!x) return def;
   if (x.includes("..") || x.includes("/") || x.includes("\\")) return def;
   return x;
 }
-async function fetchCSV(url){
-  const hit = csvCache.get(url), now = Date.now();
-  if (hit && (now - hit.ts) < CACHE_MS) return hit.text;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`No pude leer CSV ${url} (HTTP ${r.status})`);
+
+async function getCSVText(publicUrl) {
+  const hit = cache.get(publicUrl);
+  const now = Date.now();
+  if (hit && now - hit.ts < CACHE_MS) return hit.text;
+  const r = await fetch(publicUrl);
+  if (!r.ok) throw new Error(`No pude leer CSV ${publicUrl} (HTTP ${r.status})`);
   const text = await r.text();
-  csvCache.set(url, { ts: now, text });
+  cache.set(publicUrl, { ts: now, text });
   return text;
 }
-function systemPrompt(){
+
+function detectDelim(line) {
+  if (!line) return ",";
+  if (line.includes(";")) return ";";
+  if (line.includes("\t")) return "\t";
+  if (line.includes("|")) return "|";
+  return ",";
+}
+
+// ---------- OpenAI con timeout ----------
+async function callOpenAI(messages, timeoutMs = 45000) {
+  if (!API_KEY) {
+    return { ok: false, text: "Falta configurar OPENAI_API_KEY en Vercel." };
+  }
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+
+  let r, data;
+  try {
+    r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        temperature: 0.35,
+      }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === "AbortError") {
+      console.error("[OpenAI] Timeout");
+      return { ok: false, text: "OpenAI tardó demasiado (timeout)." };
+    }
+    console.error("[OpenAI] Error de red:", err);
+    return { ok: false, text: `Error llamando a OpenAI: ${String(err)}` };
+  }
+
+  try {
+    data = await r.json();
+  } catch (e) {
+    console.error("[OpenAI] No se pudo parsear JSON:", e);
+    const raw = await r.text().catch(() => "");
+    return {
+      ok: false,
+      text: `OpenAI devolvió una respuesta no válida (HTTP ${r.status}). ${raw}`,
+    };
+  }
+
+  if (!r.ok) {
+    const detail = data?.error?.message || JSON.stringify(data);
+    console.error("[OpenAI] HTTP", r.status, detail);
+    return { ok: false, text: `OpenAI ${r.status}: ${detail}` };
+  }
+
+  const text =
+    data?.choices?.[0]?.message?.content?.trim() ||
+    `No pude consultar OpenAI (HTTP ${r.status}).`;
+  return { ok: true, text };
+}
+
+// ---------- Prompts ----------
+function systemPromptText() {
   return [
-    "Eres asesora educativa (es-MX), clara y ejecutiva.",
-    "Dispones de un CSV completo con columnas variables (no menciones que es un CSV).",
-    "Usa datos reales. Si falta info, dilo.",
-    "Si piden 'lista/enlistar/tabla', devuelve tabla numerada (#) y ordenada.",
-    "Para 'grupos homogéneos' usa clustering simple sobre columnas solicitadas.",
-    "Para correlación usa Pearson/Spearman con interpretación.",
-    "No dupliques información en la respuesta. Evita asteriscos."
+    "Eres una asesora educativa clara y ejecutiva (español México).",
+    "Recibirás un CSV completo con columnas variables (no asumas nombres fijos).",
+    "Instrucciones:",
+    "1) Detecta el delimitador (coma/; /tab/|) y analiza la tabla tal cual.",
+    "2) Si preguntan por una persona, localízala por coincidencia del nombre en cualquier columna.",
+    "3) No inventes datos: basar todo en el CSV entregado. Si falta info, dilo.",
+    "4) Responde breve (~150-180 palabras), tono profesional, en español (MX).",
+    "5) No describas asteriscos ni marcas tipográficas; omítelos en la lectura.",
   ].join(" ");
 }
-function userPrompt(q, csvText){
+
+function userPromptText(query, csvText) {
+  const first = (csvText.split(/\r?\n/)[0] || "").slice(0, 500);
+  const delim = detectDelim(first);
   return [
-    `PREGUNTA: ${q}`,
+    `PREGUNTA: ${query}`,
     "",
-    "DATOS (entre triple backticks):",
+    `DELIMITADOR_APROX: ${JSON.stringify(delim)}`,
+    "",
+    "A continuación va el CSV completo entre triple backticks. Analízalo tal cual:",
     "```csv",
     csvText,
     "```",
   ].join("\n");
 }
-async function callOpenAI(messages){
-  if (!API_KEY) {
-    return { ok:false, text:"Falta OPENAI_API_KEY en Vercel." };
-  }
-  const r = await fetch("https://api.openai.com/v1/chat/completions", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json", Authorization:`Bearer ${API_KEY}` },
-    body: JSON.stringify({ model: MODEL, messages, temperature:0.35 })
-  });
-  const raw = await r.text();
-  let json; try{ json = JSON.parse(raw) }catch{}
-  const text = json?.choices?.[0]?.message?.content?.trim() || raw || `HTTP ${r.status}`;
-  return { ok:true, text };
-}
 
-export default async function handler(req, res){
-  try{
-    const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
-    const file = safeFile(req.query.file || req.query.f || "decimo.csv");
+// ---------- Handler ----------
+export default async function handler(req, res) {
+  try {
+    const qRaw = (req.query.q || req.body?.q || "").toString();
+    const q = qRaw.trim() || "ping";
 
+    const file = safeFileParam(req.query.file || req.query.f || "decimo.csv");
+
+    // Construye URL pública para leer el CSV
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host  = req.headers.host;
-    const csvUrl = `${proto}://${host}/datos/${encodeURIComponent(file)}`;
+    const publicUrl = `${proto}://${host}/datos/${encodeURIComponent(file)}`;
 
-    // CSV
-    const csvText = await fetchCSV(csvUrl);
+    // -------- RUTA RÁPIDA DE DIAGNÓSTICO (sin OpenAI) --------
+    if (q.toLowerCase() === "ping") {
+      let csvText = "";
+      let lines = 0;
+      try {
+        csvText = await getCSVText(publicUrl);
+        lines = csvText.split(/\r?\n/).filter(Boolean).length;
+      } catch (e) {
+        console.error("[PING] No pude leer CSV:", e);
+        return res.status(200).json({
+          text: `pong (sin CSV). Error al leer CSV: ${String(e)}`,
+          archivo: file,
+          filas_aprox: 0,
+          formato: "texto",
+        });
+      }
+      return res.status(200).json({
+        text: `pong (CSV OK). Archivo ${file} con ~${lines} filas.`, 
+        archivo: file,
+        filas_aprox: lines,
+        formato: "texto",
+      });
+    }
+
+    // Lee CSV (si falla, devolvemos error claro)
+    let csvText = "";
+    try {
+      csvText = await getCSVText(publicUrl);
+    } catch (e) {
+      console.error("[ASK] No pude leer CSV:", e);
+      return res.status(502).json({
+        text: `No pude leer el CSV (${file}). ${String(e)}`,
+        archivo: file,
+        filas_aprox: 0,
+        formato: "texto",
+      });
+    }
     const lines = csvText.split(/\r?\n/).filter(Boolean).length;
 
-    // Memoria
-    const s = getSess(req);
-    if (s.history.length > 12) s.history.splice(0, s.history.length - 12);
-
+    // Prepara prompts
     const messages = [
-      { role:"system", content: systemPrompt() },
-      ...s.history,
-      { role:"user", content: userPrompt(q, csvText) }
+      { role: "system", content: systemPromptText() },
+      { role: "user", content: userPromptText(q, csvText) },
     ];
 
-    const ai = await callOpenAI(messages);
-    s.ts = Date.now();
-    s.history.push({ role:"user", content:q });
-    s.history.push({ role:"assistant", content: ai.text });
+    // Llamada a OpenAI con timeout
+    const ai = await callOpenAI(messages, 45000);
 
+    if (!ai.ok) {
+      // Responde con código explícito para que el front no quede colgado
+      const msg = ai.text || "Error desconocido llamando a OpenAI.";
+      console.error("[ASK] Respuesta con error:", msg);
+      return res.status(504).json({
+        text: `No se pudo obtener respuesta de OpenAI. ${msg}`,
+        archivo: file,
+        filas_aprox: lines,
+        formato: "texto",
+      });
+    }
+
+    // OK
     return res.status(200).json({
       text: ai.text,
       archivo: file,
       filas_aprox: lines,
-      formato: "texto"
+      formato: "texto",
     });
-  }catch(e){
-    console.error(e);
-    return res.status(200).json({ text:"No se encontró respuesta.", error:String(e) });
+  } catch (e) {
+    console.error("[ASK] Error no controlado:", e);
+    return res.status(500).json({
+      text: `Error interno en /api/ask: ${String(e)}`,
+      formato: "texto",
+    });
   }
 }
