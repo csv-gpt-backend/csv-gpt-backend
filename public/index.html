@@ -205,6 +205,39 @@
       out.textContent = texto;
       speak(texto);
     }
+function speak(text) {
+  const synth = window.speechSynthesis;
+  synth.cancel(); // detener cualquier voz que esté sonando
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "es-MX"; // Español México
+  utterance.pitch = 1;       // tono natural
+  utterance.rate = 1;        // velocidad normal
+
+  // Buscar solo voces en español México
+  let voices = synth.getVoices().filter(v => v.lang === "es-MX");
+
+  // Intentar encontrar alguna voz explícitamente femenina
+  let femaleVoices = voices.filter(v =>
+    v.name.toLowerCase().includes("female") ||
+    v.name.toLowerCase().includes("mujer") ||
+    v.name.toLowerCase().includes("woman")
+  );
+
+  if (femaleVoices.length > 0) {
+    // Si hay voz femenina, usarla
+    utterance.voice = femaleVoices[0];
+  } else if (voices.length > 0) {
+    // Si no hay voz etiquetada como femenina, usar la primera voz en es-MX
+    utterance.voice = voices[0];
+  } else {
+    alert("No se encontró voz en español México. Verifica la configuración del navegador.");
+    return;
+  }
+
+  console.log("Voz seleccionada:", utterance.voice.name, utterance.voice.lang);
+  synth.speak(utterance);
+}
 
     // ====== Exportar PDF ======
     function exportPDF() {
