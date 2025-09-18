@@ -3,11 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <!-- Evitar cacheo del HTML -->
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
+  <!-- Sello de versión para verificar que ves la última actualización -->
+  <script>
+    console.log("CSV-GPT Frontend build: 2025-09-18 09:15 (v6)");
+  </script>
 
   <title>CSV-GPT Backend · Demo</title>
+
   <style>
     :root {
       --bg:#0d1117; --panel:#161b22; --text:#e6edf3; --muted:#8b949e; --accent:#2f81f7; --card:#0f1420;
@@ -51,13 +59,12 @@
     <div class="grid">
       <!-- Izquierda: logo -->
       <div class="card logo-box">
-        <img class="logo" src="logo-izq.png" alt="Logo izquierdo" onerror="this.style.opacity=0.3;this.alt='Logo izquierdo (faltante)';" />
+        <img class="logo" src="left.png" alt="Logo izquierdo" onerror="this.style.opacity=0.3;this.alt='Logo izquierdo (faltante)';" />
       </div>
 
       <!-- Centro: video + controles -->
       <div class="center">
         <div class="card video-wrap">
-          <!-- Arranca silenciado y pausado -->
           <video id="video" src="descarga.mp4" controls preload="metadata" muted></video>
         </div>
 
@@ -71,21 +78,20 @@
               <span id="micLabel">Dictar</span>
             </button>
 
-            <input id="q" type="text" placeholder="Escribe o dicta tu pregunta… p.ej., ¿Qué contiene el CSV por columnas?" />
+            <input id="q" type="text" placeholder="Escribe o dicta tu pregunta…" />
             <button id="askBtn">Preguntar</button>
-            <button id="stopVoiceBtn" class="secondary" title="Detener lectura">Detener voz</button>
+            <button id="stopVoiceBtn" class="secondary">Detener voz</button>
 
-            <select id="exportSel" title="Exportar">
+            <select id="exportSel">
               <option value="" selected>Exportar…</option>
               <option value="doc">Word (.doc)</option>
-              <option value="odt">OpenDocument (.odt)*</option>
+              <option value="odt">OpenDocument (.odt)</option>
               <option value="xls">Excel (.xls)</option>
             </select>
 
             <button id="clearMemBtn" class="danger">Limpiar memoria</button>
-
-            <span class="badge" id="voiceBadge" title="Voz fija">Voz: es-MX (femenina)</span>
-            <span class="pill" id="modelBadge" title="Modelo preferido">Modelo: gpt-5</span>
+            <span class="badge" id="voiceBadge">Voz: es-MX (femenina)</span>
+            <span class="pill" id="modelBadge">Modelo: gpt-5</span>
           </div>
           <div class="row small">
             <span id="status" class="status">Listo.</span>
@@ -98,33 +104,27 @@
           <div class="answer" id="answer">La respuesta aparecerá aquí.</div>
           <div id="tables"></div>
         </div>
-
-        <div class="small">
-          * El formato ODT es una exportación sencilla basada en HTML (no 100% del estándar ODF), útil para edición rápida.
-          <div class="sep"></div>
-          Archivo: <code>public/index.html</code>
-        </div>
       </div>
 
       <!-- Derecha: logo -->
       <div class="card logo-box">
-        <img class="logo" src="logo-der.png" alt="Logo derecho" onerror="this.style.opacity=0.3;this.alt='Logo derecho (faltante)';" />
+        <img class="logo" src="right.png" alt="Logo derecho" onerror="this.style.opacity=0.3;this.alt='Logo derecho (faltante)';" />
       </div>
     </div>
   </div>
 
   <script>
-    // ======== CONFIG ========
+    // Config
     const API_BASE = "https://csv-gpt-backend.vercel.app";
     const DEFAULT_FILE = "decimo.csv";
-    const PREFERRED_MODEL = "gpt-5"; // Todas las consultas arrancan con GPT-5
+    const PREFERRED_MODEL = "gpt-5";
+
     const AUTO_PLAY_VIDEO_WHEN_SPEAKS = true;
     const AUTO_PAUSE_VIDEO_AT_END = true;
 
-    // ======== UI refs ========
+    // Referencias UI
     const $q = document.getElementById('q');
     const $ask = document.getElementById('askBtn');
-    const $stopVoice = document.getElementById('stopVoiceBtn');
     const $ans = document.getElementById('answer');
     const $tables = document.getElementById('tables');
     const $status = document.getElementById('status');
@@ -135,18 +135,17 @@
     const $micBtn = document.getElementById('micBtn');
     const $micLabel = document.getElementById('micLabel');
 
-    // Asegurar mute al cargar
-    $video.muted = true;
+    $video.muted = true; // Siempre inicia silenciado
 
-    // ======== SESIÓN Y CONTEXTO (mínimo 10 minutos) ========
-    const SESSION_TTL_MS = 10 * 60 * 1000; // 10 min
+    // Sesión con contexto (10 min)
+    const SESSION_TTL_MS = 10 * 60 * 1000;
     function newSessionId() {
       return 'sess_' + Math.random().toString(36).slice(2) + '_' + Date.now();
     }
     function getSession() {
       const saved = JSON.parse(localStorage.getItem('session') || '{}');
       const now = Date.now();
-      if (!saved.id || !saved.startedAt || (now - saved.lastUsedAt) > SESSION_TTL_MS) {
+      if (!saved.id || (now - saved.lastUsedAt) > SESSION_TTL_MS) {
         const fresh = { id: newSessionId(), startedAt: now, lastUsedAt: now, history: [] };
         localStorage.setItem('session', JSON.stringify(fresh));
         return fresh;
@@ -160,458 +159,96 @@
     function pushHistory(role, text) {
       const sess = getSession();
       sess.history.push({ role, text, t: Date.now() });
-      // limitar tamaño total
       if (sess.history.length > 16) sess.history.shift();
       touchSession(sess);
     }
     function buildContext() {
       const sess = getSession();
-      // condensar últimas ~6 interacciones, máx 1500 chars
-      const recent = [];
-      for (let i = sess.history.length - 1; i >= 0 && recent.length < 12; i--) {
-        recent.unshift(sess.history[i]);
-      }
-      const lines = recent.map(h => (h.role === 'user' ? `Usuario: ${h.text}` : `Asistente: ${h.text}`));
-      let ctx = lines.join('\n');
-      if (ctx.length > 1500) ctx = ctx.slice(-1500);
-      return ctx;
+      const recent = sess.history.slice(-12);
+      const lines = recent.map(h => `${h.role === 'user' ? 'Usuario' : 'Asistente'}: ${h.text}`);
+      return lines.join('\n').slice(-1500);
     }
 
-    // ======== VOZ FIJA: Femenina es-MX (persistencia + filtro anti-masculino) ========
-    const FEMALE_HINTS_POS = ["Dalia","Larissa","Elena","Lucia","Helena","Camila","Fernanda","Mia","Paloma","Valentina",
-      "es-MX-Standard-A","es-MX-Standard-C","es-MX-Neural2-A","es-MX-Neural2-C","Female","Femenina","Mujer"];
-    const MALE_HINTS_NEG = ["Male","Masculina","Hombre","Diego","Jorge","Enrique","Ricardo","Pablo","Sergio","Andres","Juan","Miguel","Javier","Manuel",
-      "es-MX-Standard-B","es-MX-Standard-D","es-MX-Neural2-B","es-MX-Neural2-D"];
+    // -------- VOZ FEMENINA FIJA es-MX --------
+    const FEMALE_HINTS_POS = ["Dalia","Larissa","Elena","Lucia","Helena","Camila","Mia","Paloma","Valentina","Female","Femenina","Mujer"];
+    const MALE_HINTS_NEG = ["Male","Masculina","Hombre","Diego","Jorge","Juan","Miguel","Javier","Manuel"];
 
     let FIXED_VOICE = null;
-    let voicesReady = false;
-
     function scoreVoice(v) {
       let s = 0;
-      const name = (v.name||"") + " " + (v.voiceURI||"");
       const lang = (v.lang||"").toLowerCase();
-
+      const name = (v.name||"").toLowerCase();
       if (lang === "es-mx") s += 120;
       else if (lang.startsWith("es-")) s += 60;
-
-      if (FEMALE_HINTS_POS.some(h => name.toLowerCase().includes(h.toLowerCase()))) s += 80;
-      if (MALE_HINTS_NEG.some(h => name.toLowerCase().includes(h.toLowerCase()))) s -= 120;
-
-      if (/google|microsoft|samsung|apple|natural/i.test(name)) s += 15;
+      if (FEMALE_HINTS_POS.some(h => name.includes(h.toLowerCase()))) s += 80;
+      if (MALE_HINTS_NEG.some(h => name.includes(h.toLowerCase()))) s -= 120;
       return s;
     }
-
-    function findBestFemaleEsVoice(list) {
-      const savedURI = localStorage.getItem("fixedVoiceURI");
-      if (savedURI) {
-        const kept = list.find(v => v.voiceURI === savedURI);
-        if (kept && scoreVoice(kept) >= 60 && !MALE_HINTS_NEG.some(h => (kept.name||"").toLowerCase().includes(h.toLowerCase()))) return kept;
+    function findVoice() {
+      const voices = speechSynthesis.getVoices();
+      const sorted = [...voices].sort((a,b)=>scoreVoice(b)-scoreVoice(a));
+      return sorted[0] || null;
+    }
+    speechSynthesis.onvoiceschanged = () => {
+      FIXED_VOICE = findVoice();
+      if (FIXED_VOICE) {
+        localStorage.setItem("fixedVoiceURI", FIXED_VOICE.voiceURI);
+        $voiceBadge.textContent = `Voz: ${FIXED_VOICE.lang} (${FIXED_VOICE.name})`;
       }
-      const ranked = [...list].sort((a,b) => scoreVoice(b) - scoreVoice(a));
-      let pick = ranked.find(v => v.lang && v.lang.toLowerCase()==="es-mx" && scoreVoice(v) >= 160);
-      if (pick) return pick;
-      pick = ranked.find(v => v.lang && v.lang.toLowerCase()==="es-mx" && !MALE_HINTS_NEG.some(h => (v.name||"").toLowerCase().includes(h.toLowerCase())));
-      if (pick) return pick;
-      pick = ranked.find(v => (v.lang||"").toLowerCase().startsWith("es-") && scoreVoice(v) >= 140);
-      if (pick) return pick;
-      pick = ranked.find(v => (v.lang||"").toLowerCase().startsWith("es-") && !MALE_HINTS_NEG.some(h => (v.name||"").toLowerCase().includes(h.toLowerCase())));
-      return pick || null;
-    }
+    };
 
-    function ensureVoiceReady(maxTries=14) {
-      return new Promise((resolve) => {
-        let tries = 0;
-        const tick = () => {
-          const vs = speechSynthesis.getVoices() || [];
-          if (vs.length) {
-            const chosen = findBestFemaleEsVoice(vs);
-            if (chosen) {
-              FIXED_VOICE = chosen;
-              voicesReady = true;
-              localStorage.setItem("fixedVoiceURI", chosen.voiceURI);
-              $voiceBadge.textContent = `Voz: ${chosen.lang} (${chosen.name})`;
-              resolve(true); return;
-            }
-          }
-          if (++tries >= maxTries) { voicesReady = false; $voiceBadge.textContent = "Voz: español (fallback)"; resolve(false); }
-          else setTimeout(tick, 300);
-        };
-        tick();
-      });
-    }
-    ensureVoiceReady();
-    window.speechSynthesis.onvoiceschanged = () => ensureVoiceReady();
-
-    // ======== Limpiar texto para TTS (no leer asteriscos, etc.) ========
+    // Limpiar asteriscos para que no los lea
     function cleanForTTS(text) {
-      let t = text || "";
-      // quitar bloques de código
-      t = t.replace(/```[\s\S]*?```/g, " ");
-      // quitar tablas MD
-      t = t.replace(/(^\|.+\|\s*\r?\n\|?\s*:?-{3,}.*\r?\n(?:.*\r?\n?)*)/gm, " ");
-      // quitar asteriscos y énfasis ** ** * *
-      t = t.replace(/\*\*/g, "").replace(/\*/g, "");
-      // bullets comunes
-      t = t.replace(/^[\s•\-–·]\s*/gm, "");
-      // compactar espacios
-      t = t.replace(/\s{2,}/g, " ").trim();
-      return t;
-    }
-
-    // ======== Sincronía VIDEO vs LOCUCIÓN ========
-    let speakGuardInterval = null;
-    function startVideoSyncWhileSpeaking() {
-      const kick = () => {
-        if (speechSynthesis.speaking) {
-          if ($video.ended) { try { $video.currentTime = 0; } catch {} }
-          if ($video.paused) { try { $video.play(); } catch {} }
-        }
-      };
-      kick();
-      clearInterval(speakGuardInterval);
-      speakGuardInterval = setInterval(kick, 600);
-    }
-    function stopVideoSync() {
-      clearInterval(speakGuardInterval);
-      speakGuardInterval = null;
-      if (AUTO_PAUSE_VIDEO_AT_END) { try { $video.pause(); } catch {} }
+      return text.replace(/```[\s\S]*?```/g, "")
+                 .replace(/\*\*/g, "")
+                 .replace(/\*/g, "")
+                 .replace(/^[\s•\-–·]\s*/gm, "")
+                 .trim();
     }
 
     function speak(text) {
-      if (!text || !('speechSynthesis' in window)) return;
-      window.speechSynthesis.cancel();
-
-      const cleaned = cleanForTTS(text);
-      const u = new SpeechSynthesisUtterance(cleaned);
-      if (FIXED_VOICE) { u.voice = FIXED_VOICE; u.lang = FIXED_VOICE.lang || "es-MX"; }
-      else { u.lang = "es-MX"; }
-      u.rate = 1.0; u.pitch = 1.05; u.volume = 1.0;
-
-      u.onstart = () => {
-        $status.textContent = "Hablando…";
-        // asegurar que el video esté corriendo mientras habla
-        if (AUTO_PLAY_VIDEO_WHEN_SPEAKS) { try { $video.play(); } catch {} }
-        startVideoSyncWhileSpeaking();
-      };
-      u.onend = () => {
-        $status.textContent = "Listo.";
-        stopVideoSync();
-      };
-      u.onerror = () => { $status.textContent = "No se pudo reproducir la voz (TTS)."; stopVideoSync(); };
-
-      window.speechSynthesis.speak(u);
+      if (!text) return;
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(cleanForTTS(text));
+      if (FIXED_VOICE) u.voice = FIXED_VOICE;
+      u.lang = "es-MX";
+      u.onstart = () => { if (AUTO_PLAY_VIDEO_WHEN_SPEAKS) $video.play(); };
+      u.onend = () => { if (AUTO_PAUSE_VIDEO_AT_END) $video.pause(); };
+      speechSynthesis.speak(u);
     }
 
-    // ======== RENDER TABLAS (Markdown / JSON) SIN DUPLICAR EN RESPUESTA ========
-    function clearTables(){ $tables.innerHTML = ""; }
-
-    function isRowLike(line) {
-      const l = line.trim();
-      if (!l) return false;
-      const commaParts = l.split(",").map(s=>s.trim());
-      const pipeParts = l.split("|").map(s=>s.trim());
-      return (commaParts.length >= 3) || (pipeParts.length >= 3);
-    }
-
-    function renderMarkdownTable(md) {
-      const lines = md.trim().split(/\r?\n/).filter(Boolean);
-      if (lines.length < 2 || !/\|/.test(lines[0])) return false;
-      if (!/^(\s*\|)?\s*:?-{3,}/.test(lines[1])) return false;
-
-      const parseRow = (row) => row.split("|").map(c => c.trim());
-      const headerRaw = parseRow(lines[0]).filter(Boolean);
-      const header = ["#"].concat(headerRaw);
-      const bodyLines = lines.slice(2);
-
-      const table = document.createElement('table'); table.className = 'tbl';
-      const thead = document.createElement('thead');
-      const trh = document.createElement('tr');
-      header.forEach(h => { const th = document.createElement('th'); th.textContent = h; trh.appendChild(th); });
-      thead.appendChild(trh); table.appendChild(thead);
-
-      const tbody = document.createElement('tbody');
-      let idx = 1;
-      bodyLines.forEach(line=>{
-        if(!line.trim()) return;
-        const cols = parseRow(line);
-        const tr = document.createElement('tr');
-        const tdIdx = document.createElement('td'); tdIdx.textContent = idx++; tr.appendChild(tdIdx);
-        headerRaw.forEach((_,i)=>{ const td = document.createElement('td'); td.textContent = (cols[i] ?? ""); tr.appendChild(td); });
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      $tables.appendChild(table);
-      return true;
-    }
-
-    function renderJsonArray(text) {
-      try {
-        const data = JSON.parse(text);
-        if (!Array.isArray(data) || data.length===0 || typeof data[0] !== 'object') return false;
-        const colsRaw = Array.from(new Set(data.flatMap(o => Object.keys(o))));
-        const cols = ["#"].concat(colsRaw);
-        const table = document.createElement('table'); table.className = 'tbl';
-        const thead = document.createElement('thead'); const trh = document.createElement('tr');
-        cols.forEach(k => { const th=document.createElement('th'); th.textContent=k; trh.appendChild(th); });
-        thead.appendChild(trh); table.appendChild(thead);
-        const tbody = document.createElement('tbody');
-        data.forEach((row, i)=>{
-          const tr=document.createElement('tr');
-          const tdIdx=document.createElement('td'); tdIdx.textContent = i+1; tr.appendChild(tdIdx);
-          colsRaw.forEach(k => { const td=document.createElement('td'); td.textContent = (row[k] ?? ""); tr.appendChild(td); });
-          tbody.appendChild(tr);
-        });
-        table.appendChild(tbody);
-        $tables.appendChild(table);
-        return true;
-      } catch { return false; }
-    }
-
-    function renderLooseRowsToTable(lines) {
-      const rows = lines.map(l => l.includes("|") ? l.split("|").map(x=>x.trim()) : l.split(",").map(x=>x.trim()));
-      if (!rows.length) return false;
-      const maxCols = Math.max(...rows.map(r => r.length));
-      const headers = ["#"];
-      for (let i=0;i<maxCols;i++) headers.push(`Col${i+1}`);
-
-      const table = document.createElement('table'); table.className = 'tbl';
-      const thead = document.createElement('thead'); const trh = document.createElement('tr');
-      headers.forEach(h => { const th=document.createElement('th'); th.textContent=h; trh.appendChild(th); });
-      thead.appendChild(trh); table.appendChild(thead);
-
-      const tbody = document.createElement('tbody');
-      rows.forEach((r, idx)=>{
-        const tr=document.createElement('tr');
-        const tdIdx=document.createElement('td'); tdIdx.textContent = idx+1; tr.appendChild(tdIdx);
-        for (let i=0;i<maxCols;i++){ const td=document.createElement('td'); td.textContent = (r[i] ?? ""); tr.appendChild(td); }
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      $tables.appendChild(table);
-      return true;
-    }
-
-    function stripTablesFromText(text) {
-      let out = text.replace(/```[\s\S]*?```/g, "").trim();
-      out = out.replace(/(^\|.+\|\s*\r?\n\|?\s*:?-{3,}.*\r?\n(?:.*\r?\n?)*)/gm, "").trim();
-      const lines = out.split(/\r?\n/);
-      let buffer = [], cleaned = [];
-      const flushBuffer = () => {
-        if (buffer.length >= 3 && buffer.every(isRowLike)) {
-          // suprimidos para no duplicar (se renderiza abajo)
-        } else {
-          cleaned.push(...buffer);
-        }
-        buffer = [];
-      };
-      for (const line of lines) {
-        if (isRowLike(line)) buffer.push(line);
-        else { flushBuffer(); cleaned.push(line); }
-      }
-      flushBuffer();
-      return cleaned.join("\n").trim();
-    }
-
-    function autoRenderTablesFrom(text) {
-      clearTables();
-      const codeBlocks = [...text.matchAll(/```(\w+)?\s*([\s\S]*?)```/g)];
-      for (const m of codeBlocks) {
-        const lang = (m[1]||"").toLowerCase();
-        const body = m[2]||"";
-        if (lang === 'json' && renderJsonArray(body)) continue;
-        if ((lang==='md'||lang==='markdown'||lang==='table'||lang==='') && renderMarkdownTable(body)) continue;
-      }
-      const mdTable = text.match(/(^\|.+\|\s*\r?\n\|?\s*:?-{3,}.*\r?\n(?:.*\r?\n?)*)/m);
-      if (mdTable) renderMarkdownTable(mdTable[1]);
-      const jsonArray = text.match(/(\[\s*\{[\s\S]*?\}\s*\])/m);
-      if (jsonArray) renderJsonArray(jsonArray[1]);
-      const lines = text.split(/\r?\n/);
-      const buf = [];
-      for (const line of lines) if (isRowLike(line)) buf.push(line);
-      if (buf.length >= 3) renderLooseRowsToTable(buf);
-    }
-
-    // ======== EXPORTAR ========
-    function downloadBlob(content, filename, mime) {
-      const blob = new Blob([content], {type: mime});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = filename; a.click();
-      URL.revokeObjectURL(url);
-    }
-
-    function exportDOC() {
-      const html = `
-        <html xmlns:o="urn:schemas-microsoft-com:office:office"
-              xmlns:w="urn:schemas-microsoft-com:office:word"
-              xmlns="http://www.w3.org/TR/REC-html40">
-          <head><meta charset="utf-8"><title>Export</title></head>
-          <body>
-            <h2>Respuesta</h2>
-            <div>${$ans.innerHTML}</div>
-            <h2>Tablas</h2>
-            <div>${$tables.innerHTML}</div>
-          </body>
-        </html>`;
-      downloadBlob(html, 'export.doc', 'application/msword');
-    }
-
-    function exportODT() {
-      const html = `
-        <html><head><meta charset="utf-8"></head>
-        <body>
-          <h2>Respuesta</h2>
-          <div>${$ans.innerHTML}</div>
-          <h2>Tablas</h2>
-          <div>${$tables.innerHTML}</div>
-        </body></html>`;
-      downloadBlob(html, 'export.odt', 'application/vnd.oasis.opendocument.text');
-    }
-
-    function exportXLS() {
-      function tableToXml(table, sheetName) {
-        const rows = [...table.querySelectorAll('tr')].map(tr => [...tr.children].map(td => (td.textContent||"")));
-        const cellsXml = rows.map(r => `<Row>` + r.map(c => `<Cell><Data ss:Type="String">${c.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</Data></Cell>`).join("") + `</Row>`).join("");
-        return `<Worksheet ss:Name="${sheetName}"><Table>${cellsXml}</Table></Worksheet>`;
-      }
-      const tables = [...$tables.querySelectorAll('table')];
-      const worksheets = tables.length ? tables.map((t,i)=>tableToXml(t, `Tabla${i+1}`)).join("") : tableToXml(htmlToTable($ans.innerText), 'Respuesta');
-      const xml = `<?xml version="1.0"?>
-        <?mso-application progid="Excel.Sheet"?>
-        <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-                  xmlns:o="urn:schemas-microsoft-com:office:office"
-                  xmlns:x="urn:schemas-microsoft-com:office:excel"
-                  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-          ${worksheets}
-        </Workbook>`;
-      downloadBlob(xml, 'export.xls', 'application/vnd.ms-excel');
-
-      function htmlToTable(text) {
-        const table = document.createElement('table');
-        text.split(/\r?\n/).forEach((line,i)=>{
-          const tr=document.createElement('tr');
-          const td1=document.createElement('td'); td1.textContent = i+1;
-          const td2=document.createElement('td'); td2.textContent = line;
-          tr.appendChild(td1); tr.appendChild(td2);
-          table.appendChild(tr);
-        });
-        return table;
-      }
-    }
-
-    $exportSel.addEventListener('change', () => {
-      const v = $exportSel.value;
-      if (!v) return;
-      if (v === 'doc') exportDOC();
-      if (v === 'odt') exportODT();
-      if (v === 'xls') exportXLS();
-      $exportSel.value = "";
-    });
-
-    // ======== LIMPIAR MEMORIA ========
-    $clearMem.addEventListener('click', () => {
-      try {
-        window.speechSynthesis.cancel();
-        localStorage.clear();
-        FIXED_VOICE = null; voicesReady = false;
-        ensureVoiceReady();
-        $status.textContent = "Memoria limpiada.";
-      } catch { $status.textContent = "No se pudo limpiar la memoria."; }
-    });
-
-    // ======== SPEECH RECOGNITION (DICTADO) ========
-    let recog = null;
-    let recogActive = false;
-    function setupRecognition() {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) return null;
-      const r = new SR();
-      r.lang = 'es-MX';
-      r.continuous = false;
-      r.interimResults = true;
-      r.maxAlternatives = 1;
-      r.onstart = () => { recogActive = true; $micBtn.classList.add('mic-on'); $micLabel.textContent = 'Escuchando…'; $status.textContent = 'Escuchando (es-MX)…'; };
-      r.onresult = (ev) => {
-        let finalText = '';
-        for (let i=ev.resultIndex; i<ev.results.length; i++) {
-          const res = ev.results[i];
-          if (res.isFinal) finalText += res[0].transcript;
-          else $q.value = res[0].transcript;
-        }
-        if (finalText.trim()) $q.value = finalText.trim();
-      };
-      r.onerror = (e) => { $status.textContent = 'Error de dictado: ' + (e.error || 'desconocido'); };
-      r.onend = () => {
-        recogActive = false; $micBtn.classList.remove('mic-on'); $micLabel.textContent = 'Dictar';
-        const query = ($q.value||'').trim();
-        if (query) ask(query); else $status.textContent = 'Dictado finalizado.';
-      };
-      return r;
-    }
-    function toggleMic() {
-      if (!recog) recog = setupRecognition();
-      if (!recog) { $status.textContent = 'Tu navegador no soporta reconocimiento de voz.'; return; }
-      if (recogActive) { try { recog.stop(); } catch {} }
-      else { try { recog.start(); } catch { $status.textContent = 'No se pudo iniciar el dictado.'; } }
-    }
-    $micBtn.addEventListener('click', toggleMic);
-
-    // ======== FETCH (con contexto y control de video) ========
-    async function ask(q) {
+    // -------- CONSULTA AL BACKEND --------
+    async function ask(query) {
       const sess = getSession();
       const context = buildContext();
-      // Empieza pausado y silenciado; el video solo corre al mostrar la respuesta
-      try { $video.pause(); } catch {}
-      $video.muted = true;
-
-      // Empaquetar contexto en la consulta (también pasamos ?session=...)
-      const composed = context
-        ? `Contexto de conversación (resumido, últimos turnos):\n${context}\n\nPregunta del usuario:\n${q}`
-        : q;
-
-      const url = `${API_BASE}/api/ask?q=${encodeURIComponent(composed)}&file=${encodeURIComponent(DEFAULT_FILE)}&model=${encodeURIComponent(PREFERRED_MODEL)}&session=${encodeURIComponent(sess.id)}`;
+      const composed = context ? `Contexto:\n${context}\n\nPregunta:\n${query}` : query;
+      const url = `${API_BASE}/api/ask?q=${encodeURIComponent(composed)}&file=${DEFAULT_FILE}&model=${PREFERRED_MODEL}&session=${sess.id}`;
 
       $status.textContent = "Consultando…";
       try {
         const res = await fetch(url);
         const data = await res.json();
-        const raw = (typeof data === 'string') ? data : (data.answer || data.result || JSON.stringify(data, null, 2));
+        const raw = data.answer || data.result || JSON.stringify(data, null, 2);
 
-        // 1) Renderizar tablas abajo (ordenadas y numeradas)
-        autoRenderTablesFrom(raw);
+        // Mostrar en pantalla
+        $ans.textContent = raw;
+        speak(raw); // Voz
 
-        // 2) Mostrar explicación/reglas/fórmulas arriba (sin duplicar tablas/tabulados)
-        const textForAnswer = stripTablesFromText(raw) || raw;
-        $ans.textContent = textForAnswer;
-
-        // 3) Al mostrar la respuesta, arrancar el VIDEO (silencioso). Luego la locución mantendrá el play.
-        try { $video.play(); } catch {}
-
-        // 4) Locución femenina (sin leer asteriscos)
-        speak(textForAnswer);
-
-        // 5) Persistir en historial y refrescar sesión
-        pushHistory('user', q);
-        pushHistory('assistant', textForAnswer);
-        touchSession(sess);
+        pushHistory('user', query);
+        pushHistory('assistant', raw);
 
         $status.textContent = "Listo.";
-      } catch (e) {
-        console.error(e);
-        $ans.textContent = "Error consultando el backend.";
-        $status.textContent = "Error.";
+      } catch {
+        $status.textContent = "Error al consultar.";
       }
     }
 
-    document.getElementById('askBtn').addEventListener('click', () => {
-      const query = $q.value.trim();
-      if (!query) { $q.focus(); return; }
-      ask(query);
+    $ask.addEventListener('click', ()=> {
+      if ($q.value.trim()) ask($q.value.trim());
     });
-    $q.addEventListener('keydown', (e) => { if (e.key === 'Enter') askBtn.click(); });
 
-    // Demo opcional:
-    // ask("ping");
+    $q.addEventListener('keydown', e => { if (e.key === 'Enter') $ask.click(); });
+
   </script>
 </body>
 </html>
