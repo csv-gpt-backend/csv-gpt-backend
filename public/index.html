@@ -6,434 +6,469 @@
 <title>Consulta Educativa</title>
 <style>
   :root{
-    --header-height: 380px;        /* video más grande */
-    --video-shift: 6px;
-    --video-scale: 1.35;           /* 35% más grande */
-    --accent:#0078d7;
+    --accent:#0b72e7;
+    --border:#e6e8ee;
+    --muted:#6b7280;
+    --bg:#fff;
+    --pill:#f5f7fb;
+    --shadow:0 6px 24px rgba(16,24,40,.08);
+    --radius:14px;
+    --radius-sm:10px;
+    --table-head:#f3f6fb;
   }
+
   *{ box-sizing:border-box; }
-  body{ margin:0; background:#fff; font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif; color:#111; }
-
-  /* ====== Encabezado ====== */
-  .header-rail{
-    display:flex; align-items:center; justify-content:center;
-    width:100%; height:var(--header-height); background:#fff; overflow:hidden;
-  }
-  .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
-  .header-rail .col.left,
-  .header-rail .col.right{ flex:0 0 20%; }
-  .header-rail .col.center{ flex:0 0 60%; position:relative; }
-  .header-rail .col.left img,
-  .header-rail .col.right img{ max-height:100%; max-width:100%; object-fit:contain; display:block; }
-  .header-rail .col.center video{
-    max-height:100%; max-width:100%; height:100%; width:auto; object-fit:contain; display:block;
-    transform: translateY(var(--video-shift)) scale(var(--video-scale));
-    transform-origin:center;
+  body{
+    margin:0;
+    background:#fff;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    color:#111827;
   }
 
-  /* ====== Interacción ====== */
-  .interaction{ padding:24px 16px; text-align:center; }
-  .bar{ display:flex; gap:8px; justify-content:center; align-items:center; max-width:1200px; margin:0 auto; flex-wrap:wrap; }
-  .bar input[type="text"]{
-    flex:1 1 820px; padding:12px 14px; font-size:16px; border:1px solid #d0d0d0; border-radius:8px; outline:none;
+  /* Header con logos */
+  .brandbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 18px 0;
   }
-  .btn{ padding:12px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
-  .btn:hover{ filter:brightness(0.95); }
+  .brandbar img{ height:56px; width:auto; object-fit:contain; }
 
-  #respuesta{
-    margin:20px auto 0; width:min(90%,1200px); min-height:64px;
-    padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; text-align:left; line-height:1.45; white-space:pre-wrap;
+  /* Video centrado y tamaño reducido un poco */
+  .hero{
+    display:flex; justify-content:center; align-items:center;
+    padding:8px 16px 0;
   }
+  .hero video{
+    max-width:1100px; /* tamaño un poco menor del que mostraste */
+    width:92vw; height:auto;
+    border-radius:14px;
+    box-shadow:var(--shadow);
+  }
+
+  /* Caja de interacción */
+  .panel{
+    max-width:1180px;
+    margin:10px auto 16px;
+    padding:0 14px;
+  }
+
+  .askrow{
+    display:flex; gap:10px; align-items:flex-start;
+  }
+  .askbox{
+    flex:1; background:#fff; border:1px solid var(--border);
+    border-radius:12px; padding:10px 12px;
+  }
+  .askbox textarea{
+    width:100%; resize:vertical; min-height:70px; max-height:140px;
+    border:0; outline:none; font-size:16px; line-height:1.35; color:#111827;
+  }
+
+  .btn{
+    border:0; border-radius:12px; cursor:pointer; font-weight:600;
+    background:var(--accent); color:#fff; padding:10px 16px;
+  }
+  .btn:hover{ filter:brightness(.96); }
+
+  .btn-voice{
+    display:flex; align-items:center; gap:8px;
+    font-size:17px; padding:12px 18px; border-radius:14px;
+  }
+  .btn-voice .icon{ font-size:22px; }
+
+  /* Respuesta */
+  .card{
+    background:#fff; border:1px solid var(--border); border-radius:14px;
+    box-shadow:var(--shadow); padding:14px; margin-top:12px;
+  }
+  .answer{ white-space:pre-wrap; line-height:1.5; }
+
+  /* Tabla */
   .table-wrap{
-    width:min(95%,1200px); margin:16px auto 24px; overflow:auto; border:1px solid #e5e5e7; border-radius:10px; background:#fff;
+    margin-top:12px; overflow:auto; border:1px solid var(--border);
+    border-radius:14px; background:#fff;
   }
-  table.data{ width:100%; border-collapse:collapse; font-size:14px; }
+  table.data{
+    width:100%; border-collapse:collapse; font-size:15px;
+  }
   table.data thead th{
-    position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6; text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap;
+    position:sticky; top:0; background:var(--table-head);
+    border-bottom:1px solid var(--border); text-align:left;
+    padding:10px 10px; font-weight:700; white-space:nowrap;
   }
-  table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; }
-  table.data tbody tr:nth-child(odd){ background:#fafbfc; }
-
-  /* ====== Panel de PDFs ====== */
-  .pdf-panel{
-    width:min(95%,1200px); margin:16px auto; display:grid; grid-template-columns: 320px 1fr; gap:16px; align-items:start;
+  table.data tbody td{
+    border-top:1px solid var(--border); padding:9px 10px; vertical-align:top;
   }
-  .pdf-list{
-    border:1px solid #e5e5e7; border-radius:10px; padding:12px; background:#fff;
+  table.data tbody tr:nth-child(odd){
+    background:#fafbfe;
   }
-  .pdf-item{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-  .pdf-item input{ transform:scale(1.1); }
-  .pdf-item a{ color:#0a5; text-decoration:none; font-size:13px; }
-  .pdf-view{
-    border:1px solid #e5e5e7; border-radius:10px; background:#fff; padding:8px;
+  .muted{
+    color:var(--muted); font-size:13px;
   }
-  .pdf-canvas{ width:100%; max-height:520px; display:block; background:#fafafa; }
-  .muted{ color:#666; font-size:13px; }
 
-  /* ====== PDF / impresión ====== */
-  @media print { .no-print{display:none!important;} }
-  table.data { page-break-inside:auto; }
-  table.data thead{ display:table-header-group; }
-  table.data tfoot{ display:table-footer-group; }
-  table.data tr{ break-inside:avoid; page-break-inside:avoid; }
-  *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  .pdf-avoid-break{ break-inside:avoid; page-break-inside:avoid; }
-  .pdf-page{ width:210mm; max-width:210mm; margin:0 auto; }
+  /* Barra de acciones */
+  .actions{
+    display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:flex-start;
+    margin-top:14px;
+  }
+  .select{
+    border:1px solid var(--border); border-radius:10px; padding:9px 10px; background:#fff;
+  }
+  .btn-ghost{
+    background:#eef3fe; color:#0b62de;
+  }
+  .btn-danger{
+    background:#fef1f2; color:#c1121f;
+  }
 
-  /* Sin placeholder */
-  #pregunta::placeholder{ color:transparent!important; }
+  /* Ocultos/No queremos mostrar PDF fuentes ni banner de memoria */
+  .hidden{ display:none !important; }
 
-  @media (max-width: 900px){ .pdf-panel{ grid-template-columns: 1fr; } }
-  @media (max-width: 640px){ :root{ --header-height:320px; --video-scale:1.25; } }
+  @media (max-width: 760px){
+    .btn{ padding:10px 14px; }
+    .btn-voice{ font-size:16px; }
+    .hero video{ width:96vw; }
+  }
 </style>
 </head>
 <body>
 
-  <!-- ====== HEADER ====== -->
-  <div class="header-rail">
-    <div class="col left"><img src="/left.png" alt="Imagen izquierda"></div>
-    <div class="col center">
-      <video id="video" muted playsinline preload="metadata">
-        <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
-        Tu navegador no soporta video.
-      </video>
-    </div>
-    <div class="col right"><img src="/right.png" alt="Imagen derecha"></div>
+  <!-- Barra marcas -->
+  <div class="brandbar">
+    <img src="/left.png" alt="SANTILLANA">
+    <img src="/right.png" alt="COMPARTIR">
   </div>
 
-  <!-- ====== UI ====== -->
-  <div class="interaction no-print">
-    <div class="bar">
-      <!-- SIN placeholder -->
-      <input id="pregunta" type="text" />
-      <button class="btn" onclick="enviarPregunta()">Enviar</button>
-      <button class="btn" onclick="startListening()">Voz</button>
+  <!-- Video -->
+  <div class="hero">
+    <video id="video" muted playsinline preload="metadata">
+      <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4?v=2025-09-17-03" type="video/mp4">
+      Tu navegador no soporta video.
+    </video>
+  </div>
+
+  <!-- Interacción -->
+  <div class="panel">
+    <div class="askrow">
+      <div class="askbox">
+        <textarea id="pregunta" placeholder=""></textarea>
+      </div>
+      <button class="btn" id="btnEnviar">Enviar</button>
+      <button class="btn btn-voice" id="btnVoz"><span class="icon">🎤</span>Voz</button>
     </div>
 
-    <div id="respuesta">Aquí aparecerá la explicación...</div>
-    <div id="tabla" class="table-wrap" hidden></div>
+    <!-- Respuesta texto -->
+    <div id="respuesta" class="card answer">Aquí aparecerá la explicación...</div>
 
-    <!-- ====== PANEL PDFs ====== -->
-    <div class="pdf-panel">
-      <div class="pdf-list">
-        <div style="font-weight:700;margin-bottom:8px;">PDFs disponibles (marca para incluir en el análisis):</div>
-        <div class="pdf-item">
-          <input type="checkbox" class="pdf-check" data-url="https://csv-gpt-backend.vercel.app/lexium.pdf" checked>
-          <span>LEXIUM.pdf</span>
-          <a href="https://csv-gpt-backend.vercel.app/lexium.pdf" target="_blank" rel="noopener">abrir</a>
-        </div>
-        <div class="pdf-item">
-          <input type="checkbox" class="pdf-check" data-url="https://csv-gpt-backend.vercel.app/evaluaciones.pdf" checked>
-          <span>EVALUACIONES.pdf</span>
-          <a href="https://csv-gpt-backend.vercel.app/evaluaciones.pdf" target="_blank" rel="noopener">abrir</a>
-        </div>
-        <div class="pdf-item">
-          <input type="checkbox" class="pdf-check" data-url="https://csv-gpt-backend.vercel.app/emocionales.pdf" checked>
-          <span>EMOCIONALES.pdf</span>
-          <a href="https://csv-gpt-backend.vercel.app/emocionales.pdf" target="_blank" rel="noopener">abrir</a>
-        </div>
-
-        <hr style="margin:10px 0;">
-        <div style="font-weight:700;margin-bottom:6px;">Agregar PDF por URL</div>
-        <div style="display:flex; gap:6px;">
-          <input id="pdfUrlInput" type="text" placeholder="https://…" style="flex:1;padding:8px;border:1px solid #d0d0d0;border-radius:8px;">
-          <button class="btn" onclick="addPdfUrl()">Agregar</button>
-        </div>
-        <p class="muted" style="margin-top:8px;">El texto de los PDFs marcados se extrae en el navegador (máx. 30 páginas por PDF) y se envía junto a tu pregunta.</p>
-      </div>
-
-      <div class="pdf-view">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-weight:700;">Vista previa (pág. 1)</div>
-          <select id="pdfSelect" style="padding:8px;border:1px solid #d0d0d0;border-radius:8px;"></select>
-        </div>
-        <canvas id="pdfCanvas" class="pdf-canvas"></canvas>
-      </div>
+    <!-- Tabla bonita -->
+    <div id="tablaWrap" class="table-wrap hidden">
+      <table id="tabla" class="data"></table>
     </div>
 
-    <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">
-      <select id="exportFmt" class="no-print" style="padding:10px;border:1px solid #d0d0d0;border-radius:8px;">
-        <option value="pdf" selected>Exportar PDF</option>
+    <!-- Acciones -->
+    <div class="actions">
+      <select id="exportFmt" class="select">
+        <option value="pdf">Exportar PDF</option>
+        <option value="doc">Exportar Word (.doc)</option>
+        <option value="csv">Exportar Excel (CSV)</option>
       </select>
-      <button class="btn no-print" onclick="exportarPDF()">Exportar</button>
-      <button class="btn no-print" onclick="stopVoice()">Detener voz</button>
-      <button class="btn no-print" onclick="limpiar()">Limpiar</button>
-      <button class="btn no-print" onclick="borrarMemoria()">Borrar memoria</button>
+      <button class="btn" id="btnExport">Exportar</button>
+      <button class="btn btn-ghost" id="btnPreview">Vista previa PDF</button>
+      <button class="btn btn-ghost" id="btnStopVoice">Detener voz</button>
+      <button class="btn btn-ghost" id="btnClear">Limpiar</button>
+      <button class="btn btn-danger" id="btnClearMem">Borrar memoria</button>
+      <!-- Mensajes internos (no visibles) -->
+      <span id="memNote" class="muted hidden">La memoria se conserva ~10 minutos.</span>
     </div>
-
-    <p class="muted">La memoria se conserva por ~10 minutos para dar contexto entre preguntas.</p>
   </div>
-
-<!-- Librerías -->
-<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
 
 <script>
-  /* ====== AJUSTES ====== */
-  const ENDPOINTS = ["/api/ask", "/api/preguntar"];
-  const DEFAULT_FILE = "decimo.csv";
-  const video = document.getElementById("video");
-  const tablaWrap = document.getElementById("tabla");
+/* ================ UTILIDAD Y ESTADO ================ */
+const ENDPOINT = "/api/ask";
+const DEFAULT_FILE = "decimo.csv";
+const video = document.getElementById("video");
+const respuestaEl = document.getElementById("respuesta");
+const tablaWrap = document.getElementById("tablaWrap");
+const tablaEl = document.getElementById("tabla");
+let chosenVoice = null;
 
-  /* ====== VOZ (TTS) ====== */
-  let chosenVoice = null;
-  function pickVoice(){
-    const voices = window.speechSynthesis?.getVoices?.() || [];
-    const pref = ["sabina","dalia","beatriz","abril","camila","lucia"];
-    const score = (v)=>{
-      let s=0, name=(v.name||"").toLowerCase(), lang=(v.lang||"").toLowerCase();
-      if (lang.startsWith("es-mx")) s+=100; else if (lang.startsWith("es-419")) s+=60; else if (lang.startsWith("es")) s+=30;
-      if (pref.some(t=>name.includes(t))) s+=40;
-      if (/(neural|natural|online)/i.test(name)) s+=25;
-      return s;
-    };
-    return voices.slice().sort((a,b)=>score(b)-score(a))[0]||voices[0]||null;
-  }
-  function ensureVoice(){ if(!chosenVoice) chosenVoice = pickVoice(); }
-  function speak(text,onStart,onEnd){
-    if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
-    ensureVoice();
-    const u = new SpeechSynthesisUtterance(text.replace(/\*+/g,""));
-    if (chosenVoice) u.voice = chosenVoice;
-    u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-    u.rate=1.08; u.pitch=1.02; u.volume=1.0;
-    u.onstart=()=>onStart&&onStart();
-    u.onend=()=>onEnd&&onEnd();
-    u.onerror=()=>onEnd&&onEnd();
-    window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
-  }
-  function stopVoice(){ try{ window.speechSynthesis.cancel(); video?.pause(); }catch{} }
-  window.speechSynthesis.onvoiceschanged = ()=>{ chosenVoice=null; ensureVoice(); };
+/* ——— Voz femenina ejecutiva (español) ——— */
+const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
+const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
+const MALE_HINTS = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
 
-  /* ====== MICRÓFONO ====== */
-  function startListening(){
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
-    const rec = new SR(); rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1;
-    rec.onresult = e => { document.getElementById("pregunta").value = e.results[0][0].transcript; enviarPregunta(); };
-    rec.onerror = e => { alert("Error de micrófono: " + e.error + "\nHabilita el micrófono para este sitio."); };
-    rec.start();
-  }
+function scoreVoice(v){
+  const name = (v.name||"").toLowerCase();
+  const lang = (v.lang||"").toLowerCase();
+  let s=0;
+  if (lang.startsWith("es-mx")) s+=100;
+  else if (lang.startsWith("es-419")) s+=60;
+  else if (lang.startsWith("es")) s+=30;
+  if (EXEC_PREF.some(t=>name.includes(t))) s+=40;
+  if (FEMALE_HINTS.some(t=>name.includes(t))) s+=20;
+  if (/(neural|natural|online)/i.test(name)) s+=25;
+  if (MALE_HINTS.some(t=>name.includes(t))) s-=80;
+  return s;
+}
+function pickExecutiveSpanishFemale(){
+  const list = window.speechSynthesis?.getVoices?.()||[];
+  if(!list.length) return null;
+  return list.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0] || list[0];
+}
+function ensureVoice(){ if(!chosenVoice) chosenVoice = pickExecutiveSpanishFemale(); }
+window.speechSynthesis.onvoiceschanged = () => { chosenVoice=null; ensureVoice(); };
 
-  /* ====== Helpers TABLA ====== */
-  const escapeHtml = (s) => String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-  function pickDelimiter(sampleLines){
-    const cands=[",",";","\t","|"]; let best=",",bestScore=-1;
-    for(const d of cands){ let score=0; for(const line of sampleLines){ const parts=line.split(d); if(parts.length>1) score+=parts.length; }
-      if(score>bestScore){ bestScore=score; best=d; } }
-    return best;
-  }
-  function parseMarkdownTable(text){
-    const lines=text.split(/\r?\n/).map(l=>l.trim());
-    const md=lines.filter(l=>/^\|.*\|$/.test(l)); if(md.length<2) return null;
-    const rows=md.map(l=>l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
-    const sepIdx=rows.findIndex(r=>r.every(c=>/^:?-{3,}:?$/.test(c))); if(sepIdx>=0) rows.splice(sepIdx,1);
-    return rows.length>=2?rows:null;
-  }
-  function parseJsonTable(text){
-    try{
-      const obj=JSON.parse(text);
-      if(Array.isArray(obj) && obj.length && typeof obj[0]==="object"){
-        const headers=Array.from(obj.reduce((set,row)=>{ Object.keys(row).forEach(k=>set.add(k)); return set;}, new Set()));
-        const rows=[headers, ...obj.map(o=>headers.map(h=>o[h] ?? ""))];
-        return rows;
-      }
-    }catch{} return null;
-  }
-  function extractCsvBlock(text){
-    const m=text.match(/```(?:csv)?\s*([\s\S]*?)```/i); return m?m[1].trim():null;
-  }
-  function parseDelimited(text){
-    const lines=text.split(/\r?\n/).filter(l=>l.trim().length); if(lines.length<2) return null;
-    const sample=lines.slice(0,10); const d=pickDelimiter(sample);
-    const rows=lines.map(l=>l.split(d).map(c=>c.trim()));
-    const maxCols=Math.max(...rows.map(r=>r.length));
-    const normalized=rows.map(r=>{ const copy=r.slice(0,maxCols); while(copy.length<maxCols) copy.push(""); return copy; });
-    if(maxCols<2 || normalized.length<2) return null;
-    return normalized;
-  }
-  function renderTable(rows){
-    const [head,...body] = rows;
-    let html = '<table class="data"><thead><tr>';
-    for(const h of head) html += `<th>${escapeHtml(h)}</th>`;
-    html += '</tr></thead><tbody>';
-    for(const r of body){ html += '<tr>'; for(const c of r) html += `<td>${escapeHtml(c)}</td>`; html += '</tr>'; }
-    html += '</tbody></table>'; return html;
-  }
-  function maybeRenderTableFromText(text){
-    tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-    let rows = parseJsonTable(text);
-    if(!rows){ const csvBlock=extractCsvBlock(text); if(csvBlock) rows = parseDelimited(csvBlock); }
-    if(!rows) rows = parseMarkdownTable(text);
-    if(!rows) rows = parseDelimited(text);
-    if(rows && rows.length>=2 && rows[0].length>=2){ tablaWrap.innerHTML = renderTable(rows); tablaWrap.hidden = false; }
-  }
+function speak(text, onStart, onEnd){
+  if(!window.speechSynthesis) { onStart&&onStart(); onEnd&&onEnd(); return; }
+  ensureVoice();
+  const u = new SpeechSynthesisUtterance(text);
+  if (chosenVoice) u.voice = chosenVoice;
+  u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
+  u.rate=1.12; u.pitch=1.02; u.volume=1.0;
+  u.onstart=()=> onStart && onStart();
+  u.onend=()=> onEnd && onEnd();
+  u.onerror=()=> onEnd && onEnd();
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(u);
+}
+function stopSpeak(){
+  try{ window.speechSynthesis?.cancel?.(); }catch{}
+  try{ video?.pause?.(); }catch{}
+}
 
-  /* ====== PDFs: listado, preview y extracción ====== */
-  const pdfSelect = document.getElementById('pdfSelect');
-  const pdfCanvas = document.getElementById('pdfCanvas');
-  const DEFAULT_PDFS = [
-    "https://csv-gpt-backend.vercel.app/lexium.pdf",
-    "https://csv-gpt-backend.vercel.app/evaluaciones.pdf",
-    "https://csv-gpt-backend.vercel.app/emocionales.pdf",
-  ];
-  function refreshPdfSelect(){
-    const checks = [...document.querySelectorAll('.pdf-check')];
-    const urls = checks.map(c=>c.dataset.url);
-    pdfSelect.innerHTML = urls.map(u=>`<option value="${u}">${u.split('/').pop()}</option>`).join('');
-    if (urls.length) loadPdfPreview(urls[0]);
+/* ================ ENVÍO ================ */
+async function enviarPregunta(){
+  const q = (document.getElementById("pregunta").value||"").trim();
+  if(!q){ alert("Escribe una pregunta."); return; }
+  respuestaEl.textContent = "Consultando…";
+  tablaWrap.classList.add("hidden");
+  tablaEl.innerHTML = "";
+  try{
+    const url = `${ENDPOINT}?q=${encodeURIComponent(q)}&file=${encodeURIComponent(DEFAULT_FILE)}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("HTTP "+r.status);
+    const data = await r.json();
+    const text = (data.text||"").trim() || "No se encontró respuesta.";
+    renderOutput(text);
+  }catch(e){
+    console.error(e);
+    respuestaEl.textContent = "No se pudo contactar al servidor.";
   }
-  async function loadPdfPreview(url){
-    try{
-      const pdf = await pdfjsLib.getDocument({ url, withCredentials:false }).promise;
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 1.4 });
-      const ctx = pdfCanvas.getContext('2d');
-      pdfCanvas.height = viewport.height; pdfCanvas.width = viewport.width;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-    }catch(e){
-      const ctx = pdfCanvas.getContext('2d');
-      ctx.clearRect(0,0,pdfCanvas.width,pdfCanvas.height);
-      ctx.font = '14px Arial'; ctx.fillText('No se pudo previsualizar el PDF.', 10, 24);
-      console.error(e);
+}
+
+/* ================ PARSE Y RENDER ================ */
+/* Limpia frases tipo 'Analizando CSV/PDF…' */
+function cleanSystemNoise(s){
+  return s
+    .replace(/Analizando\s+(?:CSV|PDF).*?\n/gi,"")
+    .replace(/Procesando\s+fuentes.*?\n/gi,"")
+    .replace(/(Leyendo|Cargando)\s+archivo.*?\n/gi,"");
+}
+
+/* Extrae bloque markdown '|' tabla */
+function extractMarkdownTable(text){
+  const lines = text.split(/\r?\n/);
+  const blocks=[];
+  let cur=[];
+  for (const l of lines){
+    if (/^\|.*\|$/.test(l.trim())) cur.push(l);
+    else{
+      if(cur.length>=2){ blocks.push(cur.slice()); }
+      cur=[];
     }
   }
-  pdfSelect.addEventListener('change', (e)=> loadPdfPreview(e.target.value));
+  if(cur.length>=2) blocks.push(cur.slice());
+  if(!blocks.length) return {table:null, without:text};
+  // tomamos el primer bloque de tabla
+  const tbl = blocks[0];
+  // remove from text
+  const blockText = tbl.join("\n");
+  const without = text.replace(blockText,"").replace(/\n{3,}/g,"\n\n");
+  return { table: tbl, without: without.trim() };
+}
 
-  async function extractTextFromPdf(url, maxPages=30){
-    const pdf = await pdfjsLib.getDocument({ url, withCredentials:false }).promise;
-    const total = Math.min(pdf.numPages, maxPages);
-    let text = '';
-    for(let p=1;p<=total;p++){
-      const page = await pdf.getPage(p);
-      const content = await page.getTextContent();
-      const strings = content.items.map(it => it.str).join(' ');
-      text += `\n\n[PDF:${url.split('/').pop()} pág.${p}]\n${strings}`;
+/* Convierte tabla markdown a matriz */
+function parseMarkdownRows(mdLines){
+  // quitar fila separadora si aparece
+  const rows = mdLines.map(l=> l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
+  const sepIdx = rows.findIndex(r => r.every(c => /^:?-{3,}:?$/.test(c)));
+  if (sepIdx>=0) rows.splice(sepIdx,1);
+  return rows;
+}
+
+/* Render tabla con numeración */
+function renderTable(rows){
+  // rows: [header, ...]
+  if(!rows || rows.length<2 || rows[0].length<1) return false;
+  const head = rows[0];
+  const body = rows.slice(1);
+  // Añadimos columna "#"
+  const head2 = ["#", ...head];
+  const thead = `<thead><tr>${head2.map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
+  let idx=1;
+  const tb = body.map(r=>{
+    const numCell = `<td>${idx++}</td>`;
+    const tds = r.map(c=>`<td>${escapeHtml(c)}</td>`).join("");
+    return `<tr>${numCell}${tds}</tr>`;
+  }).join("");
+  tablaEl.innerHTML = thead + `<tbody>${tb}</tbody>`;
+  tablaWrap.classList.remove("hidden");
+  return true;
+}
+
+function escapeHtml(s){ return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
+
+/* Decide qué mostrar */
+function renderOutput(originalText){
+  let text = cleanSystemNoise(originalText);
+
+  // Buscar tabla markdown
+  const {table:mdBlock, without} = extractMarkdownTable(text);
+  let hadTable = false;
+  if (mdBlock){
+    const rows = parseMarkdownRows(mdBlock);
+    hadTable = renderTable(rows);
+    if (hadTable){
+      // Limpiamos la explicación de la tabla duplicada
+      text = without;
     }
-    return text.replace(/\s+/g,' ').trim();
   }
 
-  function addPdfUrl(){
-    const input = document.getElementById('pdfUrlInput');
-    const url = (input.value||'').trim();
-    if(!url) return;
-    const list = document.querySelector('.pdf-list');
-    const div = document.createElement('div');
-    div.className = 'pdf-item';
-    div.innerHTML = `
-      <input type="checkbox" class="pdf-check" data-url="${escapeHtml(url)}" checked>
-      <span>${escapeHtml(url.split('/').pop())}</span>
-      <a href="${escapeHtml(url)}" target="_blank" rel="noopener">abrir</a>`;
-    list.insertBefore(div, list.querySelector('hr'));
-    input.value='';
-    refreshPdfSelect();
+  // Si no hubo tabla, ocultamos contenedor
+  if(!hadTable){
+    tablaWrap.classList.add("hidden");
+    tablaEl.innerHTML = "";
   }
 
-  window.addEventListener('DOMContentLoaded', ()=>{
-    const present = [...document.querySelectorAll('.pdf-check')].map(x=>x.dataset.url);
-    DEFAULT_PDFS.forEach(u=>{
-      if(!present.includes(u)){
-        const list = document.querySelector('.pdf-list');
-        const div = document.createElement('div');
-        div.className = 'pdf-item';
-        div.innerHTML = `
-          <input type="checkbox" class="pdf-check" data-url="${u}" checked>
-          <span>${u.split('/').pop()}</span>
-          <a href="${u}" target="_blank" rel="noopener">abrir</a>`;
-        list.insertBefore(div, list.querySelector('hr'));
-      }
-    });
-    refreshPdfSelect();
-  });
-
-  /* ====== Enviar pregunta (POST con pdfctx) ====== */
-  async function enviarPregunta(){
-    const pregunta = document.getElementById("pregunta").value.trim();
-    if(!pregunta) return alert("Escribe una pregunta.");
-    const out = document.getElementById("respuesta");
-    out.textContent = "Procesando...";
-    tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-
-    const wantsTable = /\b(tabla|listar|lista|desplegar|muestrame|muestra|tabla ordenada)\b/i.test(pregunta);
-
-    const checks = [...document.querySelectorAll('.pdf-check:checked')];
-    let pdfctx = '';
-    if (checks.length){
-      out.textContent = "Procesando PDFs…";
-      for (const c of checks){
-        try{
-          const txt = await extractTextFromPdf(c.dataset.url, 30);
-          if (txt) pdfctx += `\n\n=== CONTEXTO DESDE PDF: ${c.dataset.url.split('/').pop()} ===\n${txt.slice(0, 50000)}`;
-        }catch(e){ console.warn("PDF fallo:", c.dataset.url, e); }
-      }
-    }
-
-    let data=null,lastErr=null;
-    for(const base of ENDPOINTS){
-      try{
-        const resp = await fetch(base + (wantsTable ? "?mode=tabla" : ""), {
-          method: "POST",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({ q: pregunta, file: DEFAULT_FILE, pdfctx })
-        });
-        if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        data = await resp.json();
-        break;
-      }catch(e){ lastErr=e; }
-    }
-    if(!data){ out.textContent="No se pudo contactar al servidor."; console.error(lastErr); return; }
-
-    const texto = (data.text || data.respuesta || "No se encontró respuesta.").replace(/\*+/g,"");
-    out.textContent = texto;
-    maybeRenderTableFromText(texto);
-
-    speak(texto, ()=>video?.play(), ()=>video?.pause());
+  // Mostrar explicación
+  respuestaEl.textContent = text || (hadTable ? "" : "Sin contenido.");
+  
+  // Voz con video play/pause
+  const toSpeak = (respuestaEl.textContent||"").trim();
+  if (toSpeak){
+    speak(toSpeak, ()=>video?.play?.(), ()=>video?.pause?.());
   }
-  document.getElementById("pregunta").addEventListener("keydown", (e)=>{ if(e.key==="Enter") enviarPregunta(); });
+}
 
-  /* ====== Exportar PDF ====== */
-  async function exportarPDF(){
-    const exp = document.getElementById('respuesta');
-    const tabla = document.getElementById('tabla');
+/* ================ ACCIONES ================ */
+function limpiar(){
+  stopSpeak();
+  document.getElementById("pregunta").value = "";
+  respuestaEl.textContent = "";
+  tablaEl.innerHTML = "";
+  tablaWrap.classList.add("hidden");
+}
+function borrarMemoria(){
+  // Aquí solo limpiamos el front. Si necesitas borrar memoria del servidor, puedes
+  // crear un endpoint y llamarlo desde aquí.
+  limpiar();
+  alert("Contexto local limpiado.");
+}
 
-    const wrap = document.createElement('div');
-    wrap.className = 'pdf-page';
+/* Export helpers */
+function currentHTMLContent(){
+  const container = document.createElement("div");
+  const h = document.createElement("h2");
+  h.textContent = "Resultado de Consulta";
+  h.style.margin="0 0 10px 0";
+  h.style.fontFamily="Inter, Arial";
+  container.appendChild(h);
 
-    const title=document.createElement('div'); title.style.cssText='font-size:18px;font-weight:700;margin-bottom:6px;'; title.textContent='Reporte';
-    const sub=document.createElement('div'); sub.style.cssText='font-size:12px;color:#555;margin-bottom:12px;'; sub.textContent=new Date().toLocaleString();
+  const p = document.createElement("div");
+  p.style.whiteSpace="pre-wrap";
+  p.style.fontFamily="Inter, Arial";
+  p.style.marginBottom="10px";
+  p.textContent = (respuestaEl.textContent||"").trim();
+  if (p.textContent) container.appendChild(p);
 
-    const texto=(exp?.textContent||"").replace(/\*+/g,"").trim();
-    const explicacion=document.createElement('div'); explicacion.className='pdf-avoid-break';
-    explicacion.style.cssText='font-size:13px;line-height:1.45;margin-bottom:12px;white-space:pre-wrap;';
-    explicacion.textContent=texto||'(Sin explicación)';
-
-    let tablaClon=null;
-    if(tabla && !tabla.hidden && tabla.innerHTML.trim()){
-      tablaClon = tabla.cloneNode(true);
-      tablaClon.style.marginTop='8px';
-      const thead = tablaClon.querySelector('thead'); if(thead) thead.style.display='table-header-group';
-    }
-
-    wrap.appendChild(title); wrap.appendChild(sub); wrap.appendChild(explicacion); if(tablaClon) wrap.appendChild(tablaClon);
-
-    let orientation='portrait';
-    if(tabla && tabla.offsetWidth>750) orientation='landscape';
-
-    const opt={
-      margin:[12,10,15,10],
-      filename:`reporte_${Date.now()}.pdf`,
-      image:{type:'jpeg',quality:0.98},
-      html2canvas:{scale:2,useCORS:true,scrollY:0},
-      jsPDF:{unit:'mm',format:'a4',orientation}
-    };
-    try{ await html2pdf().set(opt).from(wrap).save(); }
-    catch(e){ console.error(e); alert('No se pudo generar el PDF.'); }
+  if (!tablaWrap.classList.contains("hidden") && tablaEl.innerHTML.trim()){
+    const t = tablaEl.cloneNode(true);
+    t.style.width="100%";
+    t.style.fontFamily="Inter, Arial";
+    t.style.borderCollapse="collapse";
+    // bordes simples en export
+    t.querySelectorAll("th,td").forEach(td=> td.style.border="1px solid #ddd");
+    t.querySelectorAll("th,td").forEach(td=> td.style.padding="6px 8px");
+    container.appendChild(t);
   }
+  return container;
+}
 
-  /* ====== Utilitarios ====== */
-  function limpiar(){ document.getElementById("respuesta").textContent=""; tablaWrap.hidden=true; tablaWrap.innerHTML=""; stopVoice(); }
-  function borrarMemoria(){ limpiar(); alert("Memoria temporal reiniciada."); }
+function exportPDF(){
+  const w = window.open("", "_blank");
+  const doc = w.document;
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Export PDF</title>
+  <style>
+    body{ font-family:Inter, Arial; padding:18px; }
+    h2{ margin:0 0 10px 0; }
+    table{ width:100%; border-collapse:collapse; }
+    th,td{ border:1px solid #ddd; padding:6px 8px; }
+    thead th{ background:#f3f6fb; }
+  </style></head><body></body></html>`);
+  const content = currentHTMLContent();
+  doc.body.appendChild(content);
+  w.document.close();
+  w.focus();
+  w.print();
+}
+
+function exportDOC(){
+  const wrapper = document.createElement("div");
+  wrapper.appendChild(currentHTMLContent());
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${wrapper.innerHTML}</body></html>`;
+  const blob = new Blob([html], {type:"application/msword"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href=url; a.download="reporte.doc";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function tableToCSV(){
+  if (tablaWrap.classList.contains("hidden") || !tablaEl.querySelector("tr")) return "";
+  const rows = [...tablaEl.querySelectorAll("tr")].map(tr=>[...tr.children].map(td=> td.textContent.replace(/"/g,'""')));
+  const lines = rows.map(r=> r.map(c=> `"${c}"`).join(","));
+  return lines.join("\n");
+}
+function exportCSV(){
+  let csv = "";
+  // Agregamos explicación como comentarios al inicio
+  const expl = (respuestaEl.textContent||"").trim();
+  if (expl){
+    csv += '# ' + expl.replace(/\n/g,"\n# ") + "\n";
+  }
+  csv += tableToCSV();
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href=url; a.download="reporte.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* Vista previa PDF (print) */
+function previewPDF(){ exportPDF(); }
+
+/* ================ EVENTOS ================ */
+document.getElementById("btnEnviar").addEventListener("click", enviarPregunta);
+document.getElementById("btnVoz").addEventListener("click", ()=>{
+  const t = (respuestaEl.textContent||"").trim();
+  if (!t){ alert("No hay respuesta para leer aún."); return; }
+  speak(t, ()=>video?.play?.(), ()=>video?.pause?.());
+});
+document.getElementById("btnStopVoice").addEventListener("click", stopSpeak);
+document.getElementById("btnClear").addEventListener("click", limpiar);
+document.getElementById("btnClearMem").addEventListener("click", borrarMemoria);
+document.getElementById("btnExport").addEventListener("click", ()=>{
+  const fmt = document.getElementById("exportFmt").value;
+  if (fmt==="pdf") exportPDF();
+  else if (fmt==="doc") exportDOC();
+  else exportCSV();
+});
+document.getElementById("btnPreview").addEventListener("click", previewPDF);
+document.getElementById("pregunta").addEventListener("keydown",(e)=>{
+  if (e.key==="Enter" && (e.ctrlKey || e.metaKey)) enviarPregunta();
+});
 </script>
 </body>
 </html>
