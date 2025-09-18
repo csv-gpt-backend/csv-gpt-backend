@@ -1,39 +1,80 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Consulta Educativa</title>
-  <style>
-    :root{
-      --header-height: 240px;
-      --video-shift: 14px;
-      --accent:#0078d7;
-    }
-    *{ box-sizing:border-box; } body{ margin:0; background:#fff; font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif; color:#111; }
-    .header-rail{ display:flex; align-items:center; justify-content:center; width:100%; height:var(--header-height); background:#fff; overflow:hidden; }
-    .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
-    .header-rail .left,.header-rail .right{ flex:0 0 25%; }
-    .header-rail .center{ flex:0 0 50%; position:relative; }
-    .header-rail .col img{ max-height:100%; max-width:100%; height:auto; width:auto; object-fit:contain; display:block; }
-    .header-rail video{ max-height:100%; max-width:100%; height:115%; width:auto; object-fit:contain; display:block; transform: translateY(var(--video-shift)); }
-    .interaction{ padding:24px 16px; text-align:center; }
-    .bar{ display:flex; gap:8px; justify-content:center; align-items:center; max-width:1100px; margin:0 auto; flex-wrap:wrap; }
-    .bar input[type="text"]{ flex:1 1 800px; padding:12px 14px; font-size:16px; border:1px solid #d0d0d0; border-radius:8px; outline:none; }
-    .btn{ padding:12px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
-    .btn:hover{ filter:brightness(0.95); }
-    #respuesta{ margin:20px auto 0; width:min(95%,1100px); min-height:64px; padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; text-align:left; line-height:1.45; white-space:pre-wrap; }
-    .table-wrap{ width:min(95%,1100px); margin:16px auto; overflow:auto; border:1px solid #e5e5e7; border-radius:10px; background:#fff; }
-    table.data{ width:100%; border-collapse:collapse; font-size:14px; }
-    table.data thead th{ position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6; text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap; }
-    table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; } table.data tbody tr:nth-child(odd){ background:#fafbfc; }
-    .toolbar{ display:flex; gap:10px; justify-content:center; align-items:center; margin:16px auto 28px; }
-    .muted{ color:#666; font-size:13px; }
-    @media (max-width: 640px){ .header-rail{ --header-height:200px; } .header-rail video{ transform: translateY(8px); } }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Consulta Educativa</title>
+<style>
+  :root{
+    --header-height: 380px;        /* video más grande */
+    --video-shift: 6px;
+    --video-scale: 1.35;           /* 35% más grande */
+    --accent:#0078d7;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:#fff; font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif; color:#111; }
+
+  /* ====== Encabezado ====== */
+  .header-rail{
+    display:flex; align-items:center; justify-content:center;
+    width:100%; height:var(--header-height); background:#fff; overflow:hidden;
+  }
+  .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
+  .header-rail .col.left,
+  .header-rail .col.right{ flex:0 0 20%; }
+  .header-rail .col.center{ flex:0 0 60%; position:relative; }
+  .header-rail .col.left img,
+  .header-rail .col.right img{ max-height:100%; max-width:100%; object-fit:contain; display:block; }
+  .header-rail .col.center video{
+    max-height:100%; max-width:100%; height:100%; width:auto; object-fit:contain; display:block;
+    transform: translateY(var(--video-shift)) scale(var(--video-scale));
+    transform-origin:center;
+  }
+
+  /* ====== Interacción ====== */
+  .interaction{ padding:24px 16px; text-align:center; }
+  .bar{ display:flex; gap:8px; justify-content:center; align-items:center; max-width:1100px; margin:0 auto; }
+  .bar input[type="text"]{
+    flex:1 1 800px; padding:12px 14px; font-size:16px; border:1px solid #d0d0d0; border-radius:8px; outline:none;
+  }
+  .btn{ padding:12px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
+  .btn:hover{ filter:brightness(0.95); }
+
+  #respuesta{
+    margin:20px auto 0; width:min(90%,1100px); min-height:64px;
+    padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; text-align:left; line-height:1.45; white-space:pre-wrap;
+  }
+  .table-wrap{
+    width:min(95%,1100px); margin:16px auto 24px; overflow:auto; border:1px solid #e5e5e7; border-radius:10px; background:#fff;
+  }
+  table.data{ width:100%; border-collapse:collapse; font-size:14px; }
+  table.data thead th{
+    position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6; text-align:left; padding:10px 8px; font-weight:700; white-space:nowrap;
+  }
+  table.data tbody td{ border-top:1px solid #f0f2f5; padding:8px 8px; vertical-align:top; }
+  table.data tbody tr:nth-child(odd){ background:#fafbfc; }
+
+  /* ====== PDF / impresión ====== */
+  @media print { .no-print{display:none!important;} }
+  table.data { page-break-inside:auto; }
+  table.data thead{ display:table-header-group; }
+  table.data tfoot{ display:table-footer-group; }
+  table.data tr{ break-inside:avoid; page-break-inside:avoid; }
+  *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .pdf-avoid-break{ break-inside:avoid; page-break-inside:avoid; }
+  .pdf-page{ width:210mm; max-width:210mm; margin:0 auto; }
+
+  /* por si en algún momento alguien reintroduce placeholder */
+  #pregunta::placeholder{ color:transparent!important; }
+
+  @media (max-width: 640px){
+    :root{ --header-height:320px; --video-scale:1.25; }
+  }
+</style>
 </head>
 <body>
 
+  <!-- ====== HEADER ====== -->
   <div class="header-rail">
     <div class="col left"><img src="/left.png" alt="Imagen izquierda"></div>
     <div class="col center">
@@ -45,226 +86,208 @@
     <div class="col right"><img src="/right.png" alt="Imagen derecha"></div>
   </div>
 
-  <div class="interaction">
+  <!-- ====== UI ====== -->
+  <div class="interaction no-print">
     <div class="bar">
-      <input id="pregunta" type="text" placeholder="Escribe tu pregunta (p. ej. 'Grupos homogéneos de 5 con Agresión y Empatía...')" />
-      <button class="btn" onclick="enviar()">Enviar</button>
-      <button class="btn" id="btn-voz" onclick="startListening()">🎤 Voz</button>
+      <!-- SIN placeholder -->
+      <input id="pregunta" type="text" />
+      <button class="btn" onclick="enviarPregunta()">Enviar</button>
+      <button class="btn" onclick="startListening()">Voz</button>
     </div>
+
     <div id="respuesta">Aquí aparecerá la explicación...</div>
+    <div id="tabla" class="table-wrap" hidden></div>
 
-    <!-- contenedor dinámico -->
-    <div id="contenedor"></div>
-
-    <div class="toolbar">
-      <select id="export-kind">
-        <option value="pdf">Exportar PDF</option>
-        <option value="doc">Exportar Word</option>
-        <option value="csv">Exportar CSV</option>
+    <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">
+      <select id="exportFmt" class="no-print" style="padding:10px;border:1px solid #d0d0d0;border-radius:8px;">
+        <option value="pdf" selected>Exportar PDF</option>
       </select>
-      <button class="btn" onclick="exportar()">Exportar</button>
-      <button class="btn" onclick="stopVoice()">Detener voz</button>
-      <button class="btn" onclick="limpiar()">Limpiar</button>
-      <button class="btn" onclick="borrarMemoria()">Borrar memoria</button>
+      <button class="btn no-print" onclick="exportarPDF()">Exportar</button>
+      <button class="btn no-print" onclick="stopVoice()">Detener voz</button>
+      <button class="btn no-print" onclick="limpiar()">Limpiar</button>
+      <button class="btn no-print" onclick="borrarMemoria()">Borrar memoria</button>
     </div>
-    <div class="muted">La memoria se conserva por ~10 minutos para dar contexto entre preguntas.</div>
+
+    <p style="margin-top:10px;color:#666;font-size:13px;">La memoria se conserva por ~10 minutos para dar contexto entre preguntas.</p>
   </div>
 
+<!-- Librería para PDF -->
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 <script>
-const ENDPOINT = "/api/ask";
-const tablaBox = document.getElementById("contenedor");
-const out = document.getElementById("respuesta");
-const video = document.getElementById("video");
+  /* ====== AJUSTES ====== */
+  const ENDPOINTS = ["/api/ask", "/api/preguntar"];
+  const DEFAULT_FILE = "decimo.csv";
+  const video = document.getElementById("video");
+  const tablaWrap = document.getElementById("tabla");
 
-// --------- memoria de 10 min ---------
-const mem = {
-  key: "ctx_mem",
-  get(){ try{ const x = JSON.parse(localStorage.getItem(this.key)||"null"); if(!x) return null; if(Date.now()-x.ts > 10*60*1000) return null; return x.q || null;}catch{ return null; } },
-  set(q){ localStorage.setItem(this.key, JSON.stringify({ q, ts: Date.now() })); },
-  clear(){ localStorage.removeItem(this.key); }
-};
-
-// ---------- VOZ ----------
-let chosenVoice = null;
-const EXEC_PREF = ["sabina","dalia","beatriz","abril","camila","lucia"];
-const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
-const MALE_HINTS = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos"];
-
-function scoreVoice(v){
-  const name = (v.name||"").toLowerCase();
-  const lang = (v.lang||"").toLowerCase();
-  let s = 0;
-  if (lang.startsWith("es-mx")) s += 100;
-  else if (lang.startsWith("es-419")) s += 60;
-  else if (lang.startsWith("es")) s += 30;
-  if (EXEC_PREF.some(t => name.includes(t))) s += 40;
-  if (FEMALE_HINTS.some(t => name.includes(t))) s += 20;
-  if (/(neural|natural|online)/i.test(name)) s += 25;
-  if (MALE_HINTS.some(t => name.includes(t))) s -= 80;
-  return s;
-}
-function pickExecutiveSpanishFemale(){
-  const voices = window.speechSynthesis?.getVoices?.() || [];
-  if (!voices.length) return null;
-  return voices.slice().sort((a,b) => scoreVoice(b) - scoreVoice(a))[0] || voices[0];
-}
-function ensureVoiceSelected(){ if (!chosenVoice) chosenVoice = pickExecutiveSpanishFemale(); }
-function speak(text, onStart, onEnd){
-  if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
-  ensureVoiceSelected();
-  const u = new SpeechSynthesisUtterance(
-    String(text||"").replace(/\*/g,"") // no leer asteriscos
-  );
-  if (chosenVoice) u.voice = chosenVoice;
-  u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-  u.rate = 1.12; u.pitch = 1.02; u.volume = 1.0;
-  u.onstart = ()=> onStart && onStart();
-  u.onend   = ()=> onEnd && onEnd();
-  u.onerror = ()=> onEnd && onEnd();
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(u);
-}
-window.speechSynthesis.onvoiceschanged = () => { chosenVoice = null; ensureVoiceSelected(); };
-function stopVoice(){ try{ window.speechSynthesis.cancel(); }catch{} }
-
-// -------- limpieza de tablas ascii que a veces mete la IA en la teoría --------
-function stripAsciiTables(text){
-  if(!text) return "";
-  const lines = text.split(/\r?\n/);
-  const out = [];
-  let sk=false;
-  for(const l of lines){
-    const isPipe = /^\s*\|.*\|\s*$/.test(l);
-    const isSep  = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(l);
-    if (isPipe || isSep) { sk=true; continue; }
-    if (sk && l.trim()===""){ sk=false; continue; }
-    if (!sk) out.push(l);
+  /* ====== VOZ (TTS) ====== */
+  let chosenVoice = null;
+  function pickVoice(){
+    const voices = window.speechSynthesis?.getVoices?.() || [];
+    const pref = ["sabina","dalia","beatriz","abril","camila","lucia"];
+    const score = (v)=>{
+      let s=0, name=(v.name||"").toLowerCase(), lang=(v.lang||"").toLowerCase();
+      if (lang.startsWith("es-mx")) s+=100; else if (lang.startsWith("es-419")) s+=60; else if (lang.startsWith("es")) s+=30;
+      if (pref.some(t=>name.includes(t))) s+=40;
+      if (/(neural|natural|online)/i.test(name)) s+=25;
+      return s;
+    };
+    return voices.slice().sort((a,b)=>score(b)-score(a))[0]||voices[0]||null;
   }
-  return out.join("\n").replace(/\[Nombre\s*\d+\]/gi,"").replace(/\[Puntaje\]/gi,"").trim();
-}
-
-// -------- UI --------
-function limpiar(){ out.textContent=""; tablaBox.innerHTML=""; }
-function borrarMemoria(){ mem.clear(); alert("Memoria borrada."); }
-
-async function enviar(){
-  const q = document.getElementById("pregunta").value.trim();
-  if (!q) return alert("Escribe una pregunta.");
-  out.textContent = "Procesando…";
-  tablaBox.innerHTML = "";
-
-  try{
-    const url = `${ENDPOINT}?q=${encodeURIComponent(q)}&file=${encodeURIComponent("decimo.csv")}`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const data = await r.json();
-
-    render(data);
-    mem.set(q);
-  }catch(e){
-    out.textContent = "No se pudo contactar al servidor.";
-    console.error(e);
+  function ensureVoice(){ if(!chosenVoice) chosenVoice = pickVoice(); }
+  function speak(text,onStart,onEnd){
+    if(!window.speechSynthesis){ onStart&&onStart(); onEnd&&onEnd(); return; }
+    ensureVoice();
+    const u = new SpeechSynthesisUtterance(text.replace(/\*+/g,""));
+    if (chosenVoice) u.voice = chosenVoice;
+    u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
+    u.rate=1.08; u.pitch=1.02; u.volume=1.0;
+    u.onstart=()=>onStart&&onStart();
+    u.onend=()=>onEnd&&onEnd();
+    u.onerror=()=>onEnd&&onEnd();
+    window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
   }
-}
+  function stopVoice(){ try{ window.speechSynthesis.cancel(); video?.pause(); }catch{} }
+  window.speechSynthesis.onvoiceschanged = ()=>{ chosenVoice=null; ensureVoice(); };
 
-function render(data){
-  // explicación limpia
-  const nota = stripAsciiTables(data.nota || "");
-  out.textContent = nota || "(Sin explicación)";
-
-  if (data.mode === "cluster"){
-    // grupos
-    (data.grupos || []).forEach(g => {
-      const wrap = document.createElement("div");
-      wrap.className = "table-wrap";
-      const h = document.createElement("div");
-      h.style.padding="10px 12px"; h.style.fontWeight="700";
-      h.textContent = g.titulo;
-      wrap.appendChild(h);
-      wrap.appendChild(renderTable(g.rows));
-      tablaBox.appendChild(wrap);
-    });
-    // pares
-    const pairsTitle = document.createElement("div");
-    pairsTitle.style.margin="18px auto 8px"; pairsTitle.style.maxWidth="1100px";
-    pairsTitle.style.fontWeight="700";
-    pairsTitle.textContent = "Top 5 pares más compatibles (global):";
-    tablaBox.appendChild(pairsTitle);
-
-    const pairsTable = renderTable((data.topPairs||[]).map((p,i)=>({ "#": i+1, "Estudiante A": p.A, "Estudiante B": p.B, "dist_z": p.dist_z })));
-    const wrapP = document.createElement("div"); wrapP.className="table-wrap"; wrapP.appendChild(pairsTable);
-    tablaBox.appendChild(wrapP);
-
-    const withinTitle = document.createElement("div");
-    withinTitle.style.margin="18px auto 8px"; withinTitle.style.maxWidth="1100px";
-    withinTitle.style.fontWeight="700";
-    withinTitle.textContent = "Par más compatible dentro de cada grupo:";
-    tablaBox.appendChild(withinTitle);
-
-    const withinTable = renderTable((data.pairsWithin||[]).map(p=>({ "Grupo": p?.grupo, "Estudiante A": p?.A, "Estudiante B": p?.B, "dist_z": p?.dist_z })));
-    const wrapW = document.createElement("div"); wrapW.className="table-wrap"; wrapW.appendChild(withinTable);
-    tablaBox.appendChild(wrapW);
-
-    // voz + video
-    speak(nota, ()=>video?.play(), ()=>video?.pause());
-    return;
+  /* ====== MICRÓFONO ====== */
+  function startListening(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
+    const rec = new SR(); rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1;
+    rec.onresult = e => { document.getElementById("pregunta").value = e.results[0][0].transcript; enviarPregunta(); };
+    rec.onerror = e => { alert("Error de micrófono: " + e.error + "\nHabilita el micrófono para este sitio."); };
+    rec.start();
   }
 
-  // modos informativos simples
-  if (data.mode === "corr-info" || data.mode === "table-info"){
-    speak(nota, ()=>video?.play(), ()=>video?.pause());
-    return;
+  /* ====== Helpers TABLA ====== */
+  const escapeHtml = (s) => String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+  function pickDelimiter(sampleLines){
+    const cands=[",",";","\t","|"]; let best=",",bestScore=-1;
+    for(const d of cands){ let score=0; for(const line of sampleLines){ const parts=line.split(d); if(parts.length>1) score+=parts.length; }
+      if(score>bestScore){ bestScore=score; best=d; } }
+    return best;
   }
-}
-
-function renderTable(rows){
-  if (!rows || !rows.length) {
-    const d = document.createElement("div");
-    d.style.padding="10px 12px"; d.textContent="(Sin filas)";
-    return d;
+  function parseMarkdownTable(text){
+    const lines=text.split(/\r?\n/).map(l=>l.trim());
+    const md=lines.filter(l=>/^\|.*\|$/.test(l)); if(md.length<2) return null;
+    const rows=md.map(l=>l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
+    const sepIdx=rows.findIndex(r=>r.every(c=>/^:?-{3,}:?$/.test(c))); if(sepIdx>=0) rows.splice(sepIdx,1);
+    return rows.length>=2?rows:null;
   }
-  const headers = Object.keys(rows[0]);
-  const t = document.createElement("table");
-  t.className = "data";
-  const thead = document.createElement("thead");
-  const trh = document.createElement("tr");
-  headers.forEach(h=>{
-    const th = document.createElement("th");
-    th.textContent = h; trh.appendChild(th);
-  });
-  thead.appendChild(trh); t.appendChild(thead);
-  const tb = document.createElement("tbody");
-  rows.forEach(r=>{
-    const tr = document.createElement("tr");
-    headers.forEach(h=>{
-      const td = document.createElement("td"); td.textContent = r[h]==null?"":r[h]; tr.appendChild(td);
-    });
-    tb.appendChild(tr);
-  });
-  t.appendChild(tb);
-  return t;
-}
+  function parseJsonTable(text){
+    try{
+      const obj=JSON.parse(text);
+      if(Array.isArray(obj) && obj.length && typeof obj[0]==="object"){
+        const headers=Array.from(obj.reduce((set,row)=>{ Object.keys(row).forEach(k=>set.add(k)); return set;}, new Set()));
+        const rows=[headers, ...obj.map(o=>headers.map(h=>o[h] ?? ""))];
+        return rows;
+      }
+    }catch{} return null;
+  }
+  function extractCsvBlock(text){
+    const m=text.match(/```(?:csv)?\s*([\s\S]*?)```/i); return m?m[1].trim():null;
+  }
+  function parseDelimited(text){
+    const lines=text.split(/\r?\n/).filter(l=>l.trim().length); if(lines.length<2) return null;
+    const sample=lines.slice(0,10); const d=pickDelimiter(sample);
+    const rows=lines.map(l=>l.split(d).map(c=>c.trim()));
+    const maxCols=Math.max(...rows.map(r=>r.length));
+    const normalized=rows.map(r=>{ const copy=r.slice(0,maxCols); while(copy.length<maxCols) copy.push(""); return copy; });
+    if(maxCols<2 || normalized.length<2) return null;
+    return normalized;
+  }
+  function renderTable(rows){
+    const [head,...body] = rows;
+    let html = '<table class="data"><thead><tr>';
+    for(const h of head) html += `<th>${escapeHtml(h)}</th>`;
+    html += '</tr></thead><tbody>';
+    for(const r of body){ html += '<tr>'; for(const c of r) html += `<td>${escapeHtml(c)}</td>`; html += '</tr>'; }
+    html += '</tbody></table>'; return html;
+  }
+  function maybeRenderTableFromText(text){
+    tablaWrap.hidden = true; tablaWrap.innerHTML = "";
+    let rows = parseJsonTable(text);
+    if(!rows){ const csvBlock=extractCsvBlock(text); if(csvBlock) rows = parseDelimited(csvBlock); }
+    if(!rows) rows = parseMarkdownTable(text);
+    if(!rows) rows = parseDelimited(text);
+    if(rows && rows.length>=2 && rows[0].length>=2){ tablaWrap.innerHTML = renderTable(rows); tablaWrap.hidden = false; }
+  }
 
-// ---- mic ----
-function startListening(){
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
-  const rec = new SR(); rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
-  rec.onresult = e => { const t = e.results[0][0].transcript; document.getElementById("pregunta").value = t; enviar(); };
-  rec.onerror = e => { alert("Error de micrófono: " + e.error + "\nPermite el micrófono para este sitio desde el candado del navegador."); };
-  rec.start();
-}
+  /* ====== Enviar pregunta ====== */
+  async function enviarPregunta(){
+    const pregunta = document.getElementById("pregunta").value.trim();
+    if(!pregunta) return alert("Escribe una pregunta.");
+    const out = document.getElementById("respuesta");
+    out.textContent = "Consultando...";
+    tablaWrap.hidden = true; tablaWrap.innerHTML = "";
 
-// ---- export (simple) ----
-function exportar(){
-  const kind = document.getElementById("export-kind").value;
-  const blob = new Blob([document.documentElement.outerHTML], {type: kind==="pdf"?"text/html":"text/html"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = kind==="pdf" ? "reporte.html" : (kind==="doc" ? "reporte.doc" : "reporte.html");
-  a.click(); URL.revokeObjectURL(url);
-}
+    // Detecta intención de tabla
+    const wantsTable = /\b(tabla|listar|lista|desplegar|muestra|muestrame|tabla ordenada)\b/i.test(pregunta);
+
+    let data=null,lastErr=null;
+    for(const base of ENDPOINTS){
+      try{
+        const url = `${base}?q=${encodeURIComponent(pregunta)}&file=${encodeURIComponent(DEFAULT_FILE)}${wantsTable ? "&mode=tabla" : ""}`;
+        const resp = await fetch(url);
+        if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        data = await resp.json();
+        break;
+      }catch(e){ lastErr=e; }
+    }
+    if(!data){ out.textContent="No se pudo contactar al servidor."; console.error(lastErr); return; }
+
+    const texto = (data.text || data.respuesta || "No se encontró respuesta.").replace(/\*+/g,"");
+    out.textContent = texto;
+    maybeRenderTableFromText(texto);
+
+    // Voz + video
+    speak(texto, ()=>video?.play(), ()=>video?.pause());
+  }
+  document.getElementById("pregunta").addEventListener("keydown", (e)=>{ if(e.key==="Enter") enviarPregunta(); });
+
+  /* ====== Exportar PDF ====== */
+  async function exportarPDF(){
+    const exp = document.getElementById('respuesta');
+    const tabla = document.getElementById('tabla');
+
+    const wrap = document.createElement('div');
+    wrap.className = 'pdf-page';
+
+    const title=document.createElement('div'); title.style.cssText='font-size:18px;font-weight:700;margin-bottom:6px;'; title.textContent='Reporte';
+    const sub=document.createElement('div'); sub.style.cssText='font-size:12px;color:#555;margin-bottom:12px;'; sub.textContent=new Date().toLocaleString();
+
+    const texto=(exp?.textContent||"").replace(/\*+/g,"").trim();
+    const explicacion=document.createElement('div'); explicacion.className='pdf-avoid-break';
+    explicacion.style.cssText='font-size:13px;line-height:1.45;margin-bottom:12px;white-space:pre-wrap;';
+    explicacion.textContent=texto||'(Sin explicación)';
+
+    let tablaClon=null;
+    if(tabla && !tabla.hidden && tabla.innerHTML.trim()){
+      tablaClon = tabla.cloneNode(true);
+      tablaClon.style.marginTop='8px';
+      const thead = tablaClon.querySelector('thead'); if(thead) thead.style.display='table-header-group';
+    }
+
+    wrap.appendChild(title); wrap.appendChild(sub); wrap.appendChild(explicacion); if(tablaClon) wrap.appendChild(tablaClon);
+
+    let orientation='portrait';
+    if(tabla && tabla.offsetWidth>750) orientation='landscape';
+
+    const opt={
+      margin:[12,10,15,10],
+      filename:`reporte_${Date.now()}.pdf`,
+      image:{type:'jpeg',quality:0.98},
+      html2canvas:{scale:2,useCORS:true,scrollY:0},
+      jsPDF:{unit:'mm',format:'a4',orientation}
+    };
+    try{ await html2pdf().set(opt).from(wrap).save(); }
+    catch(e){ console.error(e); alert('No se pudo generar el PDF.'); }
+  }
+
+  /* ====== Utilitarios ====== */
+  function limpiar(){ document.getElementById("respuesta").textContent=""; tablaWrap.hidden=true; tablaWrap.innerHTML=""; stopVoice(); }
+  function borrarMemoria(){ limpiar(); alert("Memoria temporal reiniciada."); }
 </script>
 </body>
 </html>
