@@ -4,6 +4,25 @@
 // Si no hay src, usa datos/decimo.csv.
 // Devuelve texto (para voz) o JSON con ?format=json.
 // ds
+const sourcesText = [];
+const skipped = [];
+for (const p of srcs) {
+  const publicUrl = `${proto}://${host}/${encodeURI(p)}`;
+  try {
+    const t = await getTextFromPublicUrl(publicUrl); // si 404, cae al catch
+    const type = extOf(p) === "pdf" ? "pdf" : "csv";
+    sourcesText.push({ label: p, type, text: t });
+  } catch (err) {
+    skipped.push(`${p} (${String(err?.message || err)})`);
+  }
+}
+if (!sourcesText.length) {
+  return res.status(200).json({
+    ok: false,
+    text: `No encontré fuentes válidas: ${skipped.join(" | ")}`,
+    fuentes: srcs, formato: format || "texto"
+  });
+}
 
 export const config = { runtime: "nodejs" }; // asegurar Node en Vercel
 
