@@ -250,7 +250,7 @@
       }catch(e){ console.error(e); $ans.textContent="Error consultando el backend."; $status.textContent="Error."; }
     }
 
-    // ===== Compatibilidad con tu botón =====
+    // ===== Compatibilidad con tu botón ======
     window.enviarPregunta = function () {
       const i = document.querySelector('#pregunta, #q, .toolbar input[type="text"]');
       if (!i || !i.value.trim()) { i && i.focus(); return; }
