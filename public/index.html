@@ -91,17 +91,23 @@
   </div>
 
   <script>
+/* ====== Config ====== */
+const ENDPOINTS = ["https://csv-gpt-backend.vercel.app/api/ask"];
+const DEFAULT_SOURCES = [
+  "datos/decimo.csv",
+  "documentos/lexium.pdf",
+  "documentos/evaluaciones.pdf",
+  "documentos/emocionales.pdf"
+];
 
-  
-  /* ====== Config ====== */
-  const ENDPOINTS = ["https://csv-gpt-backend.vercel.app/api/ask"];
+// bloquea cualquier “fantasma”
+const BLOCKLIST = new Set(["documentos/auxiliar.pdf", "/documentos/auxiliar.pdf"]);
+function buildSources() {
+  const srcs = DEFAULT_SOURCES.filter(s => !BLOCKLIST.has(s));
+  console.log("Fuentes que se envían:", srcs);
+  return srcs;
+}
 
-  const DEFAULT_SOURCES = [
-    "datos/decimo.csv",
-    "documentos/lexium.pdf",
-    "documentos/evaluaciones.pdf",
-    "documentos/emocionales.pdf"
-  ];
 
     const CONTEXTO_MINUTOS = 12; // > 10 minutos
     const MAX_TURNS_IN_CONTEXT = 8; // guardamos 8 turnos en memoria
