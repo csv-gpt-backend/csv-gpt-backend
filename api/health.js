@@ -1,4 +1,4 @@
-// api/health.js
+// api/health.js g
 const startedAt = Date.now();
 
 export default function handler(req, res) {
