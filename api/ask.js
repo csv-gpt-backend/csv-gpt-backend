@@ -14,9 +14,49 @@ const API_KEY =
   process.env["CLAVE API DE OPENAI"] ||
   process.env["CLAVE API DE APERTURA"]; // <- tu variable previa
 
+// ======== LISTA BLANCA DE FUENTES ========
+// Ignora completamente lo que venga en la query (?src=...)
+// y usa SOLO estas rutas internas del /public
+const srcs = [
+  "datos/decimo.csv",
+  "documentos/lexium.pdf",
+  "documentos/evaluaciones.pdf",
+  "documentos/emocionales.pdf",
+];
+// =========================================
+
+
+
 // ===== Cache simple =====
 const CACHE_MS = 5 * 60 * 1000;
 const cache = new Map(); // url -> { ts, text }
+
+// ====00000desde aquii  ====
+const proto = req.headers["x-forwarded-proto"] || "https";
+const host = req.headers.host;
+
+const sourcesText = [];
+const skipped = [];
+for (const p of srcs) {
+  const publicUrl = `${proto}://${host}/${encodeURI(p)}`;
+  try {
+    const t = await getTextFromPublicUrl(publicUrl); // si 404, entra al catch
+    const type = extOf(p) === "pdf" ? "pdf" : "csv";
+    sourcesText.push({ label: p, type, text: t });
+  } catch (err) {
+    skipped.push(`${p} (${String(err?.message || err)})`);
+  }
+}
+
+if (!sourcesText.length) {
+  return res.status(200).json({
+    ok: false,
+    text: `No encontré fuentes válidas: ${skipped.join(" | ")}`,
+    fuentes: srcs,
+    formato: format || "texto",
+  });
+}
+//======= hasta aqui =======
 
 let pdfParseModule = undefined;
 async function loadPdfParse() {
@@ -174,6 +214,20 @@ export default async function handler(req, res) {
     const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
     const format = (req.query.format || "").toString().toLowerCase(); // "json" | ""
 
+
+// desde aqui ==========
+    return res.status(200).json({
+  ok: true,
+  text: ai.text,
+  fuentes: srcs,
+  omitidas: skipped,
+  formato: format || "texto",
+});
+
+
+
+//==== hasta aqui ====
+    
     // ============ FILTRO DE FUENTES ============
     let srcs = req.query.src;
     if (!srcs) {
