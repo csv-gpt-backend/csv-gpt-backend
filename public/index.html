@@ -54,18 +54,53 @@ const APP_BUILD = "105"; // <-- cambia este número en cada publicación
 document.getElementById("build").textContent = "APP v=" + APP_BUILD;
 
 /* ===== Config única ===== */
-const ENDPOINT = "https://csv-gpt-backend.vercel.app/api/ask";
-const ALLOWED_SOURCES = [
-  "datos/decimo.csv",
-  "documentos/lexium.pdf",
-  "documentos/evaluaciones.pdf",
-  "documentos/emocionales.pdf"
-];
-function buildParams(q){
-  const p = new URLSearchParams({ q });
-  for (const s of ALLOWED_SOURCES) p.append("src", s);
-  return p;
-}
+
+  /* ===== Config de endpoints y fuentes ===== */
+  const ENDPOINT = "/api/ask"; // si pruebas remoto, pon la URL absoluta
+
+  // SIEMPRE enviamos CSV + 3 PDFs
+  const ALLOWED_SOURCES = [
+    "datos/decimo.csv",
+    "documentos/lexium.pdf",
+    "documentos/evaluaciones.pdf",
+    "documentos/emocionales.pdf"
+  ];
+
+  // Construye la querystring con la pregunta, fuentes y anti-caché
+  function buildParams(q){
+    const p = new URLSearchParams({ q, ts: Date.now().toString() }); // bust cache
+    for (const s of ALLOWED_SOURCES) p.append("src", s);
+    return p;
+  }
+
+  /* ===== Llamada a la API ===== */
+  async function enviarPregunta(){
+    const q = document.getElementById("pregunta").value.trim();
+    if (!q) { alert("Escribe una pregunta."); return; }
+
+    const url = `${ENDPOINT}?${buildParams(q).toString()}`;
+    console.log("➡️ Llamando:", url); // Verifica en DevTools > Network que lleva los 4 src
+
+    try {
+      const r = await fetch(url, { cache: "no-store" });
+      const t = await r.text();
+      let data;
+      try { data = JSON.parse(t); } catch { data = { text: t || "" }; }
+
+      document.getElementById("respuesta").textContent =
+        data.text || "Sin respuesta.";
+    } catch (e) {
+      console.error(e);
+      document.getElementById("respuesta").textContent =
+        "Error de red al contactar el backend.";
+    }
+  }
+
+  // Enter para enviar
+  document.getElementById("pregunta").addEventListener("keydown", (e)=>{
+    if (e.key === "Enter") enviarPregunta();
+  });
+
 
 /* ===== Voz mujer es-MX ===== */
 let chosenVoice=null;
