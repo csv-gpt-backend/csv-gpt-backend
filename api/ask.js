@@ -12,6 +12,7 @@ const BUILD_ID =
 // Forzar GPT-5 como modelo predeterminado
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
 
+export const config = { runtime: "nodejs" };
 
 //const MODEL =
 //  process.env.OPENAI_MODEL ||
