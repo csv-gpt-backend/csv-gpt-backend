@@ -1,0 +1,11 @@
+{
+  "name": "csv-gpt-backend",
+  "version": "1.0.0",
+  "main": "api/ask.js",
+  "scripts": {
+    "start": "node api/ask.js"
+  },
+  "dependencies": {
+    "pdf-parse": "^1.1.1"
+  }
+}
