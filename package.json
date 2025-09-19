@@ -1,6 +1,7 @@
 {
   "name": "csv-gpt-backend",
   "version": "1.0.0",
+  "type": "module",
   "main": "api/ask.js",
   "scripts": {
     "start": "node api/ask.js"
@@ -10,10 +11,8 @@
   },
   "vercel": {
     "rewrites": [
-      {
-        "source": "/api/(.*)",
-        "destination": "/api/$1"
-      }
+      { "source": "/api/(.*)", "destination": "/api/$1" },
+      { "source": "/api/preguntar", "destination": "/api/ask" }  // alias opcional
     ]
   }
 }
