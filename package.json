@@ -1,23 +1,19 @@
-// rewrites y headers (por ejemplo, en vercel.json)
 {
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ],
-  "headers": [
-    {
-      "source": "/index.html",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, max-age=0" }
-      ]
-    }
-  ]
-}
-json
-// package.json (solo la sección relevante)
-{
+  "name": "csv-gpt-backend",
+  "version": "1.0.0",
+  "main": "api/ask.js",
+  "scripts": {
+    "start": "node api/ask.js"
+  },
   "dependencies": {
     "pdf-parse": "^1.1.1"
-    // ... otras dependencias que tengas
+  },
+  "vercel": {
+    "rewrites": [
+      {
+        "source": "/api/(.*)",
+        "destination": "/api/$1"
+      }
+    ]
   }
 }
