@@ -8,9 +8,13 @@ const BUILD_ID =
   String(Date.now());
 
 /* ===== Modelo y clave ===== */
-const MODEL =
-  process.env.OPENAI_MODEL ||
-  "gpt-4o-mini"; // cámbialo si quieres usar otro
+// Forzar GPT-5 como modelo predeterminado
+const MODEL = process.env.OPENAI_MODEL || "gpt-5";
+
+
+//const MODEL =
+//  process.env.OPENAI_MODEL ||
+//  "gpt-4o-mini"; // cámbialo si quieres usar otro
 
 const API_KEY =
   process.env.OPENAI_API_KEY ||
