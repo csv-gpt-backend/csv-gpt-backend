@@ -1,16 +1,24 @@
 // /api/ask.js
-// Analiza CSV/PDF ubicados en /public. Responde texto o JSON (?format=json).
 export const config = { runtime: "nodejs" };
 
-// ===== Modelo y clave =====
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini"; // cámbialo si usas otro
+/* ===== Build/debug ===== */
+const BUILD_ID =
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.VERCEL_BUILD_ID ||
+  String(Date.now());
+
+/* ===== Modelo y clave ===== */
+const MODEL =
+  process.env.OPENAI_MODEL ||
+  "gpt-4o-mini"; // cámbialo si quieres usar otro
+
 const API_KEY =
   process.env.OPENAI_API_KEY ||
   process.env.CLAVE_API_DE_OPENAI ||
   process.env["CLAVE API DE OPENAI"] ||
   process.env["CLAVE API DE APERTURA"];
 
-// ===== Cache simple de lecturas =====
+/* ===== Cache lecturas ===== */
 const CACHE_MS = 5 * 60 * 1000;
 const cache = new Map(); // url -> { ts, text }
 
@@ -26,7 +34,7 @@ async function loadPdfParse() {
   return pdfParseModule;
 }
 
-function extOf(path) { return (path.split(".").pop() || "").toLowerCase(); }
+function extOf(p) { return (p.split(".").pop() || "").toLowerCase(); }
 
 async function getTextFromPublicUrl(publicUrl) {
   const hit = cache.get(publicUrl);
@@ -62,7 +70,7 @@ function detectDelim(firstLine) {
   return ",";
 }
 
-// ===== Prompts =====
+/* ===== Prompts ===== */
 function systemPromptText() {
   return [
     "Eres una asesora educativa clara y ejecutiva (español México).",
@@ -128,25 +136,25 @@ async function callOpenAI(messages, forceJson = false) {
   return { ok: true, text };
 }
 
-// ===== Handler =====
+/* ===== Handler ===== */
 export default async function handler(req, res) {
   try {
     const q = (req.query.q || req.body?.q || "").toString().trim() || "ping";
     const format = (req.query.format || "").toString().toLowerCase();
 
-    // ========== LISTA BLANCA (ignoramos ?src= de la query) ==========
+    // ====== LISTA BLANCA (ignora ?src=) ======
     const srcs = [
       "datos/decimo.csv",
       "documentos/lexium.pdf",
       "documentos/evaluaciones.pdf",
       "documentos/emocionales.pdf",
     ];
-    // ================================================================
+    // =========================================
 
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers.host;
 
-    // Carga tolerante a errores (salta 404 y continúa)
+    // Carga tolerante: si una falla (404), la salta y sigue
     const sourcesText = [];
     const skipped = [];
     for (const p of srcs) {
@@ -166,13 +174,19 @@ export default async function handler(req, res) {
         text: `No encontré fuentes válidas: ${skipped.join(" | ")}`,
         fuentes: srcs,
         formato: format || "texto",
+        debug: { build: BUILD_ID, final_src: srcs, skipped }
       });
     }
 
-    // Ping rápido (sin gastar tokens)
+    // Ping sin gastar tokens
     if (q.toLowerCase() === "ping") {
       return res.status(200).json({
-        ok: true, text: "pong", fuentes: srcs, omitidas: skipped, formato: "texto"
+        ok: true,
+        text: "pong",
+        fuentes: srcs,
+        omitidas: skipped,
+        formato: "texto",
+        debug: { build: BUILD_ID, final_src: srcs, skipped }
       });
     }
 
@@ -198,6 +212,7 @@ export default async function handler(req, res) {
       fuentes: srcs,
       omitidas: skipped,
       formato: format || "texto",
+      debug: { build: BUILD_ID, final_src: srcs, skipped }
     });
   } catch (e) {
     console.error("Error interno en /api/ask:", e);
