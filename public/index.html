@@ -20,6 +20,32 @@ textarea{ flex:1 1 800px; min-height:72px; padding:12px 14px; border:1px solid #
 .btn.alt{ background:#eee; color:#111 }
 #out{ width:min(90%,1100px); margin:16px auto 0; padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; text-align:left; white-space:pre-wrap }
 .badge{ position:fixed; right:8px; bottom:8px; background:#111; color:#fff; padding:6px 10px; border-radius:8px; font:12px monospace; z-index:9999 }
+
+  /+ ===========inicio   Marce ======/*
+  /* Botón de micrófono más grande */
+
+  .btn.mic {
+  font-size: 22px;
+  padding: 14px 16px;
+  line-height: 1;
+}
+
+/* Selector con estilo similar a los botones */
+.select {
+  padding: 10px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  font-size: 15px;
+  background: #fff;
+}
+
+/* Botón alternativo para limpiar memoria */
+.btn.alt {
+  background: #ffc107;
+  color: #000;
+}
+/* ============== fin marce ==========*/
+
 </style>
 </head>
 <body>
@@ -34,21 +60,36 @@ textarea{ flex:1 1 800px; min-height:72px; padding:12px 14px; border:1px solid #
   </div>
   <div class="col"><img src="/right.png" alt="R"></div>
 </div>
+  /* =============inicio===Marce====*/
+<div class="bar">
+  <!-- Caja de texto para la pregunta (3 líneas) -->
+  <textarea id="pregunta" rows="3" placeholder="Haz tu pregunta aquí…" 
+           style="flex:1 1 800px; padding:12px 14px; font-size:16px; 
+                  border:1px solid #d0d0d0; border-radius:8px; outline:none;"></textarea>
 
-<div class="main">
-  <div class="bar">
-    <textarea id="q" placeholder="Escribe tu pregunta… (Ctrl/⌘+Enter para enviar)"></textarea>
-    <button class="btn" id="send">Enviar</button>
-    <button class="btn" id="mic">🎤</button>
-  </div>
-  <div id="out">Aquí aparecerá la respuesta…</div>
-  <div class="bar" style="margin-top:12px">
-    <button class="btn" id="stop">Parar voz</button>
-    <button class="btn alt" id="clear">Limpiar</button>
-  </div>
+  <!-- Botón Enviar -->
+  <button class="btn" onclick="enviarPregunta()">Enviar</button>
+
+  <!-- Botón Micrófono (grande y visible) -->
+  <button class="btn mic" title="Dictar por voz" onclick="startListening()">🎤</button>
+
+  <!-- Selector de exportación -->
+  <select id="exportType" class="select">
+    <option value="pdf">PDF (vista previa)</option>
+    <option value="csv">CSV (descarga)</option>
+  </select>
+
+  <!-- Botón Exportar -->
+  <button class="btn" onclick="exportSeleccion()">Exportar</button>
+
+  <!-- Botón Liberar memoria (opcional) -->
+  <button class="btn alt" onclick="liberarMemoria()">Liberar memoria</button>
 </div>
 
-<script>
+  /* ================fin =botones========Marce====*/
+
+  <script>
+  
 /* ===== Build visual ===== */
 const APP_BUILD = "105"; // <-- cambia este número en cada publicación
 document.getElementById("build").textContent = "APP v=" + APP_BUILD;
@@ -158,6 +199,79 @@ async function enviar(){
     $out.textContent = "No se pudo contactar al servidor. " + String(err?.message||err||"");
   }
 }
+
+    /* ============Iniciio Ma =========*/
+// Ejecuta la exportación según el formato elegido
+function exportSeleccion(){
+  const tipo = document.getElementById("exportType").value;
+  if (tipo === "pdf"){
+    exportPDF(); // función que ya tienes en tu app
+    return;
+  }
+  if (tipo === "csv"){
+    exportCSV();
+    return;
+  }
+  alert("Formato no soportado por ahora.");
+}
+
+// Exportar CSV desde tabla detectada o texto plano
+function exportCSV(){
+  if (window.lastRows && Array.isArray(window.lastRows) && window.lastRows.length){
+    const csv = window.lastRows.map(row => 
+      row.map(cell => {
+        const s = String(cell ?? "");
+        return `"${s.replace(/"/g,'""')}"`; // escapa comillas
+      }).join(",")
+    ).join("\r\n");
+
+    descargarArchivo(csv, "resultado.csv", "text/csv;charset=utf-8");
+    return;
+  }
+
+  const texto = document.getElementById("respuesta")?.textContent?.trim() || "";
+  if (!texto){
+    alert("No hay datos para exportar.");
+    return;
+  }
+  const csv = `#,"Respuesta"\r\n1,"${texto.replace(/"/g,'""')}"\r\n`;
+  descargarArchivo(csv, "resultado.csv", "text/csv;charset=utf-8");
+}
+
+// Utilidad para descargar archivos
+function descargarArchivo(contenido, nombre, tipo){
+  const blob = new Blob([contenido], { type: tipo });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Liberar memoria y limpiar UI
+function liberarMemoria(){
+  try{ localStorage.clear(); }catch{}
+  try{ sessionStorage.clear(); }catch{}
+
+  document.getElementById("pregunta").value = "";
+  const out = document.getElementById("respuesta");
+  if (out){ out.hidden = false; out.textContent = ""; }
+
+  if (window.vlistWrap){ vlistWrap.hidden = true; vlistWrap.innerHTML = ""; }
+  if (window.tablaWrap){ tablaWrap.hidden = true; tablaWrap.innerHTML = ""; }
+  
+  window.lastRows = null;
+  alert("Memoria liberada ✅");
+}
+
+
+
+
+
+    /* ============ Fin Mar =======*/
 </script>
 </body>
 </html>
