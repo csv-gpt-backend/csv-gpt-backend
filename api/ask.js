@@ -1,5 +1,6 @@
 // /api/ask.js  — Vercel Node (CommonJS)
 const pdfParse = require("pdf-parse");
+const API_KEY = process.env.OPENAI_API_KEY;
 
 exports.config = { runtime: "nodejs" };
 
