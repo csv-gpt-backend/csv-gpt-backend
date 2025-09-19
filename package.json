@@ -11,4 +11,12 @@
       ]
     }
   ]
+  // package.json
+{
+  "dependencies": {
+    "pdf-parse": "^1.1.1",
+    // ... lo que ya tengas
+  }
+}
+
 }
