@@ -1,3 +1,4 @@
+// rewrites y headers (por ejemplo, en vercel.json)
 {
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
@@ -11,12 +12,12 @@
       ]
     }
   ]
-  // package.json
+}
+json
+// package.json (solo la sección relevante)
 {
   "dependencies": {
-    "pdf-parse": "^1.1.1",
-    // ... lo que ya tengas
+    "pdf-parse": "^1.1.1"
+    // ... otras dependencias que tengas
   }
-}
-
 }
