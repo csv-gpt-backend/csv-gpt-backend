@@ -1,18 +1,5 @@
 {
-  "name": "csv-gpt-backend",
+  "name": "mini-pagina-marcelo",
   "version": "1.0.0",
-  "type": "module",
-  "main": "api/ask.js",
-  "scripts": {
-    "start": "node api/ask.js"
-  },
-  "dependencies": {
-    "pdf-parse": "^1.1.1"
-  },
-  "vercel": {
-    "rewrites": [
-      { "source": "/api/(.*)", "destination": "/api/$1" },
-      { "source": "/api/preguntar", "destination": "/api/ask" }  // alias opcional
-    ]
-  }
+  "private": true
 }
