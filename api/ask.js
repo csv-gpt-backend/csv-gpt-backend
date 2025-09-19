@@ -134,9 +134,17 @@ function userPromptJSON(query, sourcesText) {
 
 async function callOpenAI(messages, forceJson = false) {
   if (!API_KEY) return { ok: false, text: "Falta configurar la clave de OpenAI en el servidor." };
-  const body = { model: MODEL, messages, temperature: 0.35 };
+  // ============const body = { model: MODEL, messages, temperature: 0.35 };
+    const body = { 
+    model: MODEL,
+    messages,
+    temperature: 0.1,            // Cero creatividad, máxima precisión
+    max_completion_tokens: 8192  // Para respuestas largas y cálculos extensos
+  };
+  
   if (forceJson) body.response_format = { type: "json_object" };
 
+  
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
