@@ -22,6 +22,7 @@ const API_KEY =
   process.env.CLAVE_API_DE_OPENAI ||
   process.env["CLAVE API DE OPENAI"] ||
   process.env["CLAVE API DE APERTURA"];
+const r = await fetch(publicUrl, { cache: "no-store" });
 
 /* ===== Cache lecturas ===== */
 const CACHE_MS = 5 * 60 * 1000;
