@@ -1,4 +1,10 @@
 // /api/ask.js  (CommonJS - Vercel Node runtime)
+// Reemplaza esta línea (si existe):
+// const MODEL = process.env.OPENAI_MODEL || "gpt-5";
+
+// Por esta (modelo único y obligatorio):
+const MODEL = "gpt-5";
+
 const pdfParse = require("pdf-parse");
 
 exports.config = { runtime: "nodejs" };
