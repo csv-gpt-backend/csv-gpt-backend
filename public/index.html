@@ -6,7 +6,7 @@
   <title>Consulta Educativa</title>
   <style>
     :root{
-      --header-height: 420px;  /* 20/60/20 con video 15% más grande */
+      --header-height: 420px;        /* Header fijo (20/60/20), video 15% más grande */
       --video-shift: 6px;
       --accent:#0a66ff;
       --soft:#f6f8ff;
@@ -14,17 +14,22 @@
       --text:#0b1020;
     }
     *{ box-sizing:border-box; }
+    html, body { height:100%; }
     body{
       margin:0; background:#fff;
       font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
       color:var(--text);
     }
 
-    /* ====== Encabezado 20/60/20 ====== */
+    /* ====== Header fijo 20/60/20 ====== */
     .header-rail{
+      position: fixed;
+      top:0; left:0; right:0;
+      z-index:1000;
       display:flex; align-items:center; justify-content:center;
-      width:100%; height:var(--header-height); background:#fff; overflow:hidden;
-      padding:8px 10px;
+      width:100%; height:var(--header-height);
+      background:#fff; overflow:hidden;
+      padding:8px 10px; border-bottom:1px solid var(--line);
     }
     .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
     .header-rail .col.left, .header-rail .col.right{ flex:0 0 20%; }
@@ -36,6 +41,13 @@
       max-height:100%; max-width:100%; height:100%; width:auto; object-fit:contain; display:block;
       transform: translateY(var(--video-shift));
       border:0; outline:0; background:#0000;
+    }
+
+    /* ====== Contenido con scroll ====== */
+    .page{
+      position:relative;
+      padding-top: var(--header-height); /* espacio para el header fijo */
+      min-height:100%;
     }
 
     /* ====== Interacción ====== */
@@ -101,7 +113,7 @@
 </head>
 <body>
 
-  <!-- ====== ENCABEZADO ====== -->
+  <!-- ====== HEADER FIJO ====== -->
   <div class="header-rail">
     <div class="col left"><img src="/left.png" alt="izquierda"></div>
     <div class="col center">
@@ -113,33 +125,35 @@
     <div class="col right"><img src="/right.png" alt="derecha"></div>
   </div>
 
-  <!-- ====== INTERACCIÓN ====== -->
-  <div class="interaction">
-    <div class="bar">
-      <textarea id="pregunta" placeholder="Escribe o dicta tu pregunta..." rows="3"></textarea>
-    </div>
+  <!-- ====== CONTENIDO SCROLLABLE ====== -->
+  <main class="page">
+    <div class="interaction">
+      <div class="bar">
+        <textarea id="pregunta" placeholder="Escribe o dicta tu pregunta..." rows="3"></textarea>
+      </div>
 
-    <div class="row-center">
-      <button class="btn" id="btnEnviar">▶ Enviar</button>
-      <button class="btn mic" id="btnDictar">🎤 Dictar</button>
+      <div class="row-center">
+        <button class="btn" id="btnEnviar">▶ Enviar</button>
+        <button class="btn mic" id="btnDictar">🎤 Dictar</button>
 
-      <select id="exportKind" title="Formato de exportación">
-        <option value="pdf">PDF (vista previa)</option>
-        <option value="docx">DOCX (Word)</option>
-        <option value="xlsx">XLSX (Excel)</option>
-        <option value="csv">CSV</option>
-      </select>
-      <button class="btn secondary" id="btnExportar">⇩ Exportar</button>
+        <select id="exportKind" title="Formato de exportación">
+          <option value="pdf">PDF (vista previa)</option>
+          <option value="docx">DOCX (Word)</option>
+          <option value="xlsx">XLSX (Excel)</option>
+          <option value="csv">CSV</option>
+        </select>
+        <button class="btn secondary" id="btnExportar">⇩ Exportar</button>
 
-      <button class="btn warn" id="btnStop">⏸️ Silenciar voz</button>
-      <button class="btn secondary" id="btnLimpiar">🧹 Limpiar</button>
-      <button class="btn danger" id="btnNueva">🗑️ Nueva sesión</button>
+        <button class="btn warn" id="btnStop">⏸️ Silenciar voz</button>
+        <button class="btn secondary" id="btnLimpiar">🧹 Limpiar</button>
+        <button class="btn danger" id="btnNueva">🗑️ Nueva sesión</button>
+      </div>
     </div>
 
     <div id="respuesta">Aquí aparecerá la respuesta (texto / fórmulas / análisis)...</div>
     <div id="tabla" class="table-wrap" hidden></div>
     <div id="printable"></div>
-  </div>
+  </main>
 
   <script>
     /* ====== Config ====== */
@@ -151,7 +165,7 @@
       "documentos/emocionales.pdf"
     ];
 
-    // Contexto 15 min
+    // Contexto local 15 min
     const CONTEXTO_MINUTOS = 15;
     const MAX_TURNS = 12;
     const LS_KEY = "ctxTurns15";
@@ -161,7 +175,7 @@
     const tbl   = document.getElementById("tabla");
     const printable = document.getElementById("printable");
 
-    /* ====== Voz mujer es-MX estricto ====== */
+    /* ====== Voz mujer es-MX estricta ====== */
     let chosenVoice = null;
     const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
     function scoreVoice(v){
@@ -238,7 +252,7 @@
       return s;
     }
 
-    /* ====== Parse/Render tabla ====== */
+    /* ====== Detección/Render de tablas ====== */
     const escapeHtml = (s) => String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
     function parseDelimited(csvText){
       const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
@@ -341,12 +355,10 @@
         const blob = new Blob([rows.join("\n")], {type:"text/csv;charset=utf-8"});
         const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "resultado.csv"; a.click();
       } else if (kind === "docx"){
-        // Export simple como .doc (HTML) – compatible con Word
         const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${(!tbl.hidden?tbl.outerHTML:`<pre>${escapeHtml(out.textContent||"")}</pre>`)}</body></html>`;
         const blob = new Blob([html], {type:"application/msword"});
         const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "resultado.doc"; a.click();
       } else if (kind === "xlsx"){
-        // Export básico: usar CSV con extensión .xlsx (abre en Excel)
         if (tbl.hidden && !out.textContent.trim()){ alert("No hay contenido para exportar."); return; }
         let content = "";
         if (!tbl.hidden){
@@ -382,7 +394,7 @@
         return;
       }
 
-      const texto = data.text || "No hay contenido.";
+      const texto = data.text || "Sin contenido.";
       const rendered = detectAndRender(texto);
       if (rendered){ out.hidden = true; } else { out.hidden = false; out.textContent = texto; speak(texto); }
 
