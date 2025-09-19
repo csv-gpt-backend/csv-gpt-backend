@@ -158,6 +158,114 @@
 
   <!-- DOCX (opcional; puedes comentarlo si no lo usas hoy) -->
   <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+  <script>
+    // ==== Sanitizado simple (ya lo usabas, lo dejo por si no está) ====
+    function sanitizeForSpeech(text){
+      if (!text) return "";
+      let t = text.replace(/``````/g, " "); // no leer bloques de código/tablas
+      t = t.replace(/*/g, "");
+      t = t.replace(/^[#>\-\u2022]\s*/gm, ""); // bullets/headers
+      t = t.replace(/\s{2,}/g, " ").trim();
+      return t;
+    }
+    // ==== Selección de VOZ: Female es-MX / es-419 / es-* (evita masculinas) ====
+    let chosenVoice = null;
+    function scoreVoice(v){
+      const name = (v.name||"").toLowerCase();
+      const lang = (v.lang||"").toLowerCase();
+      let s = 0;
+      if (lang.startsWith("es-mx")) s += 100;
+      else if (lang.startsWith("es-419")) s += 90;
+      else if (lang.startsWith("es")) s += 70;
+      const femaleHints = [
+        "female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia",
+        "paola","valentina","maría","maria","sofia","laura","elena","carmen","lola","ana",
+        "ines","isabel","rosa"
+      ];
+      const maleHints = [
+        "male","hombre","jorge","liberto","pablo","diego","miguel","enrique","carlos",
+        "hugo","sergio","jaime","pedro","manuel","fernando","andrés","andres","josé",
+        "jose","juan","luis","alejandro"
+      ];
+      if (femaleHints.some(h => name.includes(h))) s += 40;
+      if (maleHints.some(h => name.includes(h))) s -= 100;
+      if (/(neural|natural|online)/i.test(v.name)) s += 20;
+      return s;
+    }
+    function pickFemaleSpanish(){
+      const list = window.speechSynthesis?.getVoices?.() || [];
+      if (!list.length) return null;
+      return list.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0] || null;
+    }
+    function ensureFemaleVoice(){
+      return new Promise(resolve=>{
+        const attempt=()=>{
+          const v = pickFemaleSpanish();
+          if (v){ chosenVoice=v; resolve(v); }
+          else resolve(null);
+        };
+        const list = window.speechSynthesis?.getVoices?.();
+        if (list && list.length){ attempt(); }
+        else {
+          window.speechSynthesis.onvoiceschanged = ()=>attempt();
+          try { window.speechSynthesis.getVoices(); } catch {}
+          setTimeout(attempt, 800);
+        }
+      });
+    }
+    let __speaking=false, __queue=[], __currentUtt=null;
+    function chunkText(t, max=220){
+      const parts=[], clean=t.replace(/\s+/g," ").trim();
+      let i=0;
+      while (i<clean.length){
+        let end = i+max;
+        if (end<clean.length){
+          const p = clean.lastIndexOf(" ", end);
+          if (p>i) end = p;
+        }
+        parts.push(clean.slice(i, end));
+        i = end;
+      }
+      return parts;
+    }
+    async function speak(text){
+      stopSpeech(true);
+      const voice = await ensureFemaleVoice();
+      const chunks = chunkText(sanitizeForSpeech(text), 220);
+      if (!chunks.length){ try{ video?.pause(); }catch{} return; }
+      __queue = chunks;
+      __speaking = true;
+      try{ video?.play(); }catch{}
+      const playNext=()=>{
+        if (!__speaking || !__queue.length){
+          __speaking = false; __currentUtt = null;
+          try{ video?.pause(); }catch{}
+          return;
+        }
+        const u = new SpeechSynthesisUtterance(__queue.shift());
+        __currentUtt = u;
+        if (voice) u.voice = voice;
+        u.lang = (voice && voice.lang) ? voice.lang : "es-MX";
+        u.rate = 1.10; u.pitch = 1.02; u.volume = 1.0;
+        u.onstart = ()=>{ try{ video?.play(); }catch{} };
+        u.onend   = ()=>{ if (__speaking) playNext(); else { try{ video?.pause(); }catch{} } };
+        u.onerror = ()=>{ if (__speaking) playNext(); else { try{ video?.pause(); }catch{} } };
+        try{ window.speechSynthesis.speak(u); }
+        catch{ playNext(); }
+      };
+      playNext();
+    }
+    function stopSpeech(keepVideoPlaying=false){
+      try{ __speaking=false; __queue = []; }catch{}
+      try{
+        if (__currentUtt){ __currentUtt.onend = __currentUtt.onerror = null; }
+        window.speechSynthesis.cancel();
+      }catch{}
+      if (!keepVideoPlaying){
+        try{ video?.pause(); }catch{}
+      }
+    }
+  </script>
 <script>
   const SESSION_MINUTES = 15;
 let __sessionTimer = null;
