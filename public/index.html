@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Consulta Educativa</title>
+  <style>
+    :root{
+      --header-height: 420px;  /* 20/60/20 con video 15% más grande */
+      --video-shift: 6px;
+      --accent:#0a66ff;
+      --soft:#f6f8ff;
+      --line:#e7e9ef;
+      --text:#0b1020;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0; background:#fff;
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
+      color:var(--text);
+    }
+
+    /* ====== Encabezado 20/60/20 ====== */
+    .header-rail{
+      display:flex; align-items:center; justify-content:center;
+      width:100%; height:var(--header-height); background:#fff; overflow:hidden;
+      padding:8px 10px;
+    }
+    .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden; padding:0 8px; }
+    .header-rail .col.left, .header-rail .col.right{ flex:0 0 20%; }
+    .header-rail .col.center{ flex:0 0 60%; position:relative; }
+    .header-rail .col img{
+      max-height:100%; max-width:100%; height:auto; width:auto; object-fit:contain; display:block;
+    }
+    .header-rail .col.center video{
+      max-height:100%; max-width:100%; height:100%; width:auto; object-fit:contain; display:block;
+      transform: translateY(var(--video-shift));
+      border:0; outline:0; background:#0000;
+    }
+
+    /* ====== Interacción ====== */
+    .interaction{ padding:24px 16px; text-align:center; }
+    .bar{
+      display:flex; gap:10px; justify-content:center; align-items:center;
+      max-width:1100px; margin:0 auto 8px auto; flex-wrap:wrap;
+    }
+    .bar textarea{
+      flex:1 1 900px; min-height:56px; padding:12px 14px; font-size:16px; line-height:1.45;
+      border:1px solid var(--line); border-radius:12px; outline:none; resize:vertical;
+      background:#fff;
+    }
+    .btn{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:12px 16px; border:0; border-radius:12px;
+      background:var(--accent); color:#fff; font-weight:700; cursor:pointer;
+      box-shadow:0 1px 0 rgba(0,0,0,0.06); transition:transform .06s ease, filter .15s ease;
+      user-select:none;
+    }
+    .btn:active{ transform:translateY(1px); }
+    .btn.secondary{ background:#eef1f9; color:#0b1736; }
+    .btn.warn{ background:#ffd43b; color:#1d1d1d; }
+    .btn.danger{ background:#ff6b6b; color:#fff; }
+    .btn.mic{ background:#0a66ff; color:#fff; font-size:18px; padding:14px 18px; }
+    .btn:hover{ filter:brightness(0.97); }
+    select{
+      appearance:none; padding:12px 14px; border-radius:12px; border:1px solid var(--line);
+      background:#fff; font-weight:600;
+    }
+    .row-center{ display:flex; gap:10px; justify-content:center; align-items:center; flex-wrap:wrap; margin:10px auto 0; max-width:1100px; }
+
+    /* ====== Resultados ====== */
+    #respuesta{
+      margin:18px auto 0; width:min(96%,1100px);
+      min-height:64px; padding:14px; background:var(--soft);
+      border:1px solid var(--line); border-radius:12px;
+      text-align:left; line-height:1.5; white-space:pre-wrap; font-size:15px;
+    }
+    .table-wrap{
+      width:min(96%,1100px); margin:16px auto 24px; overflow:auto;
+      border:1px solid var(--line); border-radius:12px; background:#fff;
+    }
+    table.data{ width:100%; border-collapse:collapse; font-size:14px; }
+    table.data thead th{
+      position:sticky; top:0; background:#f3f6fb; border-bottom:1px solid #e5e7f0;
+      text-align:left; padding:10px 8px; font-weight:800; white-space:nowrap;
+    }
+    table.data tbody td{ border-top:1px solid #f2f3f7; padding:8px 8px; vertical-align:top; }
+    table.data tbody tr:nth-child(odd){ background:#fafbff; }
+
+    /* ====== Vista imprimible ====== */
+    #printable{ display:none; }
+    @media print{
+      body *{ visibility:hidden !important; }
+      #printable{ display:block; }
+      #printable, #printable *{ visibility:visible !important; }
+    }
+
+    @media (max-width: 900px){ :root{ --header-height: 360px; } }
+    @media (max-width: 640px){ :root{ --header-height: 300px; } .header-rail .col.center video{ transform: translateY(8px); } }
+  </style>
+</head>
+<body>
+
+  <!-- ====== ENCABEZADO ====== -->
+  <div class="header-rail">
+    <div class="col left"><img src="/left.png" alt="izquierda"></div>
+    <div class="col center">
+      <video id="video" muted playsinline preload="metadata">
+        <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
+        Tu navegador no soporta video.
+      </video>
+    </div>
+    <div class="col right"><img src="/right.png" alt="derecha"></div>
+  </div>
+
+  <!-- ====== INTERACCIÓN ====== -->
+  <div class="interaction">
+    <div class="bar">
+      <textarea id="pregunta" placeholder="Escribe o dicta tu pregunta..." rows="3"></textarea>
+    </div>
+
+    <div class="row-center">
+      <button class="btn" id="btnEnviar">▶ Enviar</button>
+      <button class="btn mic" id="btnDictar">🎤 Dictar</button>
+
+      <select id="exportKind" title="Formato de exportación">
+        <option value="pdf">PDF (vista previa)</option>
+        <option value="docx">DOCX (Word)</option>
+        <option value="xlsx">XLSX (Excel)</option>
+        <option value="csv">CSV</option>
+      </select>
+      <button class="btn secondary" id="btnExportar">⇩ Exportar</button>
+
+      <button class="btn warn" id="btnStop">⏸️ Silenciar voz</button>
+      <button class="btn secondary" id="btnLimpiar">🧹 Limpiar</button>
+      <button class="btn danger" id="btnNueva">🗑️ Nueva sesión</button>
+    </div>
+
+    <div id="respuesta">Aquí aparecerá la respuesta (texto / fórmulas / análisis)...</div>
+    <div id="tabla" class="table-wrap" hidden></div>
+    <div id="printable"></div>
+  </div>
+
+  <script>
+    /* ====== Config ====== */
+    const ENDPOINT = "/api/ask";
+    const DEFAULT_SOURCES = [
+      "datos/decimo.csv",
+      "documentos/lexium.pdf",
+      "documentos/evaluaciones.pdf",
+      "documentos/emocionales.pdf"
+    ];
+
+    // Contexto 15 min
+    const CONTEXTO_MINUTOS = 15;
+    const MAX_TURNS = 12;
+    const LS_KEY = "ctxTurns15";
+
+    const video = document.getElementById("video");
+    const out   = document.getElementById("respuesta");
+    const tbl   = document.getElementById("tabla");
+    const printable = document.getElementById("printable");
+
+    /* ====== Voz mujer es-MX estricto ====== */
+    let chosenVoice = null;
+    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina"];
+    function scoreVoice(v){
+      const name = (v.name||"").toLowerCase();
+      const lang = (v.lang||"").toLowerCase();
+      let s = 0;
+      if (lang.startsWith("es-mx")) s += 200;
+      else if (lang.startsWith("es-419")) s += 150;
+      else if (lang.startsWith("es")) s += 100;
+      if (/(neural|natural|online)/i.test(name)) s += 25;
+      if (FEMALE_HINTS.some(t => name.includes(t))) s += 25;
+      if (/(jorge|liberto|pablo|diego|miguel|enrique|hugo|carlos|male|hombre)/i.test(name)) s -= 1000;
+      return s;
+    }
+    function pickFemaleES(){
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      if (!voices.length) return null;
+      return voices.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0] || voices[0];
+    }
+    function ensureVoice(){ if (!chosenVoice) chosenVoice = pickFemaleES(); }
+    window.speechSynthesis.onvoiceschanged = () => { chosenVoice = pickFemaleES(); };
+
+    function cleanForSpeech(text){
+      if (!text) return "";
+      let t = text.replace(/```[\s\S]*?```/g, " "); // no leer bloques
+      t = t.replace(/\*/g, "");                    // ignorar asteriscos
+      t = t.replace(/^[#>\-\u2022]\s*/gm, "");     // bullets/headers
+      t = t.replace(/\s{2,}/g, " ").trim();
+      return t;
+    }
+    function speak(text){
+      if(!window.speechSynthesis) return;
+      ensureVoice();
+      const clean = cleanForSpeech(text);
+      if (!clean) return;
+
+      try { video.loop = true; video.play().catch(()=>{}); } catch {}
+
+      const u = new SpeechSynthesisUtterance(clean);
+      if (chosenVoice) u.voice = chosenVoice;
+      u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
+      u.rate = 1.08; u.pitch = 1.02; u.volume = 1.0;
+      u.onend = ()=> { try { video.pause(); video.currentTime = 0; video.loop = false; } catch {} };
+      u.onerror = ()=> { try { video.pause(); video.currentTime = 0; video.loop = false; } catch {} };
+
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    }
+    function stopSpeech(){
+      try{ window.speechSynthesis.cancel(); }catch{}
+      try{ video.pause(); video.loop = false; }catch{}
+    }
+
+    /* ====== Contexto 15 min ====== */
+    function loadTurns(){
+      let arr = []; try { arr = JSON.parse(localStorage.getItem(LS_KEY)||"[]"); } catch {}
+      const now = Date.now();
+      arr = arr.filter(t => (now - (t.ts||0)) <= CONTEXTO_MINUTOS*60*1000);
+      if (arr.length > MAX_TURNS) arr = arr.slice(arr.length - MAX_TURNS);
+      localStorage.setItem(LS_KEY, JSON.stringify(arr));
+      return arr;
+    }
+    function pushTurn(role, content){
+      const arr = loadTurns();
+      arr.push({role, content, ts: Date.now()});
+      localStorage.setItem(LS_KEY, JSON.stringify(arr));
+    }
+    function buildContext(){
+      const arr = loadTurns();
+      if (!arr.length) return "";
+      let s = "Contexto (últimos 15 min):\n";
+      for (const t of arr) s += `${t.role.toUpperCase()}: ${t.content}\n`;
+      s += "\n---\n";
+      return s;
+    }
+
+    /* ====== Parse/Render tabla ====== */
+    const escapeHtml = (s) => String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+    function parseDelimited(csvText){
+      const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
+      if (lines.length < 2) return null;
+      const cand = [",",";","\t","|"]; let best=",", ok=0, cols=0;
+      for (const d of cand){
+        let good=0, c=null;
+        for (const line of lines.slice(0,20)){
+          const p = line.split(d);
+          if (p.length<2) continue;
+          if (c==null) c=p.length;
+          if (p.length===c) good++;
+        }
+        if (good>ok){ ok=good; best=d; cols=c||0; }
+      }
+      if (ok<2 || cols<2) return null;
+      const rows = lines.map(l => l.split(best).map(c=>c.trim()));
+      const max = Math.max(...rows.map(r=>r.length));
+      return rows.map(r => { const a=r.slice(0,max); while(a.length<max)a.push(""); return a; });
+    }
+    function parseMarkdownTable(text){
+      const lines = text.split(/\r?\n/).map(l=>l.trim());
+      const starts = lines.findIndex(l => /^\|.*\|$/.test(l));
+      if (starts === -1) return null;
+      const rows = [];
+      for (let i=starts; i<lines.length; i++){ const l = lines[i]; if (!/^\|.*\|$/.test(l)) break; rows.push(l); }
+      if (rows.length < 3) return null;
+      const cells = rows.map(l => l.replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim()));
+      if (!/^:?-{3,}:?$/.test(cells[1]?.[0]||"")) return null;
+      cells.splice(1,1);
+      return cells;
+    }
+    function parseJsonTable(text){
+      try{
+        const obj = JSON.parse(text);
+        if (Array.isArray(obj) && obj.length && typeof obj[0] === "object"){
+          const headers = Array.from(obj.reduce((set,row)=>{ Object.keys(row).forEach(k=>set.add(k)); return set; }, new Set()));
+          const rows = [headers, ...obj.map(o => headers.map(h => o[h] ?? ""))];
+          return rows;
+        }
+      }catch{}
+      return null;
+    }
+    function renderTable(rows){
+      const [head, ...body] = rows;
+      let html = '<table class="data"><thead><tr>';
+      for (const h of head) html += `<th>${escapeHtml(h)}</th>`;
+      html += '</tr></thead><tbody>';
+      for (const r of body){
+        html += '<tr>';
+        for (const c of r) html += `<td>${escapeHtml(c)}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      return html;
+    }
+    function detectAndRender(text){
+      tbl.hidden = true; tbl.innerHTML = "";
+      out.hidden = false; out.textContent = "";
+
+      let rows = parseJsonTable(text);
+      if (!rows){
+        const m = text.match(/```(?:csv)?\s*([\s\S]*?)```/i);
+        if (m) rows = parseDelimited(m[1].trim());
+      }
+      if (!rows){ rows = parseMarkdownTable(text); }
+
+      if (rows && rows.length >= 2){
+        tbl.innerHTML = renderTable(rows);
+        tbl.hidden = false;
+        return true;
+      }
+      return false;
+    }
+
+    /* ====== Exportar ====== */
+    function exportar(){
+      const kind = document.getElementById("exportKind").value;
+      if (kind === "pdf"){
+        const w = window.open("", "_blank");
+        const html = `
+          <html><head><meta charset="utf-8"><title>Vista previa</title>
+          <style>
+            body{ font-family: Arial, sans-serif; padding:24px; color:#111; }
+            h2{ margin:0 0 8px 0; }
+            .wrap{ border:1px solid #e6e8f0; border-radius:10px; padding:12px; background:#fafbff; }
+            table{ border-collapse:collapse; width:100%; font-size:14px; }
+            th,td{ border:1px solid #e6e8f0; padding:8px; text-align:left; }
+            thead th{ background:#f3f6fb; }
+          </style></head><body>
+            <h2>Resultados</h2>
+            <div class="wrap">
+              ${ (!tbl.hidden ? tbl.innerHTML : `<pre>${escapeHtml(out.textContent||"")}</pre>`) }
+            </div>
+          </body></html>`;
+        w.document.write(html); w.document.close();
+      } else if (kind === "csv"){
+        if (tbl.hidden){ alert("No hay tabla para exportar como CSV."); return; }
+        const rows = [...tbl.querySelectorAll("tr")].map(tr => [...tr.children].map(td => `"${td.textContent.replace(/"/g,'""')}"`).join(","));
+        const blob = new Blob([rows.join("\n")], {type:"text/csv;charset=utf-8"});
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "resultado.csv"; a.click();
+      } else if (kind === "docx"){
+        // Export simple como .doc (HTML) – compatible con Word
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${(!tbl.hidden?tbl.outerHTML:`<pre>${escapeHtml(out.textContent||"")}</pre>`)}</body></html>`;
+        const blob = new Blob([html], {type:"application/msword"});
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "resultado.doc"; a.click();
+      } else if (kind === "xlsx"){
+        // Export básico: usar CSV con extensión .xlsx (abre en Excel)
+        if (tbl.hidden && !out.textContent.trim()){ alert("No hay contenido para exportar."); return; }
+        let content = "";
+        if (!tbl.hidden){
+          const rows = [...tbl.querySelectorAll("tr")].map(tr => [...tr.children].map(td => `"${td.textContent.replace(/"/g,'""')}"`).join(","));
+          content = rows.join("\n");
+        } else {
+          content = `"Respuesta"\n"${out.textContent.replace(/"/g,'""')}"`;
+        }
+        const blob = new Blob([content], {type:"text/csv;charset=utf-8"});
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "resultado.xlsx"; a.click();
+      }
+    }
+
+    /* ====== Enviar ====== */
+    async function enviar(){
+      const qRaw = document.getElementById("pregunta").value.trim();
+      if (!qRaw) return alert("Escribe una pregunta.");
+      stopSpeech();
+      out.textContent = "Consultando..."; out.hidden = false;
+      tbl.hidden = true; tbl.innerHTML = ""; printable.innerHTML = "";
+
+      const q = `${buildContext()}${qRaw}`;
+      const p = new URLSearchParams({ q });
+      DEFAULT_SOURCES.forEach(s => p.append("src", s));
+
+      let data = null;
+      try{
+        const r = await fetch(`${ENDPOINT}?${p.toString()}`, { cache: "no-store" });
+        const txt = await r.text();
+        try{ data = JSON.parse(txt); }catch{ data = { text: txt || "" }; }
+      }catch(e){
+        out.textContent = "No fue posible completar la consulta.";
+        return;
+      }
+
+      const texto = data.text || "No hay contenido.";
+      const rendered = detectAndRender(texto);
+      if (rendered){ out.hidden = true; } else { out.hidden = false; out.textContent = texto; speak(texto); }
+
+      pushTurn("usuario", qRaw);
+      pushTurn("asistente", texto);
+    }
+
+    /* ====== Botones ====== */
+    document.getElementById("btnEnviar").addEventListener("click", enviar);
+    document.getElementById("btnExportar").addEventListener("click", exportar);
+    document.getElementById("btnStop").addEventListener("click", stopSpeech);
+    document.getElementById("btnLimpiar").addEventListener("click", ()=>{
+      stopSpeech();
+      document.getElementById("pregunta").value = "";
+      out.textContent = ""; out.hidden = false;
+      tbl.hidden = true; tbl.innerHTML = ""; printable.innerHTML="";
+    });
+    document.getElementById("btnNueva").addEventListener("click", ()=>{
+      stopSpeech(); localStorage.removeItem(LS_KEY);
+      out.textContent = "Nueva sesión: contexto borrado."; tbl.hidden = true; tbl.innerHTML="";
+    });
+    document.getElementById("btnDictar").addEventListener("click", ()=>{
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
+      const rec = new SR(); rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
+      rec.onresult = e => { const t = e.results[0][0].transcript; document.getElementById("pregunta").value = t; enviar(); };
+      rec.onerror = e => { alert("Error de micrófono: " + e.error + "\nDa permiso al micrófono en el candado del navegador."); };
+      rec.start();
+    });
+    document.getElementById("pregunta").addEventListener("keydown",(e)=>{ if (e.key==="Enter" && (e.ctrlKey||e.metaKey)){ enviar(); } });
+  </script>
+</body>
+</html>
