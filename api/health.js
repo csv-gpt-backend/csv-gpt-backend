@@ -1,3 +1,12 @@
-export default async function handler(req, res) {
-  return res.status(200).json({ ok: true, msg: "health ok" });
+// api/health.js
+const startedAt = Date.now();
+
+export default function handler(req, res) {
+  res.status(200).json({
+    status: "ok",
+    time: new Date().toISOString(),
+    uptimeSec: Math.round((Date.now() - startedAt) / 1000),
+    service: "csv-gpt-backend",
+    version: "1.0.0"
+  });
 }
