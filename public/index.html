@@ -59,6 +59,36 @@
 }
 
   </style>
+
+<div class="bar" aria-label="Controles de consulta y exportación">
+  <!-- Fila superior: Pregunta + Enviar + Dictar -->
+  <div class="bar-row">
+    <textarea id="pregunta" placeholder="Escribe o dicta tu pregunta…"></textarea>
+    <button class="btn" onclick="enviarPregunta()">➤ Enviar</button>
+    <button class="btn mic" onclick="startListening()" title="Dictar por voz">🎤 Dictar</button>
+  </div>
+
+  <!-- Fila inferior: Exportar + Selector + Reiniciar + Limpiar -->
+  <div class="bar-row">
+    <button id="btnExportar" class="btn alt" onclick="exportSeleccion()" disabled>⬇ Exportar</button>
+    <select id="exportType" class="select" title="Elige el formato de exportación">
+      <option value="pdf">PDF (vista previa)</option>
+      <option value="csv">CSV (descarga)</option>
+      <option value="docx">DOCX (Word)</option>
+    </select>
+
+    <button class="btn warn" onclick="reinicioEmergencia()">🚨 Reiniciar</button>
+    <button class="btn alt" onclick="limpiar()">🧹 Limpiar</button>
+  </div>
+
+  <!-- Salidas -->
+  <div id="respuesta">Aquí aparecerá la respuesta…</div>
+  <div id="tabla" class="table-wrap" hidden></div>
+  <div id="printable" style="display:none"></div>
+</div>
+
+
+  
   <style>
     :root{ --header-h: 300px; --accent:#0078d7; }
     *{ box-sizing:border-box; }
@@ -128,7 +158,29 @@
 
   <!-- DOCX (opcional; puedes comentarlo si no lo usas hoy) -->
   <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
-
+<script>
+  const SESSION_MINUTES = 15;
+let __sessionTimer = null;
+function touchSession(){
+  try { clearTimeout(__sessionTimer); } catch {}
+  __sessionTimer = setTimeout(()=>{
+    try{
+      // resetea la UI/contexto local pasado el tiempo
+      window.speechSynthesis?.cancel();
+      lastRows = null;
+      document.getElementById("pregunta").value = "";
+      document.getElementById("respuesta").textContent = "🕒 Sesión reiniciada por inactividad (>15 min).";
+      const t = document.getElementById("tabla");
+      if (t){ t.hidden = true; t.innerHTML = ""; }
+      updateExportButton();
+    }catch{}
+  }, SESSION_MINUTES * 60 * 1000);
+}
+["click","keydown","touchstart","pointerdown"].forEach(evt =>
+  window.addEventListener(evt, touchSession, {passive:true})
+);
+touchSession(); // inicia
+</script>
   <script>
     // ===== Config mínima para que funcione YA =====
     const ENDPOINT = "/api/ask";
