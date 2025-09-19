@@ -1,152 +1,123 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Consulta Educativa</title>
-  <style>
-    :root{ --header-h: 360px; --accent:#0078d7; }
-    *{ box-sizing:border-box }
-    body{ margin:0; font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif; color:#111; background:#fff }
-    .rail{ display:flex; align-items:center; justify-content:center; height:var(--header-h); gap:12px; padding:8px }
-    .rail .left,.rail .right{ flex:0 0 25%; display:flex; align-items:center; justify-content:center }
-    .rail .center{ flex:0 0 50%; display:flex; align-items:center; justify-content:center }
-    .rail img{ max-height:100%; max-width:100%; object-fit:contain }
-    .rail video{ height:100%; max-width:100%; object-fit:contain; display:block }
-    .wrap{ padding:20px 12px; text-align:center }
-    .bar{ display:flex; gap:8px; align-items:center; justify-content:center; max-width:1100px; margin:0 auto }
-    textarea{ flex:1 1 800px; min-height:72px; resize:vertical; padding:12px 14px; border:1px solid #d0d0d0; border-radius:8px; font-size:16px; outline:none }
-    .btn{ padding:12px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer }
-    .btn.alt{ background:#eee; color:#111 }
-    #out{ width:min(90%,1100px); margin:18px auto 0; padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; white-space:pre-wrap; text-align:left }
-    .foot{ display:flex; gap:8px; justify-content:center; margin:16px auto 28px }
-    @media (max-width:900px){ :root{ --header-h:320px } }
-    @media (max-width:640px){ :root{ --header-h:260px } }
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Consulta Educativa</title>
+<style>
+:root{ --h:360px; --accent:#0078d7 }
+*{ box-sizing:border-box }
+body{ margin:0; font-family:Arial,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif }
+.header{ display:flex; height:var(--h); align-items:center; justify-content:center; gap:12px; padding:8px }
+.header .col{ flex:0 0 25%; display:flex; align-items:center; justify-content:center }
+.header .mid{ flex:0 0 50% }
+.header img{ max-height:100%; max-width:100%; object-fit:contain }
+.header video{ height:100%; max-width:100%; object-fit:contain; display:block }
+.main{ padding:18px 12px; text-align:center }
+.bar{ display:flex; gap:8px; justify-content:center; align-items:center; max-width:1100px; margin:0 auto }
+textarea{ flex:1 1 800px; min-height:72px; padding:12px 14px; border:1px solid #d0d0d0; border-radius:8px; font-size:16px; resize:vertical }
+.btn{ padding:12px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer }
+.btn.alt{ background:#eee; color:#111 }
+#out{ width:min(90%,1100px); margin:16px auto 0; padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; text-align:left; white-space:pre-wrap }
+.badge{ position:fixed; right:8px; bottom:8px; background:#111; color:#fff; padding:6px 10px; border-radius:8px; font:12px monospace; z-index:9999 }
+</style>
 </head>
 <body>
+<div id="build" class="badge">APP v=?</div>
 
-  <!-- Encabezado -->
-  <div class="rail">
-    <div class="left"><img src="/left.png" alt="Logo izquierdo"></div>
-    <div class="center">
-      <video id="vid" muted playsinline preload="metadata">
-        <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
-      </video>
-    </div>
-    <div class="right"><img src="/right.png" alt="Logo derecho"></div>
+<div class="header">
+  <div class="col"><img src="/left.png" alt="L"></div>
+  <div class="mid">
+    <video id="vid" muted playsinline preload="metadata">
+      <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
+    </video>
   </div>
+  <div class="col"><img src="/right.png" alt="R"></div>
+</div>
 
-  <!-- Interfaz -->
-  <div class="wrap">
-    <div class="bar">
-      <textarea id="q" placeholder="Escribe tu pregunta (Ctrl/⌘+Enter para enviar)…"></textarea>
-      <button class="btn" id="send">Enviar</button>
-      <button class="btn" id="mic">🎤</button>
-    </div>
-    <div id="out">Aquí aparecerá la respuesta…</div>
-    <div class="foot">
-      <button class="btn" id="stop">Parar voz</button>
-      <button class="btn alt" id="clear">Limpiar</button>
-    </div>
+<div class="main">
+  <div class="bar">
+    <textarea id="q" placeholder="Escribe tu pregunta… (Ctrl/⌘+Enter para enviar)"></textarea>
+    <button class="btn" id="send">Enviar</button>
+    <button class="btn" id="mic">🎤</button>
   </div>
+  <div id="out">Aquí aparecerá la respuesta…</div>
+  <div class="bar" style="margin-top:12px">
+    <button class="btn" id="stop">Parar voz</button>
+    <button class="btn alt" id="clear">Limpiar</button>
+  </div>
+</div>
 
 <script>
-/* ========= CONFIG ÚNICA ========= */
-// Endpoint (tu API en Vercel)
-const ENDPOINT = "https://csv-gpt-backend.vercel.app/api/ask";
+/* ===== Build visual ===== */
+const APP_BUILD = "105"; // <-- cambia este número en cada publicación
+document.getElementById("build").textContent = "APP v=" + APP_BUILD;
 
-// Lista blanca: SOLO estas fuentes se envían. (No hay auxiliar.pdf)
+/* ===== Config única ===== */
+const ENDPOINT = "https://csv-gpt-backend.vercel.app/api/ask";
 const ALLOWED_SOURCES = [
   "datos/decimo.csv",
   "documentos/lexium.pdf",
   "documentos/evaluaciones.pdf",
   "documentos/emocionales.pdf"
 ];
-
-// Construye SIEMPRE los mismos src en la query
 function buildParams(q){
   const p = new URLSearchParams({ q });
   for (const s of ALLOWED_SOURCES) p.append("src", s);
   return p;
 }
-/* ================================= */
 
-/* ====== Voz mujer es-MX ====== */
-let chosenVoice = null;
+/* ===== Voz mujer es-MX ===== */
+let chosenVoice=null;
 function scoreVoice(v){
-  const name=(v.name||"").toLowerCase(), lang=(v.lang||"").toLowerCase();
-  let s=0;
-  if (lang.startsWith("es-mx")) s+=100; else if (lang.startsWith("es-419")) s+=60; else if (lang.startsWith("es")) s+=30;
-  if (/(sabina|dalia|beatriz|abril|camila|lucia|female|mujer|femenina)/i.test(name)) s+=40;
-  if (/(neural|natural|online)/i.test(name)) s+=20;
-  if (/(jorge|liberto|pablo|diego|miguel|enrique|hugo|carlos|male|hombre)/i.test(name)) s-=80;
+  const n=(v.name||"").toLowerCase(), l=(v.lang||"").toLowerCase(); let s=0;
+  if (l.startsWith("es-mx")) s+=100; else if (l.startsWith("es-419")) s+=60; else if (l.startsWith("es")) s+=30;
+  if (/(sabina|dalia|beatriz|abril|camila|lucia|female|mujer|femenina)/i.test(n)) s+=40;
+  if (/(neural|natural|online)/i.test(n)) s+=20;
+  if (/(jorge|liberto|pablo|diego|miguel|enrique|hugo|carlos|male|hombre)/i.test(n)) s-=80;
   return s;
 }
-function pickExecFemale(){
-  const voices = speechSynthesis.getVoices()||[]; if (!voices.length) return null;
-  return voices.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0] || voices[0];
-}
-function sanitizeForSpeech(t){
-  if (!t) return "";
-  return t.replace(/```[\s\S]*?```/g," ").replace(/\*/g,"").replace(/^[#>\-\u2022]\s*/gm,"").replace(/\s{2,}/g," ").trim();
-}
+function pickFemale(){ const v=speechSynthesis.getVoices()||[]; return v.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0]||v[0]; }
+function sanitize(t){ return (t||"").replace(/```[\s\S]*?```/g," ").replace(/\*/g,"").replace(/^[#>\-\u2022]\s*/gm,"").replace(/\s{2,}/g," ").trim(); }
 function speak(text,onStart,onEnd){
-  const clean = sanitizeForSpeech(text); if (!clean){ onStart&&onStart(); onEnd&&onEnd(); return; }
-  if (!chosenVoice) chosenVoice = pickExecFemale();
-  const u = new SpeechSynthesisUtterance(clean);
-  if (chosenVoice) u.voice = chosenVoice;
-  u.lang = chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX";
-  u.rate = 1.12; u.pitch = 1.02; u.volume = 1.0;
-  u.onstart = ()=> onStart&&onStart();
-  u.onend   = ()=> onEnd&&onEnd();
-  u.onerror = ()=> onEnd&&onEnd();
+  const clean=sanitize(text); if(!clean){ onStart&&onStart(); onEnd&&onEnd(); return; }
+  if(!chosenVoice) chosenVoice=pickFemale();
+  const u=new SpeechSynthesisUtterance(clean);
+  if(chosenVoice) u.voice=chosenVoice;
+  u.lang=chosenVoice?.lang?.startsWith("es")?chosenVoice.lang:"es-MX";
+  u.rate=1.12; u.pitch=1.02; u.volume=1.0;
+  u.onstart=()=>onStart&&onStart(); u.onend=()=>onEnd&&onEnd(); u.onerror=()=>onEnd&&onEnd();
   speechSynthesis.cancel(); speechSynthesis.speak(u);
 }
-speechSynthesis.onvoiceschanged = () => { chosenVoice=null; };
+speechSynthesis.onvoiceschanged=()=>{ chosenVoice=null };
 
-/* ====== Elementos ====== */
-const $q   = document.getElementById("q");
-const $out = document.getElementById("out");
-const $vid = document.getElementById("vid");
-document.getElementById("send").onclick = enviar;
-document.getElementById("clear").onclick = () => { stopSpeech(); $q.value=""; $out.textContent=""; $q.focus(); };
-document.getElementById("stop").onclick  = stopSpeech;
-document.getElementById("mic").onclick   = startListening;
-$q.addEventListener("keydown", e => { if ((e.ctrlKey||e.metaKey) && e.key==="Enter") enviar(); });
+/* ===== UI ===== */
+const $q=document.getElementById("q");
+const $out=document.getElementById("out");
+const $vid=document.getElementById("vid");
+document.getElementById("send").onclick=enviar;
+document.getElementById("stop").onclick=()=>{ try{ speechSynthesis.cancel(); }catch{} try{ $vid.pause(); }catch{} };
+document.getElementById("clear").onclick=()=>{ try{ speechSynthesis.cancel(); }catch{} $q.value=""; $out.textContent=""; $q.focus(); };
+document.getElementById("mic").onclick=()=>{ const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR){ alert("Tu navegador no soporta micrófono."); return; } const rec=new SR(); rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1; rec.onresult=e=>{ $q.value=e.results[0][0].transcript; enviar() }; rec.onerror=e=>alert("Error de micrófono: "+e.error); rec.start(); };
+$q.addEventListener("keydown",e=>{ if((e.ctrlKey||e.metaKey)&&e.key==="Enter") enviar(); });
 
-function stopSpeech(){ try{ speechSynthesis.cancel(); }catch{} try{ $vid.pause(); }catch{} }
-function startListening(){
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!SR){ alert("Tu navegador no soporta micrófono."); return; }
-  const rec = new SR(); rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1;
-  rec.onresult = e => { $q.value = e.results[0][0].transcript; enviar(); };
-  rec.onerror  = e => alert("Error de micrófono: " + e.error);
-  rec.start();
-}
-
-/* ====== Envío a la API ====== */
 async function enviar(){
-  const query = ($q.value||"").trim();
-  if (!query) return alert("Escribe una pregunta.");
-  stopSpeech();
-  $out.textContent = "Consultando…";
+  const query=($q.value||"").trim();
+  if(!query){ alert("Escribe una pregunta."); return; }
+  try{ speechSynthesis.cancel(); }catch{}
+  $out.textContent="Consultando…";
 
-  const url = `${ENDPOINT}?${buildParams(query).toString()}`;
-  // cache-busting del propio fetch:
-  const urlWithTs = `${url}&ts=${Date.now()}`;
+  const url = `${ENDPOINT}?${buildParams(query).toString()}&ts=${Date.now()}`;
+  console.log("[FRONT] URL =>", url); // para verificar
 
   try{
-    const r = await fetch(urlWithTs, { method:"GET" });
+    const r = await fetch(url, { cache:"no-store" });
     const txt = await r.text();
-    const data = (()=>{ try{ return JSON.parse(txt); }catch{ return { text: txt||"" }; } })();
+    let data; try{ data = JSON.parse(txt); } catch { data = { text: txt||"" }; }
 
-    // Render
-    const answer = data.text || "Sin respuesta.";
-    $out.textContent = answer;
-
-    // Voz + video
-    speak(answer, ()=> $vid.play(), ()=> $vid.pause());
+    const ans = data.text || "Sin respuesta.";
+    $out.textContent = ans;
+    speak(ans, ()=> $vid.play(), ()=> $vid.pause());
 
   }catch(err){
     $out.textContent = "No se pudo contactar al servidor. " + String(err?.message||err||"");
