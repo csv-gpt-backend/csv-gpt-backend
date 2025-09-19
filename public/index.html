@@ -53,7 +53,7 @@ textarea{ flex:1 1 800px; min-height:72px; padding:12px 14px; border:1px solid #
 
   
   
-  /* =========inicio ======*/
+  /* =========inicio =2=====*/
   <!-- Selector de exportación -->
   <<select id="exportType" class="select">
   <option value="pdf">PDF (vista previa)</option>
@@ -69,7 +69,7 @@ textarea{ flex:1 1 800px; min-height:72px; padding:12px 14px; border:1px solid #
   <button class="btn alt" onclick="liberarMemoria()">Liberar memoria</button>
 </div>
 
-  /* ================fin =botones========Marce====*/
+  /* ================fin =botones========Marce4====*/
 
   <script>
 
@@ -210,8 +210,9 @@ async function enviar(){
 
     // ============Iniciio Ma 3=========
 // Ejecuta la exportación según el formato elegido
-    // ====== Inivcio  Mar =====
+    // ====== Inivcio  Mar3 =====
     // Extiende el exportador según el selector
+    
 function exportSeleccion(){
   const tipo = document.getElementById("exportType").value;
   if (tipo === "pdf"){ exportPDF(); return; }
