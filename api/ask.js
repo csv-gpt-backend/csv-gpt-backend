@@ -2,7 +2,7 @@
 export const config = { runtime: "nodejs" };
 console.log("Rutas recibidas desde el front:", req.query.src || req.body.src);
 
-/* ===== Build/debug =====  */
+/* ===== Build/debug == ===  */
 const BUILD_ID =
   process.env.VERCEL_GIT_COMMIT_SHA ||
   process.env.VERCEL_BUILD_ID ||
