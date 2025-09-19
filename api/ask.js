@@ -1,5 +1,6 @@
 // /api/ask.js
 export const config = { runtime: "nodejs" };
+console.log("Rutas recibidas desde el front:", req.query.src || req.body.src);
 
 /* ===== Build/debug ===== */
 const BUILD_ID =
