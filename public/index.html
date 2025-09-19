@@ -1,588 +1,274 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Consulta Educativa LX</title>
-
-  <!-- anti-cache mientras reparamos -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-<style>
-:root{
-  /* sube el header 15%: de 300px a 345px */
-  --header-h: 345px;
-  --accent:#0078d7;
-}
-
-/* ...lo demás igual... */
-
-/* Barra de controles en 2 filas */
-.interaction{ padding:18px 12px; }
-.bar{
-  max-width:1100px;
-  margin:0 auto;
-}
-.bar-row{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  justify-content:center;   /* centrados */
-  align-items:center;
-  margin-top:8px;
-}
-.bar-row:first-child{ margin-top:0; }
-
-.bar textarea{
-  flex:1 1 700px;
-  min-height:84px;
-  padding:12px 14px;
-  font-size:16px;
-  border:1px solid #d0d0d0;
-  border-radius:8px;
-}
-
-.btn{ padding:12px 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
-.btn:disabled{ opacity:.6; cursor:not-allowed; }
-.btn.alt{ background:#6c757d; }
-.btn.warn{ background:#ffc107; color:#000; }
-.btn.mic{ font-size:18px; line-height:1; }
-
-/* “selector” con look neutro tipo input */
-.select{
-  padding:10px 12px;
-  border:1px solid #d0d0d0;
-  border-radius:8px;
-  font-size:15px;
-  background:#fff; color:#111;
-}
-
-  </style>
-
-<div class="bar" aria-label="Controles de consulta y exportación">
-  <!-- Fila superior: Pregunta + Enviar + Dictar -->
-  <div class="bar-row">
-    <textarea id="pregunta" placeholder="Escribe o dicta tu pregunta…"></textarea>
-    <button class="btn" onclick="enviarPregunta()">➤ Enviar</button>
-    <button class="btn mic" onclick="startListening()" title="Dictar por voz">🎤 Dictar</button>
-  </div>
-
-  <!-- Fila inferior: Exportar + Selector + Reiniciar + Limpiar -->
-  <div class="bar-row">
-    <button id="btnExportar" class="btn alt" onclick="exportSeleccion()" disabled>⬇ Exportar</button>
-    <select id="exportType" class="select" title="Elige el formato de exportación">
-      <option value="pdf">PDF (vista previa)</option>
-      <option value="csv">CSV (descarga)</option>
-      <option value="docx">DOCX (Word)</option>
-    </select>
-
-    <button class="btn warn" onclick="reinicioEmergencia()">🚨 Reiniciar</button>
-    <button class="btn alt" onclick="limpiar()">🧹 Limpiar</button>
-  </div>
-
-  <!-- Salidas -->
-  <div id="respuesta">Aquí aparecerá la respuesta…</div>
-  <div id="tabla" class="table-wrap" hidden></div>
-  <div id="printable" style="display:none"></div>
-</div>
-
-
-  
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Consulta Educativa Lexium</title>
+  <link rel="icon" href="/favicon.ico">
   <style>
-    :root{ --header-h: 300px; --accent:#0078d7; }
-    *{ box-sizing:border-box; }
-    body{ margin:0; font-family:system-ui, Arial; color:#111; background:#fff; }
+    :root{
+      --accent:#0a66ff;
+      --bg:#ffffff;
+      --muted:#f6f7f9;
+      --text:#121212;
+      --rail-h: 440px; /* video un poco más grande */
+    }
+    *{ box-sizing:border-box }
+    body{
+      margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      background:var(--bg); color:var(--text);
+    }
+    /* HEADER 25/50/25 */
+    .rail{
+      display:grid; grid-template-columns: 1fr 2fr 1fr; align-items:center;
+      height:var(--rail-h); gap:12px; padding:8px 12px;
+    }
+    .rail .cell{ display:flex; justify-content:center; align-items:center; height:100%; overflow:hidden }
+    .rail img{ max-width:100%; max-height:100%; object-fit:contain }
+    .rail video{
+      width:100%; height:100%; object-fit:contain; border-radius:12px;
+      background:#0002;
+    }
 
-    /* Encabezado 20/60/20 */
-    .header-rail{ display:flex; align-items:center; justify-content:center; height:var(--header-h); }
-    .header-rail .col{ display:flex; justify-content:center; align-items:center; height:100%; padding:0 8px; overflow:hidden; }
-    .header-rail .left,.header-rail .right{ flex:0 0 20%; }
-    .header-rail .center{ flex:0 0 60%; }
-    .header-rail img{ max-height:100%; max-width:100%; object-fit:contain; }
-    .header-rail video{ height:100%; max-width:100%; object-fit:contain; }
+    /* MAIN */
+    .wrap{ max-width:1100px; margin:10px auto 36px; padding:0 12px }
+    .bar{
+      display:flex; gap:10px; flex-wrap:wrap; justify-content:center; align-items:center;
+      margin-top:10px;
+    }
+    textarea{
+      width:100%; min-height:96px; resize:vertical; padding:14px 16px; line-height:1.35;
+      border:1px solid #e1e3e6; border-radius:12px; background:#fff; outline:none; font-size:15px;
+    }
 
-    /* Barra simple, estable */
-    .interaction{ padding:18px 12px; }
-    .bar{ display:flex; gap:8px; align-items:flex-start; max-width:1100px; margin:0 auto; flex-wrap:wrap; }
-    .bar textarea{ flex:1 1 700px; min-height:84px; padding:12px 14px; font-size:16px; border:1px solid #d0d0d0; border-radius:8px; }
-    .btn{ padding:12px 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
-    .btn:disabled{ opacity:.6; cursor:not-allowed; }
-    .btn.alt{ background:#6c757d; }
-    .btn.warn{ background:#ffc107; color:#000; }
-    .btn.mic{ font-size:18px; line-height:1; }
+    .btn{
+      display:inline-flex; gap:8px; align-items:center; justify-content:center;
+      padding:12px 16px; border:0; border-radius:12px; background:var(--accent); color:#fff;
+      font-weight:700; cursor:pointer; box-shadow:0 1px 0 #0001;
+      transition:filter .15s ease;
+    }
+    .btn:hover{ filter:brightness(.95) }
+    .btn.secondary{ background:#eef1f6; color:#0a0a0a; border:1px solid #dfe3ea }
+    .btn.warn{ background:#ffd54d; color:#222 }
+    .btn.mic{ font-size:18px; padding:14px 18px } /* mic un poco más grande */
 
-    /* Salidas */
-    #respuesta{ margin:12px auto 0; width:min(90%,1100px); min-height:64px;
-      padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; white-space:pre-wrap; }
-    .table-wrap{ width:min(95%,1100px); margin:12px auto; border:1px solid #e5e5e7; border-radius:10px; overflow:auto; background:#fff; }
-    table{ width:100%; border-collapse:collapse; font-size:14px; }
-    thead th{ position:sticky; top:0; background:#f3f5f7; border-bottom:1px solid #dee1e6; padding:8px; text-align:left; }
-    tbody td{ border-top:1px solid #f0f2f5; padding:8px; }
+    select{
+      height:44px; border:1px solid #dfe3ea; border-radius:12px; background:#fff; padding:0 12px;
+      font-weight:600;
+    }
+
+    .out{
+      margin-top:14px; padding:14px; background:var(--muted);
+      border:1px solid #e8ebf0; border-radius:12px; white-space:pre-wrap; line-height:1.45; font-size:15px;
+    }
+    .muted{ color:#6b7280 }
+
+    /* centrado y separación */
+    .row{ display:flex; gap:10px; justify-content:center; align-items:center; flex-wrap:wrap }
   </style>
 </head>
 <body>
+
   <!-- HEADER -->
-  <div class="header-rail">
-    <div class="col left"><img src="/left.png" alt="izq"></div>
-    <div class="col center">
+  <div class="rail">
+    <div class="cell">
+      <img src="/left.png" alt="Santillana">
+    </div>
+    <div class="cell">
       <video id="video" muted playsinline preload="metadata">
         <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
+        Tu navegador no soporta video.
       </video>
     </div>
-    <div class="col right"><img src="/right.png" alt="der"></div>
+    <div class="cell">
+      <img src="/right.png" alt="Compartir">
+    </div>
   </div>
 
-  <!-- BARRA ESTABLE -->
-  <div class="interaction">
+  <div class="wrap">
+    <textarea id="q" placeholder="Escribe o dicta tu pregunta…"></textarea>
+
+    <!-- BARRA ÚNICA -->
     <div class="bar">
-      <textarea id="pregunta" placeholder="Escribe o dicta tu pregunta…"></textarea>
-      <button class="btn" onclick="enviarPregunta()">➤ Enviar</button>
-      <button class="btn mic" onclick="startListening()" title="Dictar por voz">🎤 Dictar</button>
+      <button id="send" class="btn">➤ Enviar</button>
+      <button id="mic" class="btn mic secondary">🎙️ Dictar</button>
 
-      <select id="exportType" class="btn alt" style="background:#fff;color:#111;border:1px solid #d0d0d0;">
+      <select id="exportFmt" title="Formato de exportación">
         <option value="pdf">PDF (vista previa)</option>
-        <option value="csv">CSV (descarga)</option>
         <option value="docx">DOCX (Word)</option>
+        <option value="xlsx">Excel (tabla)</option>
       </select>
-      <button id="btnExportar" class="btn alt" onclick="exportSeleccion()" disabled>⬇ Exportar</button>
+      <button id="export" class="btn secondary">⬇ Exportar</button>
 
-      <button class="btn warn" onclick="reinicioEmergencia()">🚨 Reiniciar</button>
-      <button class="btn alt" onclick="limpiar()">🧹 Limpiar</button>
+      <button id="reset" class="btn warn">⚙ Reiniciar</button>
+      <button id="clear" class="btn secondary">🧹 Limpiar</button>
     </div>
 
-    <div id="respuesta">Aquí aparecerá la respuesta…</div>
-    <div id="tabla" class="table-wrap" hidden></div>
-    <div id="printable" style="display:none"></div>
+    <div id="out" class="out">Escribe o dicta tu pregunta y presiona <b>Enviar</b>.</div>
   </div>
 
-  <!-- DOCX (opcional; puedes comentarlo si no lo usas hoy) -->
-  <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
   <script>
-    // ==== Sanitizado simple (ya lo usabas, lo dejo por si no está) ====
-    function sanitizeForSpeech(text){
-      if (!text) return "";
-      let t = text.replace(/``````/g, " "); // no leer bloques de código/tablas
-      t = t.replace(/*/g, "");
-      t = t.replace(/^[#>\-\u2022]\s*/gm, ""); // bullets/headers
-      t = t.replace(/\s{2,}/g, " ").trim();
-      return t;
-    }
-    // ==== Selección de VOZ: Female es-MX / es-419 / es-* (evita masculinas) ====
-    let chosenVoice = null;
-    function scoreVoice(v){
-      const name = (v.name||"").toLowerCase();
-      const lang = (v.lang||"").toLowerCase();
-      let s = 0;
-      if (lang.startsWith("es-mx")) s += 100;
-      else if (lang.startsWith("es-419")) s += 90;
-      else if (lang.startsWith("es")) s += 70;
-      const femaleHints = [
-        "female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia",
-        "paola","valentina","maría","maria","sofia","laura","elena","carmen","lola","ana",
-        "ines","isabel","rosa"
-      ];
-      const maleHints = [
-        "male","hombre","jorge","liberto","pablo","diego","miguel","enrique","carlos",
-        "hugo","sergio","jaime","pedro","manuel","fernando","andrés","andres","josé",
-        "jose","juan","luis","alejandro"
-      ];
-      if (femaleHints.some(h => name.includes(h))) s += 40;
-      if (maleHints.some(h => name.includes(h))) s -= 100;
-      if (/(neural|natural|online)/i.test(v.name)) s += 20;
-      return s;
-    }
-    function pickFemaleSpanish(){
-      const list = window.speechSynthesis?.getVoices?.() || [];
-      if (!list.length) return null;
-      return list.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0] || null;
-    }
-    function ensureFemaleVoice(){
-      return new Promise(resolve=>{
-        const attempt=()=>{
-          const v = pickFemaleSpanish();
-          if (v){ chosenVoice=v; resolve(v); }
-          else resolve(null);
-        };
-        const list = window.speechSynthesis?.getVoices?.();
-        if (list && list.length){ attempt(); }
-        else {
-          window.speechSynthesis.onvoiceschanged = ()=>attempt();
-          try { window.speechSynthesis.getVoices(); } catch {}
-          setTimeout(attempt, 800);
-        }
-      });
-    }
-    let __speaking=false, __queue=[], __currentUtt=null;
-    function chunkText(t, max=220){
-      const parts=[], clean=t.replace(/\s+/g," ").trim();
-      let i=0;
-      while (i<clean.length){
-        let end = i+max;
-        if (end<clean.length){
-          const p = clean.lastIndexOf(" ", end);
-          if (p>i) end = p;
-        }
-        parts.push(clean.slice(i, end));
-        i = end;
-      }
-      return parts;
-    }
-    async function speak(text){
-      stopSpeech(true);
-      const voice = await ensureFemaleVoice();
-      const chunks = chunkText(sanitizeForSpeech(text), 220);
-      if (!chunks.length){ try{ video?.pause(); }catch{} return; }
-      __queue = chunks;
-      __speaking = true;
-      try{ video?.play(); }catch{}
-      const playNext=()=>{
-        if (!__speaking || !__queue.length){
-          __speaking = false; __currentUtt = null;
-          try{ video?.pause(); }catch{}
-          return;
-        }
-        const u = new SpeechSynthesisUtterance(__queue.shift());
-        __currentUtt = u;
-        if (voice) u.voice = voice;
-        u.lang = (voice && voice.lang) ? voice.lang : "es-MX";
-        u.rate = 1.10; u.pitch = 1.02; u.volume = 1.0;
-        u.onstart = ()=>{ try{ video?.play(); }catch{} };
-        u.onend   = ()=>{ if (__speaking) playNext(); else { try{ video?.pause(); }catch{} } };
-        u.onerror = ()=>{ if (__speaking) playNext(); else { try{ video?.pause(); }catch{} } };
-        try{ window.speechSynthesis.speak(u); }
-        catch{ playNext(); }
-      };
-      playNext();
-    }
-    function stopSpeech(keepVideoPlaying=false){
-      try{ __speaking=false; __queue = []; }catch{}
-      try{
-        if (__currentUtt){ __currentUtt.onend = __currentUtt.onerror = null; }
-        window.speechSynthesis.cancel();
-      }catch{}
-      if (!keepVideoPlaying){
-        try{ video?.pause(); }catch{}
-      }
-    }
-  </script>
-<script>
-  const SESSION_MINUTES = 15;
-let __sessionTimer = null;
-function touchSession(){
-  try { clearTimeout(__sessionTimer); } catch {}
-  __sessionTimer = setTimeout(()=>{
-    try{
-      // resetea la UI/contexto local pasado el tiempo
-      window.speechSynthesis?.cancel();
-      lastRows = null;
-      document.getElementById("pregunta").value = "";
-      document.getElementById("respuesta").textContent = "🕒 Sesión reiniciada por inactividad (>15 min).";
-      const t = document.getElementById("tabla");
-      if (t){ t.hidden = true; t.innerHTML = ""; }
-      updateExportButton();
-    }catch{}
-  }, SESSION_MINUTES * 60 * 1000);
-}
-["click","keydown","touchstart","pointerdown"].forEach(evt =>
-  window.addEventListener(evt, touchSession, {passive:true})
-);
-touchSession(); // inicia
-  
-</script>
-  <script>
-    // ==== Sanitizado simple (ya lo usabas, lo dejo por si no está) ====
-    function sanitizeForSpeech(text){
-      if (!text) return "";
-      let t = text.replace(/``````/g, " "); // no leer bloques de código/tablas
-      t = t.replace(/*/g, "");
-      t = t.replace(/^[#>\-\u2022]\s*/gm, ""); // bullets/headers
-      t = t.replace(/\s{2,}/g, " ").trim();
-      return t;
-    }
-    // ==== Selección de VOZ: Female es-MX / es-419 / es-* (evita masculinas) ====
-    let chosenVoice = null;
-    function scoreVoice(v){
-      const name = (v.name||"").toLowerCase();
-      const lang = (v.lang||"").toLowerCase();
-      let s = 0;
-      if (lang.startsWith("es-mx")) s += 100;
-      else if (lang.startsWith("es-419")) s += 90;
-      else if (lang.startsWith("es")) s += 70;
-      const femaleHints = [
-        "female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia",
-        "paola","valentina","maría","maria","sofia","laura","elena","carmen","lola","ana",
-        "ines","isabel","rosa"
-      ];
-      const maleHints = [
-        "male","hombre","jorge","liberto","pablo","diego","miguel","enrique","carlos",
-        "hugo","sergio","jaime","pedro","manuel","fernando","andrés","andres","josé",
-        "jose","juan","luis","alejandro"
-      ];
-      if (femaleHints.some(h => name.includes(h))) s += 40;
-      if (maleHints.some(h => name.includes(h))) s -= 100;
-      if (/(neural|natural|online)/i.test(v.name)) s += 20;
-      return s;
-    }
-    function pickFemaleSpanish(){
-      const list = window.speechSynthesis?.getVoices?.() || [];
-      if (!list.length) return null;
-      return list.slice().sort((a,b)=>scoreVoice(b)-scoreVoice(a))[0] || null;
-    }
-    function ensureFemaleVoice(){
-      return new Promise(resolve=>{
-        const attempt=()=>{
-          const v = pickFemaleSpanish();
-          if (v){ chosenVoice=v; resolve(v); }
-          else resolve(null);
-        };
-        const list = window.speechSynthesis?.getVoices?.();
-        if (list && list.length){ attempt(); }
-        else {
-          window.speechSynthesis.onvoiceschanged = ()=>attempt();
-          // dispara carga de voces en algunos navegadores
-          try { window.speechSynthesis.getVoices(); } catch {}
-          // timeout de respaldo
-          setTimeout(attempt, 800);
-        }
-      });
-    }
-    // ==== TTS robusto encolado + Video activo todo el tiempo ====
-    let __speaking=false, __queue=[], __currentUtt=null;
-    function chunkText(t, max=220){
-      const parts=[], clean=t.replace(/\s+/g," ").trim();
-      let i=0;
-      while (i<clean.length){
-        let end = i+max;
-        if (end<clean.length){
-          const p = clean.lastIndexOf(" ", end);
-          if (p>i) end = p;
-        }
-        parts.push(clean.slice(i, end));
-        i = end;
-      }
-      return parts;
-    }
-    // Llama a esta función para HABLAR (deja el video corriendo hasta terminar)
-    async function speak(text){
-      // Cancelar cualquier lectura anterior pero sin pausar el video (lo pauso al final)
-      stopSpeech(true);
-      const voice = await ensureFemaleVoice();
-      const chunks = chunkText(sanitizeForSpeech(text), 220);
-      if (!chunks.length){ try{ video?.pause(); }catch{} return; }
-      __queue = chunks;
-      __speaking = true;
-      try{ video?.play(); }catch{} // mantener video corriendo durante toda la lectura
-      const playNext=()=>{
-        if (!__speaking || !__queue.length){
-          __speaking = false; __currentUtt = null;
-          try{ video?.pause(); }catch{}
-          return;
-        }
-        const u = new SpeechSynthesisUtterance(__queue.shift());
-        __currentUtt = u;
-        if (voice) u.voice = voice;
-        u.lang = (voice && voice.lang) ? voice.lang : "es-MX";
-        u.rate = 1.10; u.pitch = 1.02; u.volume = 1.0;
-        u.onstart = ()=>{ try{ video?.play(); }catch{} };
-        u.onend   = ()=>{ if (__speaking) playNext(); else { try{ video?.pause(); }catch{} } };
-        u.onerror = ()=>{ if (__speaking) playNext(); else { try{ video?.pause(); }catch{} } };
-        try{ window.speechSynthesis.speak(u); }
-        catch{ playNext(); }
-      };
-      playNext();
-    }
-    // Para detener lectura (y pausar video). Si pasas true, NO pausa el video.
-    function stopSpeech(keepVideoPlaying=false){
-      try{ __speaking=false; __queue = []; }catch{}
-      try{
-        if (__currentUtt){ __currentUtt.onend = __currentUtt.onerror = null; }
-        window.speechSynthesis.cancel();
-      }catch{}
-      if (!keepVideoPlaying){
-        try{ video?.pause(); }catch{}
-      }
-    }
-  </script>
-  <script>
-    // ===== Config mínima para que funcione YA =====
+    /********* Config *********/
     const ENDPOINT = "/api/ask";
-    const SOURCES = [
+    const ALLOWED_SOURCES = [
       "datos/decimo.csv",
       "documentos/lexium.pdf",
       "documentos/evaluaciones.pdf",
       "documentos/emocionales.pdf"
     ];
-    const out = document.getElementById("respuesta");
-    const tablaWrap = document.getElementById("tabla");
+
+    /********* Helpers *********/
     const video = document.getElementById("video");
-    let lastRows = null;
+    const out   = document.getElementById("out");
+    const qEl   = document.getElementById("q");
 
-    // ===== Utilidades UI =====
-    function updateExportButton(){
-      const btn = document.getElementById("btnExportar");
-      const hasTable = Array.isArray(lastRows) && lastRows.length > 1;
-      const txt = out?.textContent?.trim() || "";
-      btn.disabled = !(hasTable || txt.length > 0);
+    function buildParams(q){
+      const p = new URLSearchParams({ q });
+      ALLOWED_SOURCES.forEach(s => p.append("src", s));
+      return p.toString();
     }
-    function escapeHtml(s){return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");}
 
-    // ===== Voz básica (misma lógica que tenías) =====
+    function setOut(text){ out.textContent = text || ""; }
+
+    /********* Voz femenina es-MX estricta *********/
+    let chosenVoice = null;
+    const FEMALE_HINTS = ["female","mujer","femenina","sabina","dalia","beatriz","abril","camila","lucia","paola","valentina","soledad","laura","carla","carolina"];
+    const MALE_HINTS   = ["male","hombre","jorge","liberto","pablo","diego","miguel","enrique","hugo","carlos","francisco","pedro","jaime","sergio"];
+
+    function pickFemaleSpanishVoice(){
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      if (!voices.length) return null;
+
+      // 1) Preferir es-MX
+      let pool = voices.filter(v =>
+        /^es(-mx)?/i.test(v.lang || "") &&
+        !MALE_HINTS.some(x => (v.name||"").toLowerCase().includes(x))
+      );
+      // 2) Si no hay, aceptar es-419 o es-ES femeninas
+      if (!pool.length) {
+        pool = voices.filter(v =>
+          /^es/i.test(v.lang || "") &&
+          FEMALE_HINTS.some(x => (v.name||"").toLowerCase().includes(x)) &&
+          !MALE_HINTS.some(x => (v.name||"").toLowerCase().includes(x))
+        );
+      }
+      // 3) Si aún no hay, última chance: cualquier es-* que no “huela” a hombre
+      if (!pool.length) {
+        pool = voices.filter(v =>
+          /^es/i.test(v.lang || "") &&
+          !MALE_HINTS.some(x => (v.name||"").toLowerCase().includes(x))
+        );
+      }
+      return pool[0] || null;
+    }
+
+    function ensureFemaleVoice(){
+      chosenVoice = pickFemaleSpanishVoice();
+      if (!chosenVoice) {
+        // reintenta cuando el navegador cargue las voces
+        window.speechSynthesis?.addEventListener?.("voiceschanged", () => {
+          if (!chosenVoice) chosenVoice = pickFemaleSpanishVoice();
+        }, { once:true });
+      }
+    }
+    ensureFemaleVoice();
+
     function sanitizeForSpeech(text){
-      if (!text) return "";
-      let t = text.replace(/```[\s\S]*?```/g, " "); t = t.replace(/\*/g,"");
-      t = t.replace(/^[#>\-\u2022]\s*/gm,""); t = t.replace(/\s{2,}/g," ").trim();
-      return t;
+      return (text || "")
+        .replace(/```[\s\S]*?```/g, " ")
+        .replace(/\*/g, "")
+        .replace(/^[#>\-\u2022]\s*/gm, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
     }
+
     function speak(text){
-      try{
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(sanitizeForSpeech(text));
-        u.lang = "es-MX"; u.rate = 1.12; u.pitch = 1.02;
-        u.onstart = ()=> video?.play();
-        u.onend   = ()=> video?.pause();
-        window.speechSynthesis.speak(u);
-      }catch{}
-    }
-    function stopSpeech(){ try{ window.speechSynthesis.cancel(); }catch{} try{ video?.pause(); }catch{} }
+      if (!window.speechSynthesis) return;
+      const clean = sanitizeForSpeech(text);
+      if (!clean) return;
 
-    // ===== Parse mínimo para CSV en bloque ```csv ... ``` =====
-    function extractCsvBlock(text){
-      const m = text.match(/```(?:csv)?\s*([\s\S]*?)```/i); return m ? m[1].trim() : null;
-    }
-    function parseDelimited(csvText){
-      const lines = csvText.split(/\r?\n/).filter(Boolean);
-      if (lines.length<2) return null;
-      const cand=[",",";","\t","|"]; let best=",",score=0,cols=0;
-      for (const d of cand){
-        let good=0,c=null;
-        for (const line of lines.slice(0,20)){ const p=line.split(d); if(p.length<2)continue; if(c==null)c=p.length; if(p.length===c)good++; }
-        if (good>score){ score=good; best=d; cols=c||0; }
-      }
-      if (score<2||cols<2) return null;
-      const rows = lines.map(l=>l.split(best).map(c=>c.trim()));
-      const max = Math.max(...rows.map(r=>r.length));
-      return rows.map(r=>{const a=r.slice(0,max); while(a.length<max)a.push(""); return a;});
-    }
-    function renderTable(rows){
-      const [head,...body]=rows;
-      let html='<table><thead><tr>'+head.map(h=>`<th>${escapeHtml(h)}</th>`).join("")+'</tr></thead><tbody>';
-      for(const r of body){ html+='<tr>'+r.map(c=>`<td>${escapeHtml(c)}</td>`).join("")+'</tr>'; }
-      html+='</tbody></table>'; return html;
+      // asegurar voz femenina
+      if (!chosenVoice) ensureFemaleVoice();
+      const u = new SpeechSynthesisUtterance(clean);
+      if (chosenVoice) u.voice = chosenVoice;
+      u.lang = (chosenVoice?.lang?.startsWith("es") ? chosenVoice.lang : "es-MX");
+      u.rate = 1.12; u.pitch = 1.02; u.volume = 1.0;
+
+      // Video: loop durante el habla
+      u.onstart = () => {
+        try{ video.loop = true; video.play(); }catch{}
+      };
+      u.onend = () => {
+        try{ video.pause(); video.currentTime = 0; video.loop = false; }catch{}
+      };
+      u.onerror = () => {
+        try{ video.pause(); video.currentTime = 0; video.loop = false; }catch{}
+      };
+
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
     }
 
-    // ===== Exportación =====
-    function exportSeleccion(){
-      const tipo = document.getElementById("exportType").value;
-      if (tipo==="pdf") return exportPDF();
-      if (tipo==="csv") return exportCSV();
-      if (tipo==="docx") return exportDOCX();
-      alert("Formato no soportado.");
-    }
-    function exportPDF(){
-      const printable = document.getElementById("printable");
-      let html = "";
-      if (!tablaWrap.hidden){ html = tablaWrap.innerHTML; }
-      else { html = `<div style="white-space:pre-wrap;font-family:Arial">${escapeHtml(out.textContent||"")}</div>`; }
-      printable.innerHTML = `<h2 style="font-family:Arial">Resultados</h2>${html}`;
-      const after = ()=>{ printable.innerHTML=""; window.removeEventListener('afterprint',after); };
-      window.addEventListener('afterprint', after);
-      setTimeout(after, 3000);
-      window.print();
-    }
-    function exportCSV(){
-      if (lastRows && lastRows.length){
-        const csv = lastRows.map(r=>r.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\r\n");
-        descargar(csv,"resultado.csv","text/csv;charset=utf-8"); return;
-      }
-      const t = out.textContent?.trim()||"";
-      if (!t) return alert("No hay datos para exportar.");
-      const csv = `#,"Respuesta"\r\n1,"${t.replace(/"/g,'""')}"\r\n`;
-      descargar(csv,"resultado.csv","text/csv;charset=utf-8");
-    }
-    async function exportDOCX(){
-      try{
-        const { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, HeadingLevel } = window.docx;
-        const children = [ new Paragraph({ text:"Resultados", heading:HeadingLevel.HEADING_1 }) ];
-        if (lastRows && lastRows.length){
-          const rows = lastRows.map(r=> new TableRow({ children: r.map(c=> new TableCell({ width:{size:100/r.length,type:WidthType.PERCENTAGE}, children:[new Paragraph(String(c??""))] })) }));
-          children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows }));
-        } else {
-          (out.textContent||"Sin datos.").split(/\n/).forEach(line=> children.push(new Paragraph(String(line))));
-        }
-        const doc = new Document({ sections:[{ children }] });
-        const blob = await Packer.toBlob(doc);
-        descargarBlob(blob,"resultado.docx");
-      }catch(e){ console.error(e); alert("No se pudo generar DOCX."); }
-    }
-    function descargarBlob(blob, nombre){
-      const url=URL.createObjectURL(blob); const a=document.createElement("a");
-      a.href=url; a.download=nombre; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    }
-    function descargar(contenido,nombre,tipo){ descargarBlob(new Blob([contenido],{type:tipo}), nombre); }
-
-    // ===== Micrófono simple =====
+    /********* Mic (dictado) *********/
     function startListening(){
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if(!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
-      const rec = new SR(); rec.lang="es-MX"; rec.interimResults=false; rec.maxAlternatives=1;
-      rec.onresult = e => { document.getElementById("pregunta").value = e.results[0][0].transcript; enviarPregunta(); };
-      rec.onerror  = e => alert("Error de micrófono: "+e.error);
-      rec.start();
+      if (!SR){ alert("Tu navegador no soporta reconocimiento de voz."); return; }
+      const r = new SR();
+      r.lang = "es-MX";
+      r.interimResults = false; r.maxAlternatives = 1;
+      r.onresult = e => {
+        const t = e.results[0][0].transcript;
+        qEl.value = t;
+        enviarPregunta();
+      };
+      r.onerror = e => alert("Error de micrófono: "+ e.error);
+      r.start();
     }
 
-    // ===== Enviar =====
+    /********* Enviar *********/
     async function enviarPregunta(){
-      stopSpeech();
-      lastRows = null; tablaWrap.hidden = true; tablaWrap.innerHTML = "";
-      out.textContent = "Consultando…";
+      const q = qEl.value.trim();
+      if (!q){ alert("Escribe una pregunta."); return; }
 
-      const q = document.getElementById("pregunta").value.trim();
-      const p = new URLSearchParams({ q, ts: Date.now().toString() });
-      for (const s of SOURCES) p.append("src", s);
-
+      const url = `${ENDPOINT}?${buildParams(q)}`;
+      setOut("Consultando…");
       try{
-        const r = await fetch(`${ENDPOINT}?${p.toString()}`, { cache:"no-store" });
+        // para depuración: ver URL real con las 4 fuentes
+        console.log("Llamando:", url);
+        const r = await fetch(url, { cache:"no-store" });
         const txt = await r.text();
-        let data; try{ data = JSON.parse(txt); }catch{ data = { text: txt||"" }; }
+        let data; try { data = JSON.parse(txt); } catch { data = { text: txt || "" }; }
 
-        const texto = data.text || "";
-        // intentar detectar bloque CSV y renderizar tabla
-        const csvBlock = extractCsvBlock(texto);
-        if (csvBlock){
-          const rows = parseDelimited(csvBlock);
-          if (rows){ lastRows = rows; tablaWrap.innerHTML = renderTable(rows); tablaWrap.hidden = false; out.textContent=""; updateExportButton(); stopSpeech(); return; }
-        }
-        out.textContent = texto || "Sin respuesta.";
-        speak(texto);
+        const msg = data.text || data.answer || data.respuesta || "Sin respuesta.";
+        setOut(msg);
+
+        // Hablar (voz femenina) y mantener video mientras habla
+        speak(msg);
       }catch(e){
-        console.error(e); out.textContent = "Error de red al contactar el backend.";
-      } finally {
-        updateExportButton();
+        setOut("Error: " + e);
       }
     }
 
-    // ===== Limpiar & Reinicio =====
-    function limpiar(){
-      stopSpeech();
-      document.getElementById("pregunta").value = "";
-      out.textContent = ""; tablaWrap.hidden = true; tablaWrap.innerHTML = ""; lastRows = null;
-      updateExportButton();
-    }
-    function reinicioEmergencia(){
-      try{ window.speechSynthesis.cancel(); }catch{}
-      try{ video?.pause(); }catch{}
-      try{ localStorage.clear(); }catch{}; try{ sessionStorage.clear(); }catch{};
-      limpiar(); alert("Listo. Recarga con Ctrl+F5 si sigue raro.");
-    }
-
-    // Enter envía (sin Shift)
-    document.getElementById("pregunta").addEventListener("keydown", (e)=>{
-      if (e.key==="Enter" && !e.shiftKey){ e.preventDefault(); enviarPregunta(); }
+    /********* Export (placeholder) *********/
+    document.getElementById("export").addEventListener("click", ()=>{
+      const fmt = (document.getElementById("exportFmt").value || "pdf");
+      alert("Exportar (placeholder): " + fmt + "\nPuedes conectar tu export real aquí.");
     });
 
-    // Beacon
-    console.log("🔔 FRONT BUILD ESTABLE");
+    /********* Reset / Clear *********/
+    document.getElementById("reset").addEventListener("click", ()=>{
+      try{ localStorage.clear(); }catch{}
+      window.location.href = "/?v=" + Date.now();
+    });
+    document.getElementById("clear").addEventListener("click", ()=>{
+      qEl.value = ""; setOut("Listo. Escribe o dicta tu pregunta y presiona Enviar.");
+      try{ window.speechSynthesis.cancel(); video.pause(); video.currentTime = 0; video.loop = false; }catch{}
+    });
+
+    /********* Listeners *********/
+    document.getElementById("send").addEventListener("click", enviarPregunta);
+    document.getElementById("mic").addEventListener("click", startListening);
+    qEl.addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) enviarPregunta(); });
   </script>
 </body>
 </html>
