@@ -8,7 +8,7 @@ const BUILD_ID =
   process.env.VERCEL_BUILD_ID ||
   String(Date.now());
 
-/* ===== Modelo y clave ===== */
+/* ===== Modelo y clave ====== */
 // Forzar GPT-5 como modelo predeterminado
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
 
