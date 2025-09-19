@@ -21,7 +21,7 @@ textarea{ flex:1 1 800px; min-height:72px; padding:12px 14px; border:1px solid #
 #out{ width:min(90%,1100px); margin:16px auto 0; padding:14px; background:#f7f7f8; border:1px solid #e5e5e7; border-radius:10px; text-align:left; white-space:pre-wrap }
 .badge{ position:fixed; right:8px; bottom:8px; background:#111; color:#fff; padding:6px 10px; border-radius:8px; font:12px monospace; z-index:9999 }
 
-  /+ ===========inicio   Marce ======/*
+  /* ===========inicio   Marce ======*/
   /* Botón de micrófono más grande */
 
   .btn.mic {
@@ -80,7 +80,7 @@ textarea{ flex:1 1 800px; min-height:72px; padding:12px 14px; border:1px solid #
   <option value="csv">CSV (descarga)</option>
   <option value="docx">DOCX (Word)</option>
 </select>
-/*  ====== fin mar ====*/
+<!  ====== fin mar ====>
   <!-- Botón Exportar -->
   <button class="btn" onclick="exportSeleccion()">Exportar</button>
 
@@ -204,9 +204,9 @@ async function enviar(){
   }
 }
 
-    /* ============Iniciio Ma =========*/
+    // ============Iniciio Ma =========
 // Ejecuta la exportación según el formato elegido
-    /*======= Inivcio  Mar =====*/
+    // ====== Inivcio  Mar =====
     // Extiende el exportador según el selector
 function exportSeleccion(){
   const tipo = document.getElementById("exportType").value;
@@ -325,7 +325,7 @@ function escapeHtml(s){
     .replaceAll("'","&#39;");
 }
 
-    /**==========FIN===============*/
+    //==========FIN===============
 function exportSeleccion(){
   const tipo = document.getElementById("exportType").value;
   if (tipo === "pdf"){
@@ -395,7 +395,7 @@ function liberarMemoria(){
 
 
 
-    /* ============ Fin Mar =======*/
+    // ============ Fin Mar =======
 </script>
 </body>
 </html>
