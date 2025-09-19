@@ -69,16 +69,18 @@ textarea{ flex:1 1 800px; min-height:72px; padding:12px 14px; border:1px solid #
 
   <!-- Botón Enviar -->
   <button class="btn" onclick="enviarPregunta()">Enviar</button>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 
   <!-- Botón Micrófono (grande y visible) -->
   <button class="btn mic" title="Dictar por voz" onclick="startListening()">🎤</button>
-
+/* =========inicio ======*/
   <!-- Selector de exportación -->
-  <select id="exportType" class="select">
-    <option value="pdf">PDF (vista previa)</option>
-    <option value="csv">CSV (descarga)</option>
-  </select>
-
+  <<select id="exportType" class="select">
+  <option value="pdf">PDF (vista previa)</option>
+  <option value="csv">CSV (descarga)</option>
+  <option value="docx">DOCX (Word)</option>
+</select>
+/*  ====== fin mar ====*/
   <!-- Botón Exportar -->
   <button class="btn" onclick="exportSeleccion()">Exportar</button>
 
@@ -89,7 +91,9 @@ textarea{ flex:1 1 800px; min-height:72px; padding:12px 14px; border:1px solid #
   /* ================fin =botones========Marce====*/
 
   <script>
-  
+
+
+    
 /* ===== Build visual ===== */
 const APP_BUILD = "105"; // <-- cambia este número en cada publicación
 document.getElementById("build").textContent = "APP v=" + APP_BUILD;
@@ -202,6 +206,126 @@ async function enviar(){
 
     /* ============Iniciio Ma =========*/
 // Ejecuta la exportación según el formato elegido
+    /*======= Inivcio  Mar =====*/
+    // Extiende el exportador según el selector
+function exportSeleccion(){
+  const tipo = document.getElementById("exportType").value;
+  if (tipo === "pdf"){ exportPDF(); return; }
+  if (tipo === "csv"){ exportCSV(); return; }
+  if (tipo === "docx"){ exportDOCX(); return; }
+  alert("Formato no soportado por ahora.");
+}
+
+// Exportar a DOCX (Word)
+async function exportDOCX(){
+  try{
+    // Usamos la tabla si existe; si no, cuerpo de texto
+    const rows = (window.lastRows && Array.isArray(window.lastRows) && window.lastRows.length) ? window.lastRows : null;
+    const plain = (!rows ? (document.getElementById("respuesta")?.textContent?.trim() || "Sin datos.") : "");
+
+    // Aliases de docx UMD
+    const { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, TextRun, HeadingLevel } = window.docx;
+
+    // Construir contenido
+    const children = [];
+
+    // Título
+    children.push(
+      new Paragraph({
+        text: "Resultados",
+        heading: HeadingLevel.HEADING_1,
+        spacing: { after: 200 }
+      })
+    );
+
+    if (rows){
+      // Tabla desde lastRows
+      const tableRows = rows.map(r => new TableRow({
+        children: r.map(c => new TableCell({
+          width: { size: 100 / r.length, type: WidthType.PERCENTAGE },
+          children: [ new Paragraph(String(c ?? "")) ]
+        }))
+      }));
+
+      children.push(new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: tableRows
+      }));
+    } else {
+      // Párrafos desde texto plano
+      const parts = plain.split(/\n{2,}/);
+      parts.forEach(block => {
+        const lines = block.split(/\n/);
+        lines.forEach((ln, i) => {
+          children.push(new Paragraph({
+            children: [ new TextRun({ text: ln, break: i>0 ? 1 : 0 }) ],
+            spacing: { after: 120 }
+          }));
+        });
+      });
+    }
+
+    // Crear documento
+    const doc = new Document({ sections: [{ children }] });
+    const blob = await Packer.toBlob(doc);
+
+    // Descargar
+    descargarBlob(blob, "resultado.docx");
+  } catch (e){
+    console.error(e);
+    // Fallback sencillo: .doc (HTML) compatible con Word
+    exportDOC_Fallback();
+  }
+}
+
+// Fallback a .DOC (Word abre HTML renombrado)
+function exportDOC_Fallback(){
+  const rows = (window.lastRows && Array.isArray(window.lastRows) && window.lastRows.length) ? window.lastRows : null;
+  let html = "<html><head><meta charset='utf-8'><title>Resultados</title></head><body>";
+  html += "<h1 style='font-family:Arial'>Resultados</h1>";
+
+  if (rows){
+    html += "<table border='1' cellspacing='0' cellpadding='5' style='border-collapse:collapse;font-family:Arial'>";
+    rows.forEach((r, i) => {
+      html += "<tr>";
+      r.forEach((c, j) => {
+        const tag = (i===0 ? "th" : "td");
+        html += `<${tag}>${escapeHtml(String(c ?? ""))}</${tag}>`;
+      });
+      html += "</tr>";
+    });
+    html += "</table>";
+  } else {
+    const texto = document.getElementById("respuesta")?.textContent?.trim() || "";
+    html += `<div style="white-space:pre-wrap;font-family:Arial">${escapeHtml(texto)}</div>`;
+  }
+
+  html += "</body></html>";
+  const blob = new Blob([html], { type: "application/msword" });
+  descargarBlob(blob, "resultado.doc");
+}
+
+// Utilidades
+function descargarBlob(blob, nombre){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(s){
+  return String(s)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+    /**==========FIN===============*/
 function exportSeleccion(){
   const tipo = document.getElementById("exportType").value;
   if (tipo === "pdf"){
