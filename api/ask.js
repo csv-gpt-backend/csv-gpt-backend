@@ -131,31 +131,44 @@ function userPromptJSON(query, sourcesText) {
   }).join("\n\n");
   return [`PREGUNTA: ${query}`, "Analiza TODAS las fuentes:", blocks].join("\n");
 }
-
+//=========inicio
 async function callOpenAI(messages, forceJson = false) {
-  if (!API_KEY) return { ok: false, text: "Falta configurar la clave de OpenAI en el servidor." };
-  // ============const body = { model: MODEL, messages, temperature: 0.35 };
-    const body = { 
+  if (!API_KEY) {
+    return { ok: false, text: "Falta configurar OPENAI_API_KEY en Vercel." };
+  }
+
+  const body = { 
     model: MODEL,
     messages,
-    temperature: 0.1,            // Cero creatividad, máxima precisión
-    max_completion_tokens: 8192  // Para respuestas largas y cálculos extensos
+    temperature: 0.1,            // Precisión máxima
+    max_completion_tokens: 8192  // GPT-5 con contexto y cálculos largos
   };
-  
-  if (forceJson) body.response_format = { type: "json_object" };
 
-  
+  // Si queremos salida estrictamente JSON
+  if (forceJson) {
+    body.response_format = { type: "json_object" };
+  }
+
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+    headers: { 
+      "Content-Type": "application/json", 
+      "Authorization": `Bearer ${API_KEY}` 
+    },
     body: JSON.stringify(body),
   });
 
-  let data = null; try { data = await r.json(); } catch {}
-  const text = data?.choices?.[0]?.message?.content?.trim() || `No pude consultar OpenAI (HTTP ${r.status}).`;
+  let data = null;
+  try {
+    data = await r.json();
+  } catch {}
+
+  const text =
+    data?.choices?.[0]?.message?.content?.trim() ||
+    `No pude consultar OpenAI (HTTP ${r.status}).`;
+
   return { ok: true, text };
 }
-
 /* ===== Handler ===== */
 export default async function handler(req, res) {
   try {
