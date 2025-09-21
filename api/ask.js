@@ -1,4 +1,4 @@
-// api/ask.js
+//      api/ask.js
 export default async function handler(req, res) {
   const q = (req.query.q || "").toString().trim();
 
