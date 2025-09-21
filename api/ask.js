@@ -1,7 +1,13 @@
-export default function handler(req, res) {
-  const q = (req.query.q || "").toString();
-  if (q.toLowerCase() === "ping") {
-    return res.status(200).json({ texto: "pong" });
-  }
-  res.status(200).json({ texto: `Recibí: ${q}` });
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/*.js", "use": "@vercel/node" },
+    { "src": "public/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "^/api/(.*)$", "dest": "/api/$1" },
+    { "handle": "filesystem" },
+    { "src": "^/$", "dest": "/public/index.html" },
+    { "src": "^/(.*)$", "dest": "/public/$1" }
+  ]
 }
