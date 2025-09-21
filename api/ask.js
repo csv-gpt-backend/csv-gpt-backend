@@ -1,4 +1,8 @@
-// api/hello.js
+// api/ask.js
 module.exports = (req, res) => {
-  res.status(200).json({ ok: true, from: "hello" });
+  const q = (req.query.q || req.body?.q || "").toString().trim();
+  if (!q || q.toLowerCase() === "ping") {
+    return res.status(200).json({ texto: "pong" });
+  }
+  return res.status(200).json({ texto: `ok: ${q}` });
 };
