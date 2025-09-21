@@ -1,13 +1,4 @@
-{
-  "version": 2,
-  "builds": [
-    { "src": "api/*.js", "use": "@vercel/node" },
-    { "src": "public/**", "use": "@vercel/static" }
-  ],
-  "routes": [
-    { "src": "^/api/(.*)$", "dest": "/api/$1" },
-    { "handle": "filesystem" },
-    { "src": "^/$", "dest": "/public/index.html" },
-    { "src": "^/(.*)$", "dest": "/public/$1" }
-  ]
-}
+// api/hello.js
+module.exports = (req, res) => {
+  res.status(200).json({ ok: true, from: "hello" });
+};
