@@ -129,17 +129,15 @@ async function callOpenAI(apiKey, model, userQuery, corpusList) {
 }
 
 // ======= Handler =======
-export default async function handler(req, res) {
-  try {
-    const qRaw = (req.query.q || req.body?.q || "").toString().trim();
+export const config = { runtime: "nodejs" };
 
-    // 1) Salud y ping
-    if (!qRaw) {
-      return res.status(400).json({ error: "Falta el parámetro q" });
-    }
-    if (qRaw.toLowerCase() === "ping") {
-      return res.status(200).json({ texto: "pong" });
-    }
+export default async function handler(req, res) {
+  const q = (req.query.q || "").toString();
+  if (!q || q.toLowerCase() === "ping") {
+    return res.status(200).json({ texto: "pong" });
+  }
+  return res.status(200).json({ texto: `ok: ${q}` });
+}
 
     // 2) API Key y modelo
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_APIKEY;
