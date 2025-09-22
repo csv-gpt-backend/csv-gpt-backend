@@ -32,18 +32,51 @@ export default async function handler(req, res) {
       return;
     }
 
+// INICIO MARCE 1
+
+// --- LECTURA DEL CSV (primero FS, si falla intento HTTP al mismo dominio) ---
+const abs = path.join(process.cwd(), CSV_PATH);
+let csvRaw = '';
+
+try {
+  csvRaw = await fs.readFile(abs, 'utf8');               // 1) intenta FS
+} catch {
+  // 2) fallback: HTTP a tu propio dominio
+  try {
+    // arma el origin real del request (https://tu-dominio.vercel.app)
+    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const origin = host ? `${proto}://${host}` : '';
+    const url = origin + (CSV_PATH.startsWith('/') ? CSV_PATH : `/${CSV_PATH}`);
+
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status} al leer ${url}`);
+    csvRaw = await r.text();
+  } catch (e2) {
+    return res.status(200).json({
+      texto: `No pude leer el CSV en "${CSV_PATH}". Intenta de nuevo o verifica permisos. Detalle: ${e2.message}`,
+      tablas_markdown: ''
+    });
+  }
+}
+// --- fin lectura CSV ---
+
+
+    // FIN MARCE 1
+
+    
     // Leer CSV
-    const abs = path.join(process.cwd(), CSV_PATH);
-    let csvRaw = '';
-    try {
-      csvRaw = await fs.readFile(abs, 'utf8');
-    } catch (e) {
-      res.status(200).json({
-        texto: `No pude leer el CSV en "${CSV_PATH}". Verifica que el archivo exista en el deploy.`,
-        tablas_markdown: ''
-      });
-      return;
-    }
+//    const abs = path.join(process.cwd(), CSV_PATH);
+  //  let csvRaw = '';
+   // try {
+     // csvRaw = await fs.readFile(abs, 'utf8');
+//    } catch (e) {
+  //    res.status(200).json({
+    //    texto: `No pude leer el CSV en "${CSV_PATH}". Verifica que el archivo exista en el deploy.`,
+//        tablas_markdown: ''
+//      });
+//      return;
+  //  }
 
     // Intento de parseo (opcional, por si el modelo lo usa)
     let csvRows = [];
