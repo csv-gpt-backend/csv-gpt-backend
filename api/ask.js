@@ -1,139 +1,148 @@
 // api/ask.js
-export const config = {
-  runtime: 'nodejs',
-};
+// Función Serverless para Vercel (Node.js). Lee datos/datos/decimo.csv y consulta OpenAI.
 
-import OpenAI from 'openai';
 import fs from 'fs/promises';
 import path from 'path';
-import { parse as parseCsv } from 'csv-parse/sync';
+import OpenAI from 'openai';
 
-function ok(v) { return v !== undefined && v !== null && String(v).trim() !== ''; }
-
-async function loadCSVMaybe(fileRel) {
-  try {
-    const abs = path.join(process.cwd(), fileRel);
-    const buf = await fs.readFile(abs);
-    const text = buf.toString('utf8');
-    let rows = [];
-    try {
-      rows = parseCsv(text, { columns: true, skip_empty_lines: true });
-    } catch {
-      rows = parseCsv(text, { columns: true, skip_empty_lines: true, delimiter: ';' });
-    }
-    return { text, rows };
-  } catch {
-    // Si no existe, no hacemos nada
-    return { text: '', rows: [] };
-  }
+function getApiKey() {
+  return (
+    process.env.OPENAI_API_KEY ||
+    process.env.open_ai_key ||
+    process.env.OPENAI_APIKEY ||
+    ''
+  );
 }
 
-export default async function handler(req, res) {
-  // Evita cache en proxies
-  res.setHeader('Cache-Control', 'no-store, max-age=0');
+const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const CSV_FILE = process.env.CSV_FILE || 'datos/decimo.csv';
 
-  // CORS simple (por si abres desde otro origen)
+export default async function handler(req, res) {
+  // Permitir preflight si alguna vez llamas desde otro dominio
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return res.status(204).end();
   }
-  res.setHeader('Access-Control-Allow-Origin', '*');
 
   if (req.method !== 'POST') {
-    return res.status(200).json({ texto: 'Método no permitido. Usa POST con JSON.', tablas_markdown: '' });
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json({ error: 'Método no permitido. Usa POST con JSON.' });
   }
 
-  try {
-    // 1) Entrada
-    let body = {};
-    try {
-      body = typeof req.body === 'object' && req.body !== null ? req.body : await req.json?.() || {};
-    } catch {
-      body = req.body || {};
-    }
-    const question = (body.question || body.q || '').toString().replace(/\*/g, '').trim();
-    const sessionId = (body.sessionId || '').toString();
-
-    if (!ok(question)) {
-      return res.status(200).json({
-        texto: 'Pregunta vacía. Escribe algo para analizar.',
-        tablas_markdown: ''
-      });
-    }
-
-    // 2) Config / OpenAI client
-    const apiKey = process.env.open_ai_key || process.env.OPENAI_API_KEY;
-    if (!ok(apiKey)) {
-      return res.status(200).json({
-        texto: 'Falta la API Key. Define la variable de entorno "open_ai_key" (o OPENAI_API_KEY) en Vercel.',
-        tablas_markdown: ''
-      });
-    }
-    const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-    const client = new OpenAI({ apiKey });
-
-    // 3) Carga CSV opcional
-    const csvFile = process.env.CSV_FILE || 'datos/decimo.csv';
-    const { text: csvText } = await loadCSVMaybe(csvFile);
-    const csvSnippet = csvText.length > 200_000 ? csvText.slice(0, 200_000) : csvText;
-
-    // 4) Prompts
-    const systemPrompt = `
-Eres una analista senior (voz femenina, español MX/EC). Reglas duras:
-- Contesta SIEMPRE en español latino (MX/EC). No uses asteriscos.
-- No digas "Según el CSV..."; solo entrega la respuesta.
-- Si faltan datos, deduce con lo disponible y explica brevemente.
-- Cuando pidan listas/tablas, entrega tablas Markdown con encabezados y filas numeradas.
-- Devuelve SIEMPRE una explicación clara (podrá convertirse a voz).
-`;
-
-    const userPrompt = `
-PREGUNTA: ${question}
-
-CONTEXTOS:
-- CSV (${csvFile}): 
-${csvSnippet || '(No disponible o vacío)'}
-
-FORMATO DE SALIDA:
-Responde en texto claro. Si corresponde, incluye tablas Markdown en tu explicación o a continuación.
-`;
-
-    // 5) Llamada al modelo
-    let completion;
-    try {
-      completion = await client.chat.completions.create({
-        model: MODEL,
-        temperature: 0.2,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ]
-      });
-    } catch (err) {
-      console.error('OpenAI ERROR:', err);
-      return res.status(200).json({
-        texto: `ERROR (OpenAI): ${err?.message || JSON.stringify(err)}`,
-        tablas_markdown: ''
-      });
-    }
-
-    const respuesta =
-      completion?.choices?.[0]?.message?.content?.trim() ||
-      'No obtuve respuesta del modelo.';
-
-    // 6) Entrega uniforme
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    console.error('Falta OPENAI_API_KEY / open_ai_key en variables de entorno.');
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).json({
-      texto: respuesta,
-      tablas_markdown: '' // si luego extraes tablas, ponlas aquí
+      texto: 'Error: falta configurar la API key de OpenAI en Vercel.',
+      tablas_markdown: ''
+    });
+  }
+
+  // Parseo del body
+  let question = '';
+  try {
+    question = (req.body && req.body.question) || '';
+    if (!question && typeof req.body === 'string') {
+      const parsed = JSON.parse(req.body || '{}');
+      question = parsed.question || '';
+    }
+  } catch (e) {
+    /* ignorar, manejo abajo */
+  }
+
+  if (!question || !String(question).trim()) {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json({
+      texto: 'Por favor, escribe una pregunta.',
+      tablas_markdown: ''
+    });
+  }
+
+  // Leer CSV local del deploy
+  let csvContent = '';
+  try {
+    const absPath = path.join(process.cwd(), CSV_FILE);
+    console.log('[ASK] CSV ruta absoluta:', absPath);
+
+    const fileBuffer = await fs.readFile(absPath);
+    console.log('[ASK] CSV tamaño (bytes):', fileBuffer.length);
+
+    csvContent = fileBuffer.toString('utf-8');
+    console.log('[ASK] CSV primeras líneas:\n', csvContent.split('\n').slice(0, 5));
+  } catch (err) {
+    console.error('[ASK] Error leyendo CSV:', err);
+    // No abortamos: igual el modelo puede responder algo útil
+    csvContent = '';
+  }
+
+  // Construir prompt (en español) pidiendo JSON
+  const systemPrompt = `
+Eres una analista educativa senior. Reglas:
+- Responde SIEMPRE en español latino neutral.
+- No uses asteriscos ni texto decorativo.
+- Si se piden listados/tabla, entrégalos en Markdown.
+- Devuelve SIEMPRE un JSON válido con las claves: "texto" (string) y "tablas_markdown" (string).
+- Si no hay datos suficientes en el CSV, explícalo y sugiere qué falta.
+`;
+
+  // Para no exceder tokens si el CSV fuera muy grande
+  const CSV_MAX = 250_000;
+  const csvSnippet = (csvContent || '').slice(0, CSV_MAX);
+
+  const userPrompt = `
+### DATOS CSV (trátalos como fuente)
+${csvSnippet ? csvSnippet : '(No se pudo cargar el CSV en el servidor. Si esto afecta el cálculo, indícalo.)'}
+
+### PREGUNTA DEL USUARIO
+${question}
+
+### INSTRUCCIONES DE FORMATO
+Devuelve SOLO un JSON con esta forma exacta:
+{
+  "texto": "tu explicación o resultado en español, sin asteriscos",
+  "tablas_markdown": "si corresponde, coloca aquí tabla(s) en Markdown; si no, deja cadena vacía"
+}
+`;
+
+  try {
+    const client = new OpenAI({ apiKey });
+
+    const completion = await client.chat.completions.create({
+      model: MODEL,
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      // Pedimos JSON, pero no todos los modelos lo acatan perfecto;
+      // igual sanitizamos abajo.
+      response_format: { type: 'json_object' }
     });
 
+    const raw = completion?.choices?.[0]?.message?.content || '';
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // Si el modelo no devolvió JSON estricto, envolvemos como texto
+      parsed = { texto: raw || 'No obtuve respuesta.', tablas_markdown: '' };
+    }
+
+    const respuesta = {
+      texto: String(parsed.texto || parsed.text || 'No obtuve respuesta.'),
+      tablas_markdown: String(parsed.tablas_markdown || parsed.tables_markdown || '')
+    };
+
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json(respuesta);
   } catch (err) {
-    console.error('ASK ERROR:', err);
+    console.error('[ASK] ERROR OpenAI o procesamiento:', err);
+    res.setHeader('Content-Type', 'application/json');
     return res.status(200).json({
-      texto: `ERROR DETECTADO: ${err?.message || JSON.stringify(err)}`,
+      texto: `Ocurrió un problema procesando la consulta. Detalle: ${err?.message || ''}`,
       tablas_markdown: ''
     });
   }
