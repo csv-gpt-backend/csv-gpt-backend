@@ -1,235 +1,193 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>VCSV/PDF ↔ GPT (MX/EC)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HHCSV/PDF ↔ GPT (MX/EC)</title>
+  <style>
+    :root{
+      --brand:#1f6fff;
+      --bg:#fafafa; --card:#fff; --ink:#1b1e23; --muted:#6b7280; --ring:#e5e7eb;
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial; color:var(--ink); background:var(--bg)}
 
-<style>
-  :root{
-    --bg:#fff; --fg:#111; --muted:#6b7280; --brand:#2563eb; --border:#e5e7eb; --card:#fafafa;
-  }
-  html,body{height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  *{box-sizing:border-box}
+    /* Header sticky con video y logos */
+    .hero{ position:sticky; top:0; z-index:50; background:#fff; border-bottom:1px solid var(--ring) }
+    .hero-inner{ max-width:1200px; margin:0 auto; padding:16px 20px; display:grid;
+      grid-template-columns: 1fr minmax(420px,640px) 1fr; gap:12px; align-items:center }
+    .brand,.partner{display:flex; align-items:center; justify-content:center}
+    .brand img,.partner img{ max-height:80px; width:auto; object-fit:contain }
+    .video-shell{ border-radius:16px; overflow:hidden; border:1px solid var(--ring); background:#000; width:100%; aspect-ratio:16/9 }
+    .video-shell video{ width:100%; height:100%; object-fit:cover; display:block }
 
-  .wrap{max-width:1160px;margin:0 auto;padding:16px}
-  .header-fixed{position:sticky; top:0; z-index:1000; background:var(--bg); border-bottom:1px solid var(--border); transition: box-shadow .2s ease}
-  .header-fixed.is-stuck{box-shadow:0 8px 24px -10px rgba(0,0,0,.25)}
-
-  .header-grid{display:grid; grid-template-columns: 1fr min(720px, 70vw) 1fr; align-items:center; gap:16px; padding:8px 0}
-  .brand-left img,.brand-right img{max-height:64px;width:auto;display:block}
-
-  .video-shell{border-radius:14px; overflow:hidden; background:#000; aspect-ratio:16/6.5; border:1px solid var(--border)}
-  #heroVideo{width:100%; height:100%; object-fit:cover; display:block}
-
-  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px}
-  .row{display:flex; gap:12px; flex-wrap:wrap}
-  .grow{flex:1 1 auto}
-  .textarea{width:100%; min-height:64px; resize:vertical; border:1px solid var(--border); padding:10px 12px; border-radius:10px; font-size:16px; outline:none}
-  .btn{appearance:none; border:1px solid var(--border); background:#fff; color:#111; cursor:pointer; padding:10px 14px; border-radius:10px; font-weight:600; transition:.15s ease}
-  .btn:hover{transform:translateY(-1px)} .btn:active{transform:translateY(0)}
-  .btn.primary{background:var(--brand); color:#fff; border-color:transparent}
-  .muted{color:var(--muted); font-size:14px}
-  .section-title{font-weight:700; margin:16px 0 10px}
-
-  #textOutput{white-space:pre-wrap; line-height:1.55}
-  #tableOutput{margin-top:8px}
-  .table{width:100%; border-collapse:collapse; margin:8px 0; font-size:14px}
-  .table th,.table td{border:1px solid var(--border); padding:8px; text-align:left}
-  .table th{background:#f4f5f7}
-
-  @media (max-width: 900px){
-    .header-grid{grid-template-columns:1fr}
-    .brand-left,.brand-right{display:none}
-  }
-</style>
+    .container{ max-width:1200px; margin:24px auto; padding:0 20px }
+    .card{ background:var(--card); border:1px solid var(--ring); border-radius:14px; padding:16px }
+    .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:center }
+    textarea{ width:100%; min-height:74px; padding:12px 14px; border-radius:12px; border:1px solid var(--ring); outline:none; font-size:16px; resize:vertical; background:#fff }
+    .btn{ display:inline-flex; align-items:center; gap:8px; padding:10px 16px; border:1px solid var(--ring); border-radius:999px; background:#fff; cursor:pointer; font-weight:600 }
+    .btn.primary{ background:var(--brand); color:#fff; border-color:transparent }
+    .muted{ color:var(--muted); font-size:14px }
+    h3{ margin:0 0 10px 0 }
+    .out,.tables{ min-height:64px; padding:12px 14px; border-radius:12px; border:1px dashed var(--ring); background:#fff }
+    .tables pre{ white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Consolas,monospace }
+  </style>
 </head>
 <body>
-
-<!-- HEADER pegado con logos y video -->
-<header class="header-fixed">
-  <div class="wrap header-grid">
-    <div class="brand-left"><img src="/left.png" alt="Santillana" /></div>
-
-    <div class="video-shell">
-      <!-- Si tienes un video local, colócalo como primer <source>, por ejemplo /lexium.mp4 -->
-      <video id="heroVideo" muted playsinline preload="auto" poster="/right.png">
-        <source src="/lexium.mp4" type="video/mp4" />
-        <!-- Fallback público para evitar pantalla negra si no existe lexium.mp4 -->
-        <source src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" type="video/mp4" />
-      </video>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="brand"><img src="/left.png" alt="Santillana" onerror="this.style.opacity=0.2"></div>
+      <div class="video-shell">
+        <!-- Tu video -->
+        <video id="coachVideo" playsinline muted preload="auto" poster="/right.png" crossorigin="anonymous">
+          <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
+        </video>
+      </div>
+      <div class="partner"><img src="/right.png" alt="Compartir" onerror="this.style.opacity=0.2"></div>
     </div>
+  </header>
 
-    <div class="brand-right"><img src="/right.png" alt="Compartir" /></div>
-  </div>
-</header>
+  <main class="container">
+    <section class="card">
+      <div class="row" style="margin-bottom:12px">
+        <textarea id="q" placeholder="Escribe tu pregunta o usa dictado…"></textarea>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="send">Enviar</button>
+        <button class="btn" id="micBtn">🎙️ Dictado</button>
+        <button class="btn" id="muteBtn">🔇 Silenciar voz</button>
+        <button class="btn" id="clearBtn">🧹 Limpiar</button>
+        <button class="btn" id="newBtn">🆕 Nueva sesión</button>
+        <span class="muted" id="status">Listo</span>
+      </div>
+    </section>
 
-<!-- CONSULTA -->
-<main class="wrap">
-  <div class="card">
-    <textarea id="questionInput" class="textarea" placeholder="Escribe tu pregunta o usa el micrófono…"></textarea>
-    <div class="row" style="margin-top:10px">
-      <button id="sendBtn" class="btn primary">Enviar</button>
-      <button id="dictateBtn" class="btn">🎤 Dictado</button>
-      <button id="muteBtn" class="btn">🔇 Silenciar voz</button>
-      <button id="clearBtn" class="btn">🧹 Limpiar</button>
-      <button id="newSessionBtn" class="btn">🆕 Nueva sesión</button>
-      <span id="status" class="muted grow"></span>
-    </div>
-  </div>
+    <section class="card">
+      <h3>Respuesta</h3>
+      <div id="answer" class="out muted">—</div>
+    </section>
 
-  <h3 class="section-title">Respuesta</h3>
-  <div id="textOutput" class="card"></div>
+    <section class="card">
+      <h3>Tablas y Listas</h3>
+      <div id="tables" class="tables muted">—</div>
+    </section>
+  </main>
 
-  <h3 class="section-title">Tablas y Listas</h3>
-  <div id="tableOutput" class="card"></div>
-</main>
+  <script>
+    const txt = document.getElementById('q');
+    const btnSend = document.getElementById('send');
+    const btnMic  = document.getElementById('micBtn');
+    const btnMute = document.getElementById('muteBtn');
+    const btnClear= document.getElementById('clearBtn');
+    const btnNew  = document.getElementById('newBtn');
+    const statusEl= document.getElementById('status');
+    const out     = document.getElementById('answer');
+    const tables  = document.getElementById('tables');
+    const video   = document.getElementById('coachVideo');
 
-<script>
-/* ---------------- Sticky header con sombra al fijarse ---------------- */
-(() => {
-  const header = document.querySelector('.header-fixed');
-  const s = document.createElement('div');
-  s.style.position='absolute'; s.style.top='0'; s.style.width='1px'; s.style.height='1px';
-  header.parentElement.insertBefore(s, header);
-  const io = new IntersectionObserver((e)=>{
-    if(e[0].isIntersecting) header.classList.remove('is-stuck');
-    else header.classList.add('is-stuck');
-  }, {rootMargin:'-1px 0px 0px 0px'});
-  io.observe(s);
-})();
+    // ---- Speech synthesis (voz femenina es-MX si existe)
+    const synth = window.speechSynthesis;
+    let currentUtter = null;
 
-/* ---------------- Voz femenina ES-MX (fallback ES) ---------------- */
-const TTS = (() => {
-  let pref=null;
-  function load(){
-    const v = speechSynthesis.getVoices() || [];
-    pref = v.find(x=>/es[-_]?mx/i.test(x.lang) && /female|mujer/i.test(x.name+x.voiceURI)) ||
-           v.find(x=>/es[-_]?mx/i.test(x.lang)) ||
-           v.find(x=>/^es/i.test(x.lang)) || null;
-  }
-  if ('speechSynthesis' in window){ load(); speechSynthesis.onvoiceschanged=load; }
-
-  function speak(text,{rate=.98,pitch=1.02,volume=1,onend}={}){
-    try{ speechSynthesis.cancel(); }catch{}
-    if (!text) return;
-    const u = new SpeechSynthesisUtterance(text);
-    if (pref) u.voice=pref; u.lang = (pref && pref.lang) || 'es-MX';
-    u.rate=rate; u.pitch=pitch; u.volume=volume;
-    u.onend=()=>{ if(onend) onend(); };
-    u.onerror=()=>{ if(onend) onend(); };
-    speechSynthesis.speak(u);
-  }
-  function stop(){ try{ speechSynthesis.cancel(); }catch{} }
-  return {speak, stop};
-})();
-
-/* ---------------- Video sincronizado: play al preguntar, pausa al terminar ---------------- */
-const VideoSync = (() => {
-  const v = document.getElementById('heroVideo');
-  if (!v) return { onAsk(){}, onStop(){} };
-
-  function play(){
-    try{ v.muted=true; v.play().catch(()=>{}); }catch{}
-  }
-  function pause(){ try{ v.pause(); }catch{} }
-
-  return { onAsk: play, onStop: pause };
-})();
-
-/* ---------------- Helpers UI ---------------- */
-const $ = s=>document.querySelector(s);
-const questionEl = $('#questionInput');
-const textOut = $('#textOutput');
-const tableOut = $('#tableOutput');
-const statusEl = $('#status');
-function setStatus(m){ statusEl.textContent = m||''; }
-function disableUI(d){
-  ['sendBtn','dictateBtn','muteBtn','clearBtn','newSessionBtn'].forEach(id=>{
-    const b=document.getElementById(id); if(b) b.disabled=!!d;
-  });
-}
-
-/* ---------------- Render texto y tablas ---------------- */
-function renderText(t){ textOut.textContent = t||''; }
-function renderTables(html=''){ tableOut.innerHTML = html||''; }
-
-/* ---------------- Llamada al backend ---------------- */
-async function askServer(q){
-  setStatus('Procesando…'); disableUI(true);
-  try{
-    const r = await fetch('/api/ask', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ question:q })
-    });
-    const data = await r.json().catch(()=>({}));
-    if(!r.ok){
-      const msg = data?.texto || `Error ${r.status}`;
-      throw new Error(msg);
+    function pickSpanishVoice() {
+      const voices = synth.getVoices() || [];
+      let best = voices.find(v => /es-?MX/i.test(v.lang) || /mex/i.test(v.name));
+      if (!best) best = voices.find(v => /^es/i.test(v.lang));
+      return best || null;
+    }
+    function stopSpeaking() {
+      if (synth && synth.speaking) try{ synth.cancel(); }catch(_){}
+      currentUtter = null;
+      try{ video.pause(); }catch(_){}
+    }
+    function speak(text){
+      stopSpeaking();
+      if (!text || !('speechSynthesis' in window)) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1; u.pitch = 1;
+      const go = () => {
+        const v = pickSpanishVoice();
+        if (v) u.voice = v;
+        currentUtter = u;
+        try{ video.currentTime = 0; video.play().catch(()=>{}); }catch(_){}
+        synth.speak(u);
+      };
+      if (synth.getVoices().length===0) {
+        speechSynthesis.onvoiceschanged = () => go();
+      } else { go(); }
+      u.onend = () => { currentUtter=null; try{ video.pause(); }catch(_){} };
+      u.onerror = () => { currentUtter=null; try{ video.pause(); }catch(_){} };
     }
 
-    const texto = data?.texto || '';
-    const tablas = data?.tablas_markdown || '';
-
-    renderText(texto);
-    renderTables(tablas);
-    setStatus('');
-
-    // Leer en voz y detener video al finalizar la lectura
-    TTS.speak(texto, { onend: () => { VideoSync.onStop(); } });
-
-  }catch(err){
-    renderText('');
-    renderTables('');
-    setStatus('Ocurrió un problema procesando la consulta. Intenta nuevamente.');
-    console.error(err);
-  }finally{
-    disableUI(false);
-  }
-}
-
-/* ---------------- Botones ---------------- */
-$('#sendBtn').addEventListener('click', ()=>{
-  const q=(questionEl.value||'').trim();
-  if(!q){ renderText('Por favor, escribe una pregunta.'); renderTables(''); return; }
-  TTS.stop(); VideoSync.onAsk();
-  askServer(q);
-});
-$('#clearBtn').addEventListener('click', ()=>{ questionEl.value=''; renderText(''); renderTables(''); setStatus(''); TTS.stop(); });
-$('#muteBtn').addEventListener('click', ()=>{ TTS.stop(); });
-$('#newSessionBtn').addEventListener('click', ()=>{ questionEl.value=''; renderText(''); renderTables(''); setStatus('Nueva sesión iniciada.'); TTS.stop(); });
-
-/* ---------------- Dictado (auto-envía al terminar) ---------------- */
-(() => {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return;
-  let listening=false, rec=null;
-
-  $('#dictateBtn').addEventListener('click', ()=>{
-    if(listening) return;
-    rec = new SR();
-    rec.lang='es-MX';
-    rec.interimResults=false; rec.continuous=false; rec.maxAlternatives=1;
-    listening=true; setStatus('🎤 Escuchando…');
-
-    rec.onresult = (e)=>{
-      const t = e.results?.[0]?.[0]?.transcript || '';
-      if(t){
-        questionEl.value = questionEl.value ? (questionEl.value+' '+t) : t;
-        // auto-envío
-        const q=(questionEl.value||'').trim();
-        if(q){ TTS.stop(); VideoSync.onAsk(); askServer(q); }
+    // ---- Dictado (sin duplicaciones)
+    let rec=null, recOn=false;
+    function toggleDictado(){
+      if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+        alert('Tu navegador no soporta dictado.');
+        return;
       }
-    };
-    rec.onerror = ()=>{ setStatus(''); listening=false; };
-    rec.onend = ()=>{ setStatus(''); listening=false; };
-    try{ rec.start(); }catch{}
-  });
-})();
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!rec) {
+        rec = new SpeechRec();
+        rec.lang = 'es-MX';
+        rec.continuous = false; rec.interimResults = false;
+        rec.onresult = (e) => {
+          const t = e.results[0][0].transcript || '';
+          txt.value = (txt.value + ' ' + t).trim();
+        };
+        rec.onend = ()=>{ recOn=false; statusEl.textContent='Listo'; };
+        rec.onerror = ()=>{ recOn=false; statusEl.textContent='Listo'; };
+      }
+      if (!recOn) { recOn=true; statusEl.textContent='Escuchando…'; rec.start(); }
+      else { rec.stop(); recOn=false; statusEl.textContent='Listo'; }
+    }
 
-/* ---------------- Arranque: video en pausa hasta preguntar ---------------- */
-try{ document.getElementById('heroVideo')?.pause(); }catch{}
-</script>
+    // ---- Enviar pregunta
+    async function send(){
+      const question = (txt.value || '').trim();
+      if (!question) {
+        out.textContent = 'Por favor, escribe una pregunta.'; out.classList.remove('muted');
+        return;
+      }
+      stopSpeaking();
+      statusEl.textContent='Consultando…';
+      out.textContent = 'Procesando…'; out.classList.add('muted');
+      tables.textContent = '—'; tables.classList.add('muted');
+
+      try{
+        const r = await fetch('/api/ask', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ question })
+        });
+        const data = await r.json();
+
+        const texto = data?.texto || 'No obtuve respuesta.';
+        out.textContent = texto; out.classList.remove('muted');
+
+        const md = data?.tablas_markdown || '';
+        if (md) { tables.innerHTML = '<pre>'+md+'</pre>'; tables.classList.remove('muted'); }
+        else { tables.textContent='—'; tables.classList.add('muted'); }
+
+        // Voz + video si hay una respuesta real
+        if (texto && !/^no obtuve respuesta/i.test(texto)) speak(texto);
+        statusEl.textContent='Listo';
+      }catch(err){
+        console.error(err);
+        statusEl.textContent='Error';
+        out.textContent='Ocurrió un problema procesando la consulta. Intenta nuevamente.';
+      }
+    }
+
+    // ---- Botones
+    btnSend.onclick = send;
+    btnMic.onclick  = toggleDictado;
+    btnMute.onclick = stopSpeaking;
+    btnClear.onclick= ()=>{ txt.value=''; out.textContent='—'; out.classList.add('muted'); tables.textContent='—'; tables.classList.add('muted'); stopSpeaking(); };
+    btnNew.onclick  = ()=>{ txt.value=''; stopSpeaking(); out.textContent='—'; out.classList.add('muted'); tables.textContent='—'; tables.classList.add('muted'); statusEl.textContent='Listo'; };
+
+    // Autoplay silencioso para “despertar” el video (algunos navegadores necesitan una primera interacción, pero esto ayuda)
+    document.addEventListener('DOMContentLoaded', ()=>{ try{ video.play().then(()=>video.pause()).catch(()=>{}); }catch(_){ } });
+  </script>
 </body>
 </html>
