@@ -1,12 +1,14 @@
 // api/ask.js
-export const config = {
-  runtime: 'nodejs20.x',
-};
+export const config = { runtime: 'nodejs20.x' };
 
 import fs from 'fs';
 import path from 'path';
 
-const OPENAI_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY || process.env.OPEN_AI_KEY;
+const OPENAI_KEY =
+  process.env.open_ai_key ||
+  process.env.OPENAI_API_KEY ||
+  process.env.OPEN_AI_KEY;
+
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const CSV_RELATIVE = process.env.CSV_FILE || 'datos/decimo.csv';
 
@@ -21,29 +23,14 @@ export default async function handler(req, res) {
       return res.status(200).json({ texto: 'Por favor, escribe una pregunta.', tablas_markdown: '' });
     }
 
-    // Lee CSV si existe (para que el modelo sepa que sí hay datos)
     let csvText = '';
     try {
-      const csvPath = path.join(process.cwd(), CSV_RELATIVE);
-      csvText = fs.readFileSync(csvPath, 'utf8');
+      const p = path.join(process.cwd(), CSV_RELATIVE);
+      csvText = fs.readFileSync(p, 'utf8');
     } catch {
-      // si no existe, no rompemos — lo indicamos al modelo
+      // CSV no disponible -> no rompemos
     }
 
-    // Llama a OpenAI completions (Responses API)
-    const prompt = `
-Eres un asistente experto en análisis educativo. Responde en español neutro.
-Si el usuario pregunta por promedios o listas, usa los datos del CSV (si está disponible).
-Devuelve además tablas en HTML cuando sea útil (dentro del campo "tablas_markdown").
-
-Pregunta del usuario:
-${question}
-
-CSV disponible: ${csvText ? 'SÍ' : 'NO'}
-${csvText ? `Contenido CSV (inicio):\n${csvText.slice(0, 3000)}` : ''}
-`;
-
-    // Llamada a OpenAI con fetch (evitamos SDK para mantener liviano)
     if (!OPENAI_KEY) {
       return res.status(200).json({
         texto: 'No tengo acceso a una clave de OpenAI (open_ai_key). Configúrala en Vercel → Project → Settings → Environment Variables.',
@@ -51,30 +38,44 @@ ${csvText ? `Contenido CSV (inicio):\n${csvText.slice(0, 3000)}` : ''}
       });
     }
 
+    const prompt = `
+Eres un asistente pedagógico. Responde en español neutro y claro.
+Si el usuario pide promedios/tablas/listas, y el CSV está disponible, úsalo.
+Devuelve tablas en **HTML** cuando corresponda (dentro de "tablas_markdown").
+Primero, explica el resultado en texto breve y luego, si aplica, genera la tabla.
+
+Pregunta:
+${question}
+
+¿CSV disponible? ${csvText ? 'SÍ' : 'NO'}
+${csvText ? `CSV (inicio, máx 3000 chars):\n${csvText.slice(0,3000)}` : ''}
+`.trim();
+
+    // Llamada a OpenAI Responses API
     const r = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_KEY}` },
-      body: JSON.stringify({
-        model: MODEL,
-        input: prompt,
-      })
+      body: JSON.stringify({ model: MODEL, input: prompt })
     });
 
     const data = await r.json();
-    const respuesta = data?.output_text?.trim?.() ||
-                      data?.choices?.[0]?.message?.content?.trim?.() ||
-                      'No obtuve respuesta.';
+    if (!r.ok) {
+      const msg = data?.error?.message || `Error OpenAI ${r.status}`;
+      throw new Error(msg);
+    }
 
-    // Heurística: si el modelo incluyó tablas en markdown, las dejamos en tablas_markdown.
-    // Si la respuesta trae una tabla en HTML, la hacemos pasar por "tablas_markdown".
+    const respuesta =
+      data?.output_text?.trim?.() ||
+      data?.choices?.[0]?.message?.content?.trim?.() ||
+      'No obtuve respuesta.';
+
+    // Si viene una <table> la separamos para colocarla en tablas_markdown
     let texto = respuesta;
     let tablas_markdown = '';
-
-    // separa tabla si detecta <table> … </table>
-    const tableMatch = respuesta.match(/<table[\s\S]*?<\/table>/i);
-    if (tableMatch) {
-      tablas_markdown = tableMatch[0];
-      texto = respuesta.replace(tableMatch[0], '').trim();
+    const tmatch = respuesta.match(/<table[\s\S]*?<\/table>/i);
+    if (tmatch) {
+      tablas_markdown = tmatch[0];
+      texto = respuesta.replace(tmatch[0], '').trim();
     }
 
     res.setHeader('Content-Type', 'application/json');
