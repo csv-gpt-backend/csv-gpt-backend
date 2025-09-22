@@ -6,182 +6,103 @@ import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
-// ====== ENV ======
-const OPENAI_KEY  = process.env.open_ai_key || process.env.OPENAI_API_KEY || '';
-const MODEL       = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const CSV_PATH    = process.env.CSV_FILE || path.join(process.cwd(), 'datos', 'decimo.csv');
+const OPENAI_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY;
+const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const CSV_PATH = process.env.CSV_FILE || path.join(process.cwd(), 'datos', 'decimo.csv');
 
-// PDFs: locales o por URL (GitHub RAW)
-const PDF_FILES = (process.env.PDF_FILES || '').split(',').map(s => s.trim()).filter(Boolean);
-const PDF_URLS  = (process.env.PDF_URLS  || '').split(',').map(s => s.trim()).filter(Boolean);
+// PDFs: define en Vercel "PDF_FILES" como lista separada por comas (ej. "emocionales.pdf,evaluaciones.pdf")
+const PDF_FILES_ENV = (process.env.PDF_FILES || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 
 const client = new OpenAI({ apiKey: OPENAI_KEY });
 
-// ====== UTIL: CSV parser sin dependencias (comillas y comas) ======
-function parseCSV(raw) {
-  const lines = raw.split(/\r?\n/);
-  const rows = [];
-  for (let line of lines) {
-    if (line === '') continue;
-    const out = [];
-    let cur = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') { // escape ""
-          cur += '"'; i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (ch === ',' && !inQuotes) {
-        out.push(cur); cur = '';
-      } else {
-        cur += ch;
-      }
-    }
-    out.push(cur);
-    rows.push(out.map(c => c.trim()));
+/* ---------------- CSV helpers ---------------- */
+
+function detectDelimiter(firstLine = '') {
+  const candidates = [';', ',', '\t', '|'];
+  let best = ',', max = -1;
+  for (const d of candidates) {
+    const c = (firstLine.match(new RegExp(`\\${d}`, 'g')) || []).length;
+    if (c > max) { max = c; best = d; }
   }
-  return rows;
+  return best;
 }
 
-// Normaliza texto para “match” de columnas
-const norm = (s) => (s ?? '').toString()
-  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  .replace(/\s+/g, ' ').trim().toLowerCase();
-
-// Mapa robusto de 18 columnas (añade alias comunes)
-const COLMAP = {
-  nombre: ['nombre','estudiante','alumno'],
-  promedio_hab_interpersonales: [
-    'promedio de habilidades interpersonales','promedio habilidades interpersonales','habilidades interpersonales','interpersonales'
-  ],
-  motivacion: ['motivación','motivacion'],
-  compromiso: ['compromiso'],
-  administracion_tiempo: ['administración del tiempo','administracion del tiempo','tiempo'],
-  toma_decisiones: ['toma de decisiones','decisiones'],
-  liderazgo: ['liderazgo'],
-  promedio_hab_vida: ['promedio de habilidades para la vida','habilidades para la vida','vida'],
-  promedio_inteligencia_emocional: ['promedio de inteligencia emocional','inteligencia emocional','emocional'],
-  agresion: ['agresión','agresion'],
-  timidez: ['timidez'],
-  propension_cambio: ['propensión al cambio','propension al cambio','cambio'],
-  empatia: ['empatía','empatia'],
-  asertividad: ['asertividad'],
-  manejo_estres: ['manejo de estrés','manejo de estres','estres','estrés'],
-  resiliencia: ['resiliencia'],
-  autocontrol: ['autocontrol'],
-  comunicacion: ['comunicación','comunicacion']
-};
-
-// Encabezado CSV → índices usando COLMAP
-function mapHeaders(csvHeaders) {
-  const mapped = {};
-  csvHeaders.forEach((h, idx) => {
-    const H = norm(h);
-    for (const key of Object.keys(COLMAP)) {
-      const aliases = COLMAP[key].map(norm);
-      if (aliases.some(a => H.includes(a))) {
-        if (mapped[key] == null) mapped[key] = idx;
-      }
-    }
-    if (mapped.nombre == null && /nombre/i.test(h)) mapped.nombre = idx;
-  });
-  return mapped;
-}
-
-// Detecta columnas pedidas en la pregunta
-function detectRequestedColumns(question) {
-  const q = norm(question);
-  if (/todos? los estudiantes|todas? las columnas|todos los datos|muestrame todo|lista completa/.test(q)) {
-    return []; // => todas
-  }
-  const wanted = [];
-  for (const key of Object.keys(COLMAP)) {
-    const aliases = COLMAP[key].map(norm);
-    if (aliases.some(a => q.includes(a))) wanted.push(key);
-  }
-  if (wanted.length && !wanted.includes('nombre')) wanted.unshift('nombre');
-  return wanted;
-}
-
-// Construye tabla a partir de matriz + headerMap + columnas pedidas
-function buildTable(matrix, csvHeaders, headerMap, requestedKeys = null) {
-  const allOrder = Object.keys(COLMAP);
-  const keys = (requestedKeys && requestedKeys.length)
-    ? requestedKeys.filter(k => headerMap[k] != null)
-    : allOrder.filter(k => headerMap[k] != null);
-
-  const headers = keys.map(k => {
-    const base = COLMAP[k]?.[0] || k;
-    return base.replace(/\b\w/g, c => c.toUpperCase());
-  });
-
-  const rows = matrix.map(row => keys.map(k => row[headerMap[k]] ?? ''));
-  return { headers, rows };
-}
-
-// Convierte tabla a Markdown (para el front actual)
-function tableToMarkdown(headers, rows) {
-  if (!headers?.length) return '';
-  const headerRow = '| ' + headers.join(' | ') + ' |';
-  const sepRow = '| ' + headers.map(() => '---').join(' | ') + ' |';
-  const bodyRows = rows.map(r => '| ' + r.map(v => String(v ?? '')).join(' | ') + ' |');
-  return [headerRow, sepRow, ...bodyRows].join('\n');
-}
-
-// ====== PDF SUPPORT ======
-async function dynamicImportPdfParse() {
+function readCsvSnapshot() {
   try {
-    const m = await import('pdf-parse'); // requiere "pdf-parse" en package.json
-    return m.default || m;
-  } catch {
-    return null; // si no está instalada, seguimos sin PDF
+    const raw = fs.readFileSync(CSV_PATH, 'utf8');
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    const first = lines[0] || '';
+    const delimiter = detectDelimiter(first);
+    const header = first
+      .split(delimiter)
+      .map(s => s.trim().replace(/^"|"$/g, ''));
+
+    // Enviamos un trozo representativo (para no explotar tokens)
+    const preview = raw.slice(0, 200000); // 200k chars aprox
+    return { ok: true, header, preview, delimiter };
+  } catch (e) {
+    return { ok: false, header: [], preview: '', delimiter: ',' };
   }
 }
 
-async function fetchAsBuffer(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`No se pudo descargar: ${url}`);
-  const ab = await res.arrayBuffer();
-  return Buffer.from(ab);
+/* ---------------- PDF helpers (opcional) ---------------- */
+
+// Intentamos cargar pdf-parse si está instalado
+let pdfParse = null;
+try {
+  // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+  pdfParse = (await import('pdf-parse')).default;
+} catch (_) {
+  // Si no está, continuamos sin PDFs
+  pdfParse = null;
 }
 
-async function loadPdfTexts() {
-  const pdfParse = await dynamicImportPdfParse();
-  if (!pdfParse) return ''; // sin dependencia, devolvemos vacío
+function findFileInProject(filename) {
+  const roots = [
+    process.cwd(),
+    path.join(process.cwd(), 'datos'),
+  ];
+  for (const r of roots) {
+    const p = path.join(r, filename);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
 
-  const texts = [];
+async function readPdfsText() {
+  if (!PDF_FILES_ENV.length) {
+    return { note: 'No hay PDFs definidos en PDF_FILES.', combinedText: '' };
+  }
+  if (!pdfParse) {
+    return { note: 'No se encontró pdf-parse; instala "pdf-parse" para analizar PDFs.', combinedText: '' };
+  }
 
-  // 1) Locales (si existen)
-  for (const rel of PDF_FILES) {
+  const results = [];
+  for (const name of PDF_FILES_ENV) {
+    const filePath = findFileInProject(name);
+    if (!filePath) {
+      results.push(`(No encontrado: ${name})`);
+      continue;
+    }
     try {
-      const full = path.isAbsolute(rel) ? rel : path.join(process.cwd(), rel);
-      const buf = fs.readFileSync(full);
-      const data = await pdfParse(buf);
-      if (data?.text) texts.push(`# ${rel}\n${data.text}`);
-    } catch {}
+      const buf = fs.readFileSync(filePath);
+      const parsed = await pdfParse(buf);
+      const text = (parsed?.text || '').replace(/\s+/g, ' ').trim();
+      results.push(`### ${path.basename(filePath)}\n${text.substring(0, 100000)}`); // máx 100k por PDF
+    } catch (e) {
+      results.push(`(Error leyendo ${name}: ${e?.message || e})`);
+    }
   }
 
-  // 2) URLs (GitHub RAW)
-  for (const url of PDF_URLS) {
-    if (!url) continue;
-    try {
-      const buf = await fetchAsBuffer(url);
-      const data = await pdfParse(buf);
-      if (data?.text) texts.push(`# ${url}\n${data.text}`);
-    } catch {}
-  }
-
-  // Limitar contexto (para no exceder tokens)
-  let joined = texts.join('\n\n---\n\n');
-  const MAX = 200_000; // 200k chars
-  if (joined.length > MAX) joined = joined.slice(0, MAX);
-  return joined;
+  const combinedText = results.join('\n\n');
+  return { note: 'PDFs analizados.', combinedText };
 }
 
-// ====== HANDLER ======
+/* ---------------- Handler ---------------- */
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
@@ -200,77 +121,80 @@ export default async function handler(req, res) {
     }
     const q = question.trim();
 
-    // ====== LECTURA COMPLETA DEL CSV (todas las filas) ======
-    let raw;
-    try {
-      raw = fs.readFileSync(CSV_PATH, 'utf8');
-    } catch (e) {
-      return res.status(200).json({
-        texto: `No encontré el CSV en "${CSV_PATH}". Verifica la ruta (datos/decimo.csv).`,
-        tablas_markdown: ''
-      });
-    }
-    const arr = parseCSV(raw);
-    if (arr.length < 2) {
-      return res.status(200).json({
-        texto: 'El CSV no tiene datos suficientes (encabezado o filas).',
-        tablas_markdown: ''
-      });
-    }
+    // CSV
+    const { ok, header, preview, delimiter } = readCsvSnapshot();
+    const headerNote = ok && header.length
+      ? `Encabezados reales del CSV (${header.length} columnas): ${header.join(' | ')}`
+      : `No pude leer el CSV.`;
 
-    const csvHeaders = arr[0];
-    const dataRows = arr.slice(1);
-    const headerMap = mapHeaders(csvHeaders);
-    const requested = detectRequestedColumns(q);
-    const tabla = buildTable(dataRows, csvHeaders, headerMap, requested);
+    // PDFs (opcional)
+    const { note: pdfNote, combinedText: pdfsText } = await readPdfsText();
 
-    // ====== CARGA PDFs (locales/URLs) ======
-    const pdfText = await loadPdfTexts();
-
-    // ====== TEXTO con OpenAI (usa CSV+PDFs) ======
-    let texto = '';
-    try {
-      const system = `Eres una analista educativa rigurosa. Responde SIEMPRE en español latino neutral.
+    const system = `Eres una analista educativa rigurosa. Responde SIEMPRE en español latino neutral.
 Reglas DURAS:
-- La tabla con datos tabulares ya fue construida en el servidor; NO inventes filas/columnas.
-- Puedes usar el CONTEXTO DE PDFs (si existe) para sustentar explicaciones y referencias conceptuales.
-- No inventes citas ni páginas; si algo no está, dilo de forma breve y sugiere cómo pedirlo.`;
+- Si el usuario pide "todos los estudiantes", debes listar a TODOS sin omitir ninguno.
+- Usa EXACTAMENTE las columnas solicitadas por el usuario. Si pide varias columnas, inclúyelas todas.
+- Presenta las LISTAS/TABLAS en formato Markdown (| Col | ... |) cuando aplique, sin asteriscos decorativos.
+- Numera filas implícitamente (la UI agrega una columna #).
+- No inventes columnas; usa el delimitador indicado para interpretar el CSV.
+- Si se solicita información de los PDFs, apóyate en el texto proporcionado (si existe).`;
 
-      const user = `PREGUNTA: "${q}"
+    const user = ok
+      ? `PREGUNTA: "${q}"
 
-RESUMEN TABLA CSV:
-- Filas: ${tabla.rows.length}
-- Columnas: ${tabla.headers.join(', ')}
+${headerNote}
+DELIMITADOR_CSV: "${delimiter}"  <-- Usa SIEMPRE este delimitador para separar columnas.
 
-CONTEXTO DE PDFs (texto extraído, puede estar truncado):
-${pdfText ? '"""' + pdfText + '"""' : '(No hay PDFs cargados o no fue posible extraer texto).'}
+TROZO DEL CSV (representativo, no todo):
+"""${preview}"""
 
-TAREA:
-Redacta una explicación breve y clara. Si el usuario pidió listas/tablas, no repitas la tabla (ya se envía aparte); solo explica hallazgos, cálculos o interpretación con apoyo del contexto de los PDFs.`;
+${pdfsText
+  ? `FRAGMENTOS RELEVANTES DESDE PDFs (si aplican a la pregunta):
+"""${pdfsText}"""`
 
-      const completion = await client.chat.completions.create({
-        model: MODEL,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user',   content: user }
-        ],
-        temperature: 0.2
-      });
-      texto = (completion?.choices?.[0]?.message?.content || '').replace(/\*/g, '').trim();
-    } catch (e) {
-      texto = 'Aquí tienes la información solicitada a partir del CSV y, si aplica, de los PDFs.';
-    }
+  : `(Sin texto de PDFs disponible) ${pdfNote || ''}`
+}
 
-    // ====== Markdown (para tu front actual) ======
-    const tablas_markdown = tableToMarkdown(tabla.headers, tabla.rows);
+Instrucciones de salida:
+1) "texto": explicación clara en español (sin asteriscos).
+2) "tablas_markdown": si el usuario pidió listas/tablas, entrega TABLA en Markdown con TODAS las filas solicitadas y las columnas exactas; si pidió "todos", no omitas ninguno. Si no aplica tabla, deja vacío.
 
-    res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json({
-      texto,
-      tablas_markdown,
-      tabla // extra opcional por si luego lo aprovechas
+Devuelve SOLO un JSON con {"texto": "...", "tablas_markdown": "..."}.`
+      : `PREGUNTA: "${q}"
+
+${headerNote}
+
+${pdfsText
+  ? `FRAGMENTOS RELEVANTES DESDE PDFs:
+"""${pdfsText}"""`
+
+  : `(Sin texto de PDFs disponible) ${pdfNote || ''}`
+}
+
+No pude leer el CSV. Explica o guía al usuario en texto claro.
+Si requiere tabla pero no hay datos, indícalo.
+Devuelve SOLO un JSON {"texto":"...","tablas_markdown":""}.`;
+
+    const completion = await client.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user',   content: user }
+      ],
+      temperature: 0.2,
+      response_format: { type: 'json_object' }
     });
 
+    const raw = completion?.choices?.[0]?.message?.content || '{}';
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { parsed = { texto: raw, tablas_markdown: '' }; }
+
+    const texto = String(parsed.texto || parsed.text || '').replace(/\*/g,'').trim();
+    const tablas_markdown = String(parsed.tablas_markdown || parsed.tables_markdown || '').trim();
+
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json({ texto, tablas_markdown });
   } catch (err) {
     console.error('ASK ERROR:', err?.message || err);
     return res.status(200).json({
