@@ -3,13 +3,15 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>gtyXCSV/PDF ↔ GPT (MX/EC)</title>
+<title>CSV/PDF ↔ GPT (MX/EC)</title>
 <link rel="icon" href="data:," />
-<!-- Markdown parser + export libs -->
+
+<!-- Librerías de apoyo -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 <style>
   :root{
     --bg:#fff; --ink:#111827; --muted:#6b7280; --border:#e5e7eb;
@@ -17,16 +19,15 @@
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto}
-  /* Layout: header fijo + 2 paneles con scroll */
   .page{display:grid;grid-template-rows:auto 1fr;min-height:100dvh}
+
   header{position:sticky;top:0;z-index:1000;background:#fff;border-bottom:1px solid var(--border);padding:10px 12px}
-  /* Fila de medios 25/50/25 */
-  .media-row{display:grid;grid-template-columns:1fr 2fr 1fr;gap:12px;align-items:center}
+
+  /* Fila 25 / 50 / 25, con video 5% más angosto */
+  .media-row{display:grid;grid-template-columns:1fr 1.9fr 1fr;gap:12px;align-items:center}
   .media-row img{width:100%;height:110px;object-fit:contain}
-  .media-row video{
-    width:100%;height:210px; /* ← video más grande */
-    object-fit:cover;border-radius:12px;border:none;background:#000;
-  }
+  .media-row video{width:100%;height:200px;object-fit:cover;border-radius:12px;border:none;background:#000}
+
   .controls{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px}
   textarea{width:min(1100px,98%);height:64px;resize:vertical;padding:10px 12px;border:1px solid var(--border);border-radius:12px}
   .btn{padding:10px 14px;border-radius:12px;border:1px solid var(--border);background:#fff;font-weight:600;cursor:pointer}
@@ -36,31 +37,33 @@
   .btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
   select{padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-weight:600}
 
-  main{display:grid;grid-template-rows:1fr 1fr;min-height:0} /* para que los hijos puedan scrollear */
+  main{display:grid;grid-template-rows:1fr 1fr;min-height:0}
   .panel{padding:12px;overflow:auto}
   .panel + .panel{border-top:1px solid var(--border)}
   .panel h2{margin:0 0 8px;color:var(--muted);font-size:15px;text-transform:uppercase;letter-spacing:.2px}
   #textPanel{max-height:38vh}
   #tablePanel{max-height:38vh}
+
   .result{max-width:1200px;margin:0 auto;line-height:1.55}
-  /* Tabla bonita */
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#fafafa;border:1px dashed var(--border);border-radius:10px;padding:8px}
+
+  /* Tablas */
   #tableOutput table{width:100%;border-collapse:collapse;font-size:14px}
   #tableOutput th,#tableOutput td{border:1px solid var(--border);padding:6px 8px;text-align:left}
   #tableOutput th{background:#f8fafc}
-  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#fafafa;border:1px dashed var(--border);border-radius:10px;padding:8px}
 </style>
 </head>
 <body>
 <div class="page">
   <header>
-    <!-- Medios 25/50/25 fijos arriba -->
     <div class="media-row">
-      <img src="/left.png" alt="Left logo">
-      <video id="heroVideo" src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" muted playsinline></video>
-      <img src="/right.png" alt="Right logo">
+      <img src="/left.png" alt="Left logo" crossorigin="anonymous">
+      <video id="heroVideo"
+             src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4"
+             muted playsinline crossorigin="anonymous"></video>
+      <img src="/right.png" alt="Right logo" crossorigin="anonymous">
     </div>
 
-    <!-- Caja de texto + botones -->
     <div class="controls" style="margin-top:10px">
       <textarea id="question" placeholder="Escribe tu pregunta o usa dictado…"></textarea>
     </div>
@@ -93,42 +96,17 @@
 
 <script>
 (() => {
-  // ====== Estado y refs ======
+  // ====== Estado
   let sessionId = 'S-' + new Date().toISOString().replace(/[:.]/g,'-');
   let ttsEnabled = true;
   let typing = false;
+
   const heroVideo = document.getElementById('heroVideo');
   const questionEl = document.getElementById('question');
   const textOutput = document.getElementById('textOutput');
   const tableOutput = document.getElementById('tableOutput');
 
-  // ====== Voz femenina ES (MX/EC) ======
-  function pickSpanishFemaleVoice(){
-    const v = speechSynthesis.getVoices();
-    const pref = [
-      'Microsoft Sabina Online (Natural) - Spanish (Mexico)',
-      'Microsoft Dalia Online (Natural) - Spanish (Mexico)',
-      'Google español',
-      'Google español de Estados Unidos',
-      'Conchita','Lucia','Paulina','Lupe','Camila'
-    ];
-    let c = v.find(x => /es-|es_/.test(x.lang||'') && /female|mujer|woman/i.test(x.name));
-    if (c) return c;
-    for(const n of pref){ const f=v.find(x=>(x.name||'').includes(n)); if(f) return f; }
-    return v.find(x=>(x.lang||'').startsWith('es')) || v[0];
-  }
-  function speak(text){
-    if(!ttsEnabled) return Promise.resolve();
-    return new Promise(resolve=>{
-      const u = new SpeechSynthesisUtterance(String(text||'').replace(/\*/g,''));
-      const set = () => { const v=pickSpanishFemaleVoice(); if(v) u.voice=v; u.lang=(v&&v.lang)||'es-MX'; u.rate=1; u.pitch=1; speechSynthesis.speak(u); heroVideo.play().catch(()=>{}); };
-      if(speechSynthesis.getVoices().length) set(); else speechSynthesis.onvoiceschanged=set;
-      u.onend=()=>{ if(!typing) heroVideo.pause(); resolve(); };
-      u.onerror=()=>{ if(!typing) heroVideo.pause(); resolve(); };
-    });
-  }
-
-  // ====== UI helpers ======
+  // ====== Utilidades
   async function typeInto(el, text, delay=6){
     typing = true; heroVideo.play().catch(()=>{});
     el.innerHTML = '';
@@ -139,39 +117,80 @@
     typing = false; heroVideo.pause();
   }
 
-  // ====== Normalizador + Render Markdown → HTML ======
+  // ====== Voz femenina latina/MX
+  function pickSpanishFemaleVoice() {
+    const voices = speechSynthesis.getVoices() || [];
+    const prefer = [
+      'Microsoft Sabina Online (Natural) - Spanish (Mexico)',
+      'Microsoft Dalia Online (Natural) - Spanish (Mexico)',
+      'Paulina','Lucia','Conchita','Camila','Lupe'
+    ];
+    const byLang = (langs)=>voices.find(v=>langs.some(L=>(v.lang||'').toLowerCase().startsWith(L)));
+    let v = byLang(['es-mx','es-419']); // México / LatAm
+    if(!v) v = voices.find(x=>/^es-/i.test(x.lang||'') && /female|mujer|woman/i.test(x.name||''));
+    if(!v){
+      for(const n of prefer){ const c = voices.find(x=>(x.name||'').includes(n)); if(c) return c; }
+      v = voices.find(x=>/^es-/i.test(x.lang||'')) || voices[0];
+    }
+    return v;
+  }
+  function speak(text){
+    if(!ttsEnabled) return Promise.resolve();
+    return new Promise(resolve=>{
+      const u = new SpeechSynthesisUtterance(String(text||'').replace(/\*/g,''));
+      const set = ()=>{
+        const v = pickSpanishFemaleVoice();
+        if(v) u.voice=v;
+        u.lang=(v&&v.lang)||'es-MX'; u.rate=1; u.pitch=1;
+        window.speechSynthesis.cancel(); // corta cualquier locución previa
+        speechSynthesis.speak(u);
+        heroVideo.play().catch(()=>{});
+      };
+      if(speechSynthesis.getVoices().length) set();
+      else speechSynthesis.onvoiceschanged=set;
+      u.onend=()=>{ if(!typing) heroVideo.pause(); resolve(); };
+      u.onerror=()=>{ if(!typing) heroVideo.pause(); resolve(); };
+    });
+  }
+
+  // ====== Normalizar + render de tablas
   function normalizeMarkdownTables(md){
     if(!md || !md.trim()) return '';
-    let m = md.trim();
-
-    // si todo viene en una sola línea, forzar saltos antes de cada fila | N |
+    let m = md.replace(/\r/g,'').trim();
+    // mete saltos si todo vino pegado
     m = m.replace(/\s*\|\s*(\d+)\s*\|/g, '\n| $1 |').trim();
-
-    // si falta línea separadora, la agregamos tras la cabecera
-    const lines = m.split('\n');
-    if(lines.length>=2 && !/^(\s*\|[-\s:]+\|)+\s*$/.test(lines[1])){
-      const cols = (lines[0].match(/\|/g) || []).length - 1;
-      if(cols>0){ lines.splice(1,0,'|'+'---|'.repeat(cols)); m = lines.join('\n'); }
+    // arregla guiones raros
+    m = m.split('\n').map(l=>l.replace(/[—–-]{3,}/g,'---')).join('\n');
+    // une filas partidas
+    const L=m.split('\n'); const fixed=[];
+    for(let i=0;i<L.length;i++){
+      const line=L[i].trim();
+      if(i>0 && (line.split('|').length<3) && fixed.length){
+        fixed[fixed.length-1]=(fixed[fixed.length-1]+' '+line).trim();
+      }else fixed.push(line);
     }
-    return m;
+    // inserta separador si falta
+    if(fixed.length>=2 && !/^(\s*\|[-\s:]+\|)+\s*$/.test(fixed[1])){
+      const cols=(fixed[0].match(/\|/g)||[]).length-1;
+      if(cols>0) fixed.splice(1,0,'|'+'---|'.repeat(cols));
+    }
+    return fixed.join('\n').replace(/\|\s*/g,'| ').replace(/\s*\|/g,' |');
   }
   function renderTablesMarkdown(md){
-    const el = tableOutput;
-    if(!md || !md.trim()){ el.innerHTML=''; return; }
+    if(!md || !md.trim()){ tableOutput.innerHTML=''; return; }
     const m = normalizeMarkdownTables(md);
     try{
-      el.innerHTML = marked.parse(m);
+      tableOutput.innerHTML = marked.parse(m);
     }catch{
-      // Fallback simple
       const rows = m.split('\n').map(r=>r.replace(/^\||\|$/g,'').split('|').map(c=>c.trim()));
-      const head = rows[0]||[]; const body = rows.slice(2);
+      const head=rows[0]||[], body=rows.slice(2);
       let html = '<table><thead><tr>'+head.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>';
       body.forEach(r=>{ html+='<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>'; });
-      html+='</tbody></table>'; el.innerHTML=html;
+      html+='</tbody></table>'; tableOutput.innerHTML=html;
     }
   }
 
-  // ====== Llamada al backend ======
+  // ====== Backend
   async function ask(q){
     q = String(q||'').replace(/\*/g,'').trim();
     if(!q) return;
@@ -184,79 +203,102 @@
       });
       if(!resp.ok) throw new Error('Error API');
       const data = await resp.json();
-
       const texto  = String(data.texto||data.text||'').replace(/\*/g,'');
       const tablas = String(data.tablas_markdown||'').replace(/\*/g,'');
 
-      await typeInto(textOutput, texto);
+      await typeInto(textOutput,texto);
       renderTablesMarkdown(tablas);
       await speak(texto);
     }catch(e){
       await typeInto(textOutput,'Ocurrió un problema. Intenta otra vez.');
     }finally{
-      document.getElementById('sendBtn').disabled = false;
+      document.getElementById('sendBtn').disabled=false;
     }
   }
 
-  // ====== Botones ======
-  document.getElementById('sendBtn').onclick = () => ask(questionEl.value);
-  questionEl.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='Enter') ask(questionEl.value); });
-  document.getElementById('clearBtn').onclick = () => { textOutput.innerHTML=''; tableOutput.innerHTML=''; };
-  document.getElementById('muteBtn').onclick  = () => { ttsEnabled=!ttsEnabled; };
-  document.getElementById('newSessionBtn').onclick = () => { sessionId='S-'+new Date().toISOString().replace(/[:.]/g,'-'); textOutput.innerHTML=''; tableOutput.innerHTML=''; questionEl.value=''; };
+  // ====== Botones
+  document.getElementById('sendBtn').onclick = ()=>ask(questionEl.value);
+  questionEl.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='Enter') ask(questionEl.value); });
+  document.getElementById('clearBtn').onclick = ()=>{ textOutput.innerHTML=''; tableOutput.innerHTML=''; };
+  document.getElementById('muteBtn').onclick  = ()=>{
+    ttsEnabled = !ttsEnabled;
+    if(!ttsEnabled) window.speechSynthesis.cancel();
+    document.getElementById('muteBtn').textContent = ttsEnabled ? '🔇 Silenciar voz' : '🔊 Activar voz';
+  };
+  document.getElementById('newSessionBtn').onclick = ()=>{
+    sessionId='S-'+new Date().toISOString().replace(/[:.]/g,'-');
+    textOutput.innerHTML=''; tableOutput.innerHTML=''; questionEl.value='';
+  };
 
-  // ====== Dictado ======
+  // ====== Dictado SIN repeticiones
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec=null, listening=false;
-  function ensureRec(){ if(!SR) return null; const r = new SR(); r.lang='es-MX'; r.interimResults=true; r.continuous=false; return r; }
+  function ensureRec(){
+    if(!SR) return null;
+    const r = new SR(); r.lang='es-MX'; r.interimResults=false; r.continuous=false; return r;
+  }
   document.getElementById('micBtn').onclick = ()=>{
     if(!rec) rec = ensureRec();
     if(!rec){ alert('Dictado no disponible en este navegador.'); return; }
     if(!listening){
-      rec.start(); listening=true; document.getElementById('micBtn').classList.add('primary');
-      rec.onresult = e => { const t = Array.from(e.results).map(r=>r[0].transcript).join(' '); questionEl.value = (questionEl.value+' '+t).trim(); };
-      rec.onend = ()=>{ listening=false; document.getElementById('micBtn').classList.remove('primary'); };
-      rec.onerror = ()=>{ listening=false; document.getElementById('micBtn').classList.remove('primary'); };
+      listening=true; document.getElementById('micBtn').classList.add('primary');
+      rec.start();
+      rec.onresult = e=>{
+        const res = e.results[e.results.length-1];
+        if(res && res.isFinal){
+          const t=res[0].transcript.trim();
+          questionEl.value = (questionEl.value+' '+t).trim();
+        }
+      };
+      rec.onend  = ()=>{ listening=false; document.getElementById('micBtn').classList.remove('primary'); };
+      rec.onerror= ()=>{ listening=false; document.getElementById('micBtn').classList.remove('primary'); };
     }else{
       rec.stop(); listening=false; document.getElementById('micBtn').classList.remove('primary');
     }
   };
 
-  // ====== Exportar ======
+  // ====== Exportar (PDF con previsualización)
   document.getElementById('exportBtn').onclick = async ()=>{
     const type = document.getElementById('exportType').value;
     const container = document.createElement('div');
+    container.style.padding='16px';
     container.innerHTML = `
-      <h1>Sesión ${sessionId}</h1>
+      <h1 style="margin:0 0 8px">Sesión ${sessionId}</h1>
       <h2>Pregunta</h2><div class="mono">${(questionEl.value||'').replace(/</g,'&lt;')}</div>
       <h2>Respuesta</h2><div>${textOutput.innerHTML}</div>
       <h2>Tablas y Listas</h2><div>${tableOutput.innerHTML}</div>
     `;
     if(type==='pdf'){
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({ unit:'pt', format:'a4' });
-      const canvas = await html2canvas(container,{scale:2,windowWidth:1000});
-      const img = canvas.toDataURL('image/png');
-      const w = pdf.internal.pageSize.getWidth(); const p=16;
-      const prop = pdf.getImageProperties(img); const ratio = Math.min((w-p*2)/prop.width,1);
-      pdf.addImage(img,'PNG',p,p,prop.width*ratio,prop.height*ratio);
-      pdf.save(`sesion-${sessionId}.pdf`);
+      const w=window.open('','_blank');
+      if(!w){ alert('Bloqueado por el navegador. Habilita ventanas emergentes.'); return; }
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+        <title>Previsualización PDF</title>
+        <style>
+          body{font-family:system-ui,-apple-system,Segoe UI,Roboto;margin:24px;}
+          table{border-collapse:collapse;width:100%}
+          th,td{border:1px solid #ddd;padding:6px 8px}
+          th{background:#f8fafc}
+        </style>
+        </head><body>${container.innerHTML}
+        <script>window.onload=()=>window.print();<\/script>
+      </body></html>`);
+      w.document.close();
     }else if(type==='xlsx'){
-      const wb = XLSX.utils.book_new();
-      const texto = textOutput.innerText||'';
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[`Sesión ${sessionId}`],['Respuesta'],[texto]]), 'Texto');
-      const tables = Array.from(tableOutput.querySelectorAll('table'));
+      const wb=XLSX.utils.book_new();
+      const texto=textOutput.innerText||'';
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Respuesta'],[texto]]), 'Texto');
+      const tables=Array.from(tableOutput.querySelectorAll('table'));
       if(!tables.length){
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['No hay tablas']]), 'Tablas');
       }else{
         tables.forEach((tbl,i)=>{
-          const rows = Array.from(tbl.querySelectorAll('tr')).map(tr=>Array.from(tr.children).map(td=>td.innerText));
+          const rows=Array.from(tbl.querySelectorAll('tr')).map(tr=>Array.from(tr.children).map(td=>td.innerText));
           XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), `Tabla_${i+1}`);
         });
       }
       XLSX.writeFile(wb, `sesion-${sessionId}.xlsx`);
     }else{
-      const blob = new Blob([`<!doctype html><meta charset='utf-8'>${container.innerHTML}`],{type:'application/msword'});
+      const blob=new Blob([`<!doctype html><meta charset='utf-8'>${container.innerHTML}`],{type:'application/msword'});
       const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`sesion-${sessionId}.doc`; a.click(); URL.revokeObjectURL(a.href);
     }
   };
