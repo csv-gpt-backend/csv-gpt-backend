@@ -1,110 +1,171 @@
 // api/ask.js
-// (Si al activarlo te da problemas, puedes dejar comentado)
-// export const config = { runtime: 'nodejs20.x' };
-
 import fs from 'fs';
 import path from 'path';
+import Papa from 'papaparse';
+import { fileURLToPath } from 'url';
 import OpenAI from 'openai';
 
-const OPENAI_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY;
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const CSV_PATH = process.env.CSV_FILE || path.join(process.cwd(), 'datos', 'decimo.csv');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
-const client = new OpenAI({ apiKey: OPENAI_KEY });
+// ====== CONFIG ======
+const OPENAI_API_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY || '';
+const OPENAI_MODEL   = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const CSV_FILE       = process.env.CSV_FILE || 'datos/decimo.csv';
 
-// Utilidad: obtiene encabezados y primeras líneas para guiar al modelo
-function readCsvSnapshot() {
-  try {
-    const raw = fs.readFileSync(CSV_PATH, 'utf8');
-    const lines = raw.split(/\r?\n/).filter(Boolean);
-    const header = (lines[0] || '').split(',').map(s => s.trim());
-    // Para no explotar tokens, mandamos un “trozo” representativo
-    const preview = raw.slice(0, 200000); // 200k chars aprox
-    return { ok: true, header, preview };
-  } catch (e) {
-    return { ok: false, header: [], preview: '' };
-  }
+// cliente OpenAI
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+// Normaliza texto para “match” de columnas (sin acentos, minúsculas)
+const norm = s => (s??'').toString()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/\s+/g,' ').trim().toLowerCase();
+
+// Mapa de columnas esperadas (18 columnas; añade alias comunes)
+const COLMAP = {
+  nombre: ['nombre','estudiante','alumno'],
+  promedio_hab_interpersonales: [
+    'promedio de habilidades interpersonales','promedio habilidades interpersonales','interpersonales'
+  ],
+  motivacion: ['motivación','motivacion'],
+  compromiso: ['compromiso'],
+  administracion_tiempo: ['administración del tiempo','administracion del tiempo','tiempo'],
+  toma_decisiones: ['toma de decisiones','decisiones'],
+  liderazgo: ['liderazgo'],
+  promedio_hab_vida: ['promedio de habilidades para la vida','habilidades para la vida','vida'],
+  promedio_inteligencia_emocional: ['promedio de inteligencia emocional','inteligencia emocional','emocional'],
+  agresion: ['agresión','agresion'],
+  timidez: ['timidez'],
+  propension_cambio: ['propensión al cambio','propension al cambio','cambio'],
+  empatia: ['empatía','empatia'],
+  asertividad: ['asertividad'],
+  manejo_estres: ['manejo de estrés','manejo de estres','estres','estrés'],
+  resiliencia: ['resiliencia'],
+  autocontrol: ['autocontrol'],
+  comunicacion: ['comunicación','comunicacion']
+};
+
+// convierte encabezados del CSV a claves internas usando COLMAP
+function mapHeaders(csvHeaders){
+  const mapped = {};
+  csvHeaders.forEach((h,idx)=>{
+    const H = norm(h);
+    for(const key of Object.keys(COLMAP)){
+      const aliases = COLMAP[key].map(norm);
+      if(aliases.some(a => H.includes(a))){
+        mapped[key] = idx;
+        return;
+      }
+    }
+    // Fallbacks muy comunes
+    if(!mapped.nombre && /nombre/i.test(h)) mapped.nombre = idx;
+  });
+  return mapped;
 }
 
-export default async function handler(req, res) {
-  try {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Método no permitido. Usa POST con JSON.' });
-    }
-    if (!OPENAI_KEY) {
-      return res.status(200).json({
-        texto: 'Falta la clave de OpenAI (open_ai_key). Configúrala en Vercel.',
-        tablas_markdown: ''
+// crea tabla (headers & rows) según columnas pedidas
+function buildTable(dataRows, headerMap, requestedKeys=null){
+  // si no especificas columnas, usa todas las disponibles ordenadas por COLMAP:
+  const allOrder = Object.keys(COLMAP);
+  const keys = (requestedKeys && requestedKeys.length)
+    ? requestedKeys.filter(k => headerMap[k]!=null && headerMap[k]!==undefined)
+    : allOrder.filter(k => headerMap[k]!=null && headerMap[k]!==undefined);
+
+  const headers = keys.map(k => {
+    // “bonito” para título
+    return Object.values(COLMAP).includes(COLMAP[k])
+      ? COLMAP[k][0].replace(/\b\w/g, c=>c.toUpperCase())
+      : k;
+  });
+
+  const rows = dataRows.map(r => keys.map(k => r[headerMap[k]] ?? ''));
+
+  return { headers, rows };
+}
+
+// detecta qué columnas quiere el usuario
+function detectRequestedColumns(question){
+  const q = norm(question);
+  const wanted = [];
+
+  // si piden “todos los estudiantes” o “todas las columnas”
+  if(/todos? los estudiantes|todas? las columnas|todos los datos|muestrame todo|lista completa/.test(q)){
+    return []; // significa “todas”
+  }
+
+  for(const key of Object.keys(COLMAP)){
+    const aliases = COLMAP[key].map(norm);
+    if(aliases.some(a => q.includes(a))) wanted.push(key);
+  }
+
+  // si pidieron “nombre” implícito cuando pides alguna habilidad
+  if(!wanted.includes('nombre') && wanted.length) wanted.unshift('nombre');
+
+  return wanted;
+}
+
+// ====== HANDLER ======
+export default async function handler(req, res){
+  if(req.method!=='POST'){
+    res.setHeader('Content-Type','application/json');
+    return res.status(200).json({ error:'Método no permitido. Usa POST con JSON.' });
+  }
+  if(!OPENAI_API_KEY){
+    return res.status(200).json({ texto:'Falta la open_ai_key en Vercel.' });
+  }
+
+  try{
+    const { question='' } = req.body || {};
+    const csvPath = path.join(__dirname, '..', CSV_FILE);
+    const csvRaw  = fs.readFileSync(csvPath, 'utf8');
+    const parsed  = Papa.parse(csvRaw, { header:true, skipEmptyLines:true });
+
+    // Arreglo de filas crudas (array de valores) y encabezados originales
+    const csvHeaders = parsed.meta.fields || Object.keys(parsed.data[0]||{});
+    const headerMap  = mapHeaders(csvHeaders);
+    const matrix     = parsed.data.map(row => csvHeaders.map(h => (row[h]??'').toString().trim()));
+
+    // detección de columnas pedidas
+    const requested = detectRequestedColumns(question);
+
+    // tabla final
+    const tabla = buildTable(matrix, headerMap, requested);
+
+    // Texto con OpenAI (pregunta contextual, explica y/o resume)
+    const sys = `Eres una asistente pedagógica. Responde en español (es-MX). 
+Hablas breve y claro. Si el usuario pide listas/columnas, se le mostrará una tabla aparte; 
+tu texto debe ser una explicación corta.`;
+    const user = `Pregunta del usuario: """${question}"""
+Hay ${tabla.rows.length} filas en la tabla resultante y ${tabla.headers.length} columnas: ${tabla.headers.join(', ')}. 
+Explica brevemente qué se está mostrando y, si procede, cómo interpretar.`;
+
+    let texto = 'No obtuve respuesta.';
+    try{
+      const completion = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: [
+          { role:'system', content: sys },
+          { role:'user',   content: user }
+        ],
+        temperature: 0.3,
       });
+      texto = completion.choices?.[0]?.message?.content?.trim() || texto;
+    }catch(e){
+      // si falla OpenAI, al menos entrega tabla
+      texto = 'Aquí tienes la tabla solicitada.';
     }
 
-    const { question } = req.body || {};
-    if (!question || typeof question !== 'string' || !question.trim()) {
-      return res.status(200).json({ texto: 'Por favor, escribe una pregunta.', tablas_markdown: '' });
-    }
-    const q = question.trim();
-
-    const { ok, header, preview } = readCsvSnapshot();
-    const headerNote = header.length
-      ? `Encabezados reales del CSV (${header.length} columnas): ${header.join(' | ')}`
-      : `No pude leer el CSV.`;
-
-    const system = `Eres una analista educativa rigurosa. Responde SIEMPRE en español latino neutral.
-Reglas DURAS:
-- Si el usuario pide "todos los estudiantes", debes listar a TODOS sin omitir ninguno.
-- Usa EXACTAMENTE las columnas solicitadas por el usuario. Si pide varias columnas, inclúyelas todas.
-- Presenta las LISTAS/TABLAS en formato Markdown (| Col | ... |) cuando aplique.
-- Numera filas implícitamente (la UI agregará columna #).
-- Nada de "no puedo realizar". Si falta dato, explica brevemente y ofrece alternativas.
-- No uses asteriscos para resaltar (la UI los elimina).`;
-
-    const user = ok
-      ? `PREGUNTA: "${q}"
-
-${headerNote}
-
-TROZO DEL CSV (representativo, no todo):
-"""${preview}"""
-
-Instrucciones de salida:
-1) "texto": explicación clara en español (sin asteriscos).
-2) "tablas_markdown": si el usuario pidió listas/tablas, entrega TABLA en Markdown con TODAS las filas solicitadas y las columnas exactas; si pidió "todos", no omitas ninguno. Si no aplica tabla, deja vacío.
-
-Devuelve SOLO un JSON con {"texto": "...", "tablas_markdown": "..."}.`
-      : `PREGUNTA: "${q}"
-
-${headerNote}
-
-No pude leer CSV. Explica o guía al usuario con lo que sepas, en texto claro. 
-Si requiere tabla pero no hay datos, indícalo.
-Devuelve SOLO un JSON {"texto":"...","tablas_markdown":""}.`;
-
-    const completion = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user',   content: user }
-      ],
-      temperature: 0.2,
-      response_format: { type: 'json_object' }
+    res.setHeader('Content-Type','application/json');
+    return res.status(200).json({
+      texto,
+      tabla
     });
 
-    const raw = completion?.choices?.[0]?.message?.content || '{}';
-    let parsed;
-    try { parsed = JSON.parse(raw); }
-    catch { parsed = { texto: raw, tablas_markdown: '' }; }
-
-    // Saneamos por si acaso
-    const texto = String(parsed.texto || parsed.text || '').replace(/\*/g,'').trim();
-    const tablas_markdown = String(parsed.tablas_markdown || parsed.tables_markdown || '').trim();
-
-    res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json({ texto, tablas_markdown });
-  } catch (err) {
-    console.error('ASK ERROR:', err?.message || err);
+  }catch(err){
+    console.error('ASK ERROR:', err);
     return res.status(200).json({
-      texto: `Error: ${err?.message || 'Desconocido'}.`,
-      tablas_markdown: ''
+      texto: `ERROR DETECTADO: ${err?.message || JSON.stringify(err)}`,
+      tabla: { headers:[], rows:[] }
     });
   }
 }
