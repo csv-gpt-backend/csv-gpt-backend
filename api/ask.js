@@ -93,8 +93,19 @@ Responde en español latino y de forma directa para el usuario.`;
     const respuesta = completion.choices?.[0]?.message?.content?.trim() || 'No obtuve respuesta.';
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).end(JSON.stringify({ respuesta }));
-  } catch (err) {
-    console.error('ask error:', err);
-    return res.status(200).json({ respuesta: 'Ocurrió un problema procesando la consulta. Intenta nuevamente.' });
-  }
+  } 
+
+   catch (error) {
+  console.error('Error en la consulta:', error);
+  return res.status(200).json({
+    texto: 'Ocurrió un problema procesando la consulta. Intenta nuevamente.',
+    tablas_markdown: ''
+  });
+
+
+  
+  // catch (err) {
+  //  console.error('ask error:', err);
+   // return res.status(200).json({ respuesta: 'Ocurrió un problema procesando la consulta. Intenta nuevamente.' });
+  //}
 }
