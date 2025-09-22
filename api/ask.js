@@ -1,5 +1,5 @@
 // api/ask.js
-export const config = { runtime: 'nodejs20.x' };
+//export const config = { runtime: 'nodejs20.x' };
 
 import fs from 'fs';
 import path from 'path';
