@@ -94,13 +94,15 @@ Responde en español latino y de forma directa para el usuario.`;
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).end(JSON.stringify({ respuesta }));
   } 
+} catch (err) {
+  console.error('ASK ERROR:', err); // Esto saldrá también en logs de Vercel
 
-   catch (error) {
-  console.error('Error en la consulta:', error);
   return res.status(200).json({
-    texto: 'Ocurrió un problema procesando la consulta. Intenta nuevamente.',
+    texto: `ERROR DETECTADO: ${err?.message || JSON.stringify(err)}`,
     tablas_markdown: ''
   });
+}
+
 
 
   
