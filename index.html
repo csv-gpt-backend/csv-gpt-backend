@@ -1,73 +1,161 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CSV/PDF ↔ GPT (MX/EhhhhhC)</title>
-  <link rel="icon" href="data:," />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AAAAAACSV/PDF ↔ GPT (MX/Ecuador)</title>
   <style>
-    :root{
-      --bg:#fff;--ink:#111827;--muted:#6b7280;--border:#e5e7eb;
-      --blue:#2563eb;--amber:#f59e0b;--red:#dc2626
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #fff;
+      color: #000;
     }
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial}
-    .page{display:grid;grid-template-rows:auto 1fr 1fr;height:100vh}
-    header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--border);padding:12px 10px}
-    .media-row{display:grid;grid-template-columns:1fr 2fr 1fr;gap:10px;align-items:center}
-    .media-row img{width:100%;height:120px;object-fit:contain;border-radius:12px;border:1px solid var(--border);background:#fff}
-    .media-row video{width:100%;height:120px;object-fit:cover;border-radius:12px;border:none;background:#000}
-    .controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px}
-    textarea{width:min(1100px,98%);height:70px;padding:10px 12px;border:1px solid var(--border);
-      border-radius:12px;font-size:15px;resize:vertical}
-    .btn{padding:10px 14px;border:1px solid var(--border);border-radius:12px;background:#fff;font-weight:600;cursor:pointer}
-    .btn:hover{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
-    .btn.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
-    .btn.mic{font-size:18px;padding:12px 18px}
-    .btn.yellow{background:var(--amber);border-color:var(--amber)}
-    select{padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-weight:600}
-    main{display:grid;grid-template-rows:1fr 1fr;height:100%}
-    .panel{padding:12px;overflow:auto}
-    .panel+.panel{border-top:1px solid var(--border)}
-    .panel h2{margin:4px 0 10px;color:var(--muted);font-size:16px}
-    .result{max-width:1200px;margin:0 auto;line-height:1.55;font-size:15px;min-height:60px}
-    table{width:100%;border-collapse:collapse;font-size:14px}
-    th,td{border:1px solid var(--border);padding:6px 8px;text-align:left}
-    th{background:#f8fafc}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#fafafa;border:1px dashed var(--border);padding:8px;border-radius:10px}
-    .error{color:var(--red)}
+
+    /* Layout principal */
+    .page {
+      display: grid;
+      grid-template-rows: auto 1fr 1fr;
+      height: 100vh;
+    }
+
+    /* Encabezado fijo */
+    header {
+      position: sticky;
+      top: 0;
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      z-index: 10;
+      padding: 8px;
+    }
+
+    /* Primera fila: imagen izquierda, video, imagen derecha */
+    .media-row {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+    }
+
+    .media-row img {
+      width: 100%;
+      height: 140px;
+      object-fit: contain;
+    }
+
+    /* Video centrado */
+    .media-row video {
+      width: 100%;
+      height: 140px;
+      object-fit: contain;
+      background: #000;
+      border-radius: 12px;
+      border: none;
+      aspect-ratio: 16/9;
+    }
+
+    /* Caja de texto */
+    textarea {
+      width: 100%;
+      max-width: 800px;
+      margin: 10px auto;
+      display: block;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 14px;
+      resize: none;
+    }
+
+    /* Botones */
+    .controls {
+      text-align: center;
+      margin: 10px 0;
+    }
+
+    button, select, a.btn {
+      padding: 8px 14px;
+      margin: 0 4px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #fff;
+      font-size: 14px;
+    }
+
+    button.primary { background: #2563eb; color: white; }
+    button.yellow { background: #f59e0b; color: black; }
+
+    /* Paneles de resultado */
+    main {
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      height: 100%;
+    }
+
+    .panel {
+      padding: 12px;
+      overflow-y: auto;
+      border-top: 1px solid #ddd;
+    }
+
+    .panel h2 {
+      font-size: 16px;
+      margin: 0 0 8px;
+      color: #444;
+    }
+
+    .result {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* Tablas */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: left;
+    }
+    th {
+      background: #f9f9f9;
+    }
   </style>
-  <!-- Export helpers -->
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <div class="page">
     <header>
       <div class="media-row">
-        <img id="leftImg" src="/left.png" alt="Left Image" onerror="this.style.opacity=0.2" />
-        <video id="heroVideo" src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" muted playsinline></video>
-        <img id="rightImg" src="/right.png" alt="Right Image" onerror="this.style.opacity=0.2" />
+        <img src="/left.png" alt="Left Image">
+        <video id="heroVideo" 
+          src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4"
+          muted
+          playsinline
+          preload="metadata"
+          poster="/right.png">
+        </video>
+        <img src="/right.png" alt="Right Image">
       </div>
 
-      <div class="controls">
-        <textarea id="question" placeholder="Escribe tu pregunta o usa el micrófono…"></textarea>
-        <button id="sendBtn" class="btn primary">Enviar</button>
-        <button id="micBtn" class="btn mic">🎤</button>
-      </div>
+      <textarea id="question" placeholder="Escribe tu pregunta o usa el micrófono..."></textarea>
 
       <div class="controls">
+        <button id="sendBtn" class="primary">Enviar</button>
+        <button id="micBtn">🎤</button>
         <select id="exportType">
           <option value="pdf">PDF</option>
           <option value="xlsx">XLSX</option>
           <option value="doc">DOC</option>
         </select>
-        <button id="exportBtn" class="btn">Exportar</button>
-        <button id="muteBtn" class="btn">🔇 Silenciar voz</button>
-        <button id="clearBtn" class="btn">🧹 Limpiar</button>
-        <button id="newSessionBtn" class="btn yellow">🆕 Nueva sesión</button>
+        <button id="exportBtn">Exportar</button>
+        <button id="muteBtn">🔇 Silenciar voz</button>
+        <button id="clearBtn">🧹 Limpiar</button>
+        <button id="newSessionBtn" class="yellow">🆕 Nueva sesión</button>
       </div>
     </header>
 
@@ -76,6 +164,7 @@
         <h2>Respuesta</h2>
         <div id="textOutput" class="result"></div>
       </section>
+
       <section class="panel">
         <h2>Tablas y Listas</h2>
         <div id="tableOutput" class="result"></div>
@@ -83,182 +172,43 @@
     </main>
   </div>
 
-<script>
-(() => {
-  // ===== Estado de sesión =====
-  let sessionId = newSessionId();
-  let ttsEnabled = true;
-  let typing = false;
+  <script>
+    const video = document.getElementById('heroVideo');
+    const sendBtn = document.getElementById('sendBtn');
+    const textOutput = document.getElementById('textOutput');
+    const tableOutput = document.getElementById('tableOutput');
 
-  function newSessionId(){ return 'S-' + new Date().toISOString().replace(/[:.]/g,'-'); }
-  const heroVideo = document.getElementById('heroVideo');
-  const textOutput = document.getElementById('textOutput');
-  const tableOutput = document.getElementById('tableOutput');
-  const questionEl = document.getElementById('question');
-
-  // ===== Utilidades de voz =====
-  function pickSpanishFemaleVoice(){
-    const voices = window.speechSynthesis.getVoices();
-    if(!voices || !voices.length) return null;
-    const prefer=['Microsoft Sabina Online (Natural) - Spanish (Mexico)','Microsoft Dalia Online (Natural) - Spanish (Mexico)','Google español','Google español de Estados Unidos','Paulina','Lucia','Conchita','Camila','Lupe'];
-    let v = voices.find(x => /es-|es_/.test(x.lang||'') && /female|mujer|woman/i.test(x.name));
-    if(v) return v;
-    for(const n of prefer){ const cand=voices.find(x => (x.name||'').includes(n)); if(cand) return cand; }
-    return voices.find(x => (x.lang||'').startsWith('es')) || voices[0];
-  }
-  function speak(text){
-    if(!ttsEnabled) return Promise.resolve();
-    return new Promise(resolve=>{
-      const u = new SpeechSynthesisUtterance(String(text||'').replace(/\*/g,''));
-      const set = () => {
-        const v = pickSpanishFemaleVoice();
-        if(v) u.voice = v;
-        u.lang = (v && v.lang) || 'es-MX'; u.rate = 1; u.pitch = 1; u.volume = 1;
-        window.speechSynthesis.speak(u); heroVideo.play().catch(()=>{});
-      };
-      if(window.speechSynthesis.getVoices().length) set();
-      else window.speechSynthesis.onvoiceschanged = set;
-      u.onend = () => { if(!typing) heroVideo.pause(); resolve(); };
-      u.onerror = () => { if(!typing) heroVideo.pause(); resolve(); };
+    // Mostrar primer frame apenas cargue
+    window.addEventListener('load', async () => {
+      try { await video.play(); video.pause(); } catch(e) {}
     });
-  }
 
-  async function typeInto(el, text, delay=6){
-    typing = true; heroVideo.play().catch(()=>{});
-    el.innerHTML=''; 
-    const s = String(text||'');
-    for(let i=0;i<s.length;i++){
-      el.innerHTML += s[i]==='\n' ? '<br/>' : s[i];
-      if(i % 3 === 0) await new Promise(r=>setTimeout(r, delay));
-    }
-    typing = false; heroVideo.pause();
-  }
+    async function askQuestion() {
+      const question = document.getElementById('question').value.trim();
+      if (!question) return alert("Escribe una pregunta.");
 
-  function renderTablesMarkdown(md){
-    if(!md || !md.trim()){ tableOutput.innerHTML=''; return; }
-    const blocks = md.split(/\n\n+/);
-    const html = blocks.map(block=>{
-      if(/^\s*\|/.test(block) && /---/.test(block)){
-        const lines = block.trim().split(/\n/);
-        const header = lines[0].split('|').slice(1,-1).map(x=>x.trim());
-        const rows = lines.slice(2).map(l=>l.split('|').slice(1,-1).map(x=>x.trim()));
-        const thead = '<thead><tr>'+header.map(h=>`<th>${h}</th>`).join('')+'</tr></thead>';
-        const tbody = '<tbody>'+rows.map(r=>'<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('')+'</tbody>';
-        return `<table>${thead}${tbody}</table>`;
-      }
-      return `<p>${block.replace(/\n/g,'<br/>')}</p>`;
-    }).join('\n');
-    tableOutput.innerHTML = html;
-  }
+      textOutput.innerHTML = "Procesando...";
 
-  // ===== Llamada a la API =====
-  async function ask(question){
-    const q = String(question||'').replace(/\*/g,'').trim();
-    if(!q){ await typeInto(textOutput, 'Escribe una pregunta.'); return; }
-
-    document.getElementById('sendBtn').disabled = true;
-    await typeInto(textOutput, 'Procesando…');
-    tableOutput.innerHTML = '';
-
-    try{
-      const resp = await fetch(new URL('/api/ask', location.origin), {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ question: q, sessionId })
-      });
-
-      const rawText = await resp.text();
-      let data = {};
-      try{ data = JSON.parse(rawText); }catch{ data = { texto: rawText, tablas_markdown:'' }; }
-
-      if(!resp.ok){
-        await typeInto(textOutput, `Error (${resp.status}): ${data.texto || rawText}`);
-        return;
-      }
-
-      const texto = String(data.texto||'').replace(/\*/g,'');
-      const tablas = String(data.tablas_markdown||'').replace(/\*/g,'');
-
-      await typeInto(textOutput, texto);
-      renderTablesMarkdown(tablas);
-      await speak(texto);
-    }catch(err){
-      await typeInto(textOutput, 'Ocurrió un error. Por favor, intenta de nuevo.');
-    }finally{
-      document.getElementById('sendBtn').disabled = false;
-    }
-  }
-
-  // ===== Eventos =====
-  document.getElementById('sendBtn').addEventListener('click', ()=>ask(questionEl.value));
-  questionEl.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='Enter') ask(questionEl.value); });
-  document.getElementById('clearBtn').addEventListener('click', ()=>{ textOutput.innerHTML=''; tableOutput.innerHTML=''; });
-  document.getElementById('newSessionBtn').addEventListener('click', ()=>{
-    sessionId = newSessionId(); textOutput.innerHTML=''; tableOutput.innerHTML=''; questionEl.value='';
-  });
-  document.getElementById('muteBtn').addEventListener('click', ()=>{ ttsEnabled = !ttsEnabled; });
-
-  // ===== Dictado =====
-  const micBtn = document.getElementById('micBtn');
-  let rec=null,listening=false;
-  function ensureRecognizer(){
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if(!SR) return null; const r=new SR(); r.lang='es-MX'; r.interimResults=true; r.continuous=false; return r;
-  }
-  micBtn.addEventListener('click', ()=>{
-    if(!rec) rec = ensureRecognizer();
-    if(!rec){ alert('Dictado no disponible en este navegador.'); return; }
-    if(!listening){
-      rec.start(); listening=true; micBtn.classList.add('primary');
-      rec.onresult = e => { const t = Array.from(e.results).map(r=>r[0].transcript).join(' '); questionEl.value = (questionEl.value+' '+t).trim(); };
-      rec.onend = ()=>{ listening=false; micBtn.classList.remove('primary'); };
-      rec.onerror = ()=>{ listening=false; micBtn.classList.remove('primary'); };
-    }else{
-      rec.stop(); listening=false; micBtn.classList.remove('primary');
-    }
-  });
-
-  // ===== Exportar =====
-  document.getElementById('exportBtn').addEventListener('click', async ()=>{
-    const type = document.getElementById('exportType').value;
-    const container = document.createElement('div');
-    container.innerHTML = `
-      <h1>Sesión ${sessionId}</h1>
-      <h2>Pregunta</h2><div class="mono">${(questionEl.value||'').replace(/</g,'&lt;')}</div>
-      <h2>Resultado</h2><div>${textOutput.innerHTML}</div>
-      <h2>Listas / Tablas</h2><div>${tableOutput.innerHTML}</div>
-    `;
-
-    if(type==='pdf'){
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({ unit:'pt', format:'a4' });
-      const canvas = await html2canvas(container, { scale:2, windowWidth:1000 });
-      const img = canvas.toDataURL('image/png');
-      const pw = pdf.internal.pageSize.getWidth();
-      const ih = canvas.height * ((pw-32)/canvas.width);
-      pdf.addImage(img,'PNG',16,16,pw-32,ih); pdf.save(`sesion-${sessionId}.pdf`);
-    }else if(type==='xlsx'){
-      const wb = XLSX.utils.book_new();
-      const texto = textOutput.innerText || '';
-      const wsTexto = XLSX.utils.aoa_to_sheet([[`Sesión ${sessionId}`],['Resultado'],[texto]]);
-      XLSX.utils.book_append_sheet(wb, wsTexto, 'Texto');
-      const tables = Array.from(tableOutput.querySelectorAll('table'));
-      if(!tables.length){
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['No hay tablas']]), 'Tablas');
-      }else{
-        tables.forEach((tbl, i)=>{
-          const rows = Array.from(tbl.querySelectorAll('tr')).map(tr=>Array.from(tr.children).map(td=>td.innerText));
-          XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), `Tabla_${i+1}`);
+      try {
+        const res = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question })
         });
+
+        const data = await res.json();
+        textOutput.innerHTML = data.texto || "Sin respuesta";
+        tableOutput.innerHTML = data.tablas_markdown || "";
+        
+        // reproducir video mientras habla
+        video.play();
+        setTimeout(() => video.pause(), 5000);
+      } catch (err) {
+        textOutput.innerHTML = "Ocurrió un error. Por favor, intenta de nuevo.";
       }
-      XLSX.writeFile(wb, `sesion-${sessionId}.xlsx`);
-    }else{
-      const blob = new Blob([`<!doctype html><meta charset="utf-8"><body>${container.innerHTML}</body>`],
-        { type:'application/msword' });
-      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`sesion-${sessionId}.doc`; a.click(); URL.revokeObjectURL(a.href);
     }
-  });
-})();
-</script>
+
+    sendBtn.addEventListener('click', askQuestion);
+  </script>
 </body>
 </html>
