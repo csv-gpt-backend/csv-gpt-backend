@@ -71,7 +71,7 @@ Reglas DURAS:
 
 ${headerNote}
 
-TROZO DEL CSV (representativo, no todo):
+PARTE DEL ARCHIVO (representativo, no todo):
 """${preview}"""
 
 Instrucciones de salida:
