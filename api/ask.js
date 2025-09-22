@@ -92,7 +92,12 @@ Responde en español latino y de forma directa para el usuario.`;
 
     const respuesta = completion.choices?.[0]?.message?.content?.trim() || 'No obtuve respuesta.';
     res.setHeader('Content-Type', 'application/json');
-    return res.status(200).end(JSON.stringify({ respuesta }));
+    return res.status(200).json({
+  texto: respuesta,
+  tablas_markdown: ''   // o lo que corresponda si generas tablas
+});
+
+    
   } 
 } catch (err) {
   console.error('ASK ERROR:', err); // Esto saldrá también en logs de Vercel
@@ -102,12 +107,4 @@ Responde en español latino y de forma directa para el usuario.`;
     tablas_markdown: ''
   });
 }
-
-
-
-  
-  // catch (err) {
-  //  console.error('ask error:', err);
-   // return res.status(200).json({ respuesta: 'Ocurrió un problema procesando la consulta. Intenta nuevamente.' });
-  //}
 }
