@@ -1,7 +1,7 @@
 // api/ask.js – Vercel Serverless (Node.js 20)
 // Lee datos/decimo.csv, usa tu variable 'open_ai_key' y responde JSON { respuesta: "..." }
 
-export const config = { runtime: 'nodejs20.x' };
+//export const config = { runtime: 'nodejs20.x' };
 
 import fs from 'fs/promises';
 import path from 'path';
