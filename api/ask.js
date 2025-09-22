@@ -1,92 +1,100 @@
-// api/ask.js
+// api/ask.js – Vercel Serverless (Node.js 20)
+// Lee datos/decimo.csv, usa tu variable 'open_ai_key' y responde JSON { respuesta: "..." }
 
-import fs from "fs/promises";
-import path from "path";
-import { parse as parseCsv } from "csv-parse/sync";
-import OpenAI from "openai";
+export const config = { runtime: 'nodejs20.x' };
 
-export const config = { runtime: "nodejs" };
+import fs from 'fs/promises';
+import path from 'path';
+import { parse as parseCsv } from 'csv-parse/sync';
+import OpenAI from 'openai';
 
-// Soporta tu variable 'open_ai_key' (minúsculas) y también la estándar OPENAI_API_KEY
-const API_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY;
+// Usa tu variable tal como la registraste en Vercel
+const apiKey = process.env.open_ai_key || process.env.OPENAI_API_KEY || '';
+const client = apiKey ? new OpenAI({ apiKey }) : null;
 
-const openai = new OpenAI({
-  apiKey: API_KEY
-});
+// Carga CSV (intenta datos/decimo.csv y luego /decimo.csv)
+async function loadCsvRows() {
+  const roots = [process.cwd()];
+  const candidates = [
+    path.join(roots[0], 'datos', 'decimo.csv'),
+    path.join(roots[0], 'decimo.csv')
+  ];
+  let buf = null;
+  for (const p of candidates) {
+    try {
+      buf = await fs.readFile(p);
+      break;
+    } catch {}
+  }
+  if (!buf) return [];
+  const raw = buf.toString('utf8');
+  try {
+    return parseCsv(raw, { columns: true, skip_empty_lines: true });
+  } catch {
+    return parseCsv(raw, { columns: true, skip_empty_lines: true, delimiter: ';' });
+  }
+}
 
-// Ruta al CSV dentro de /datos
-const CSV_PATH = path.join(process.cwd(), "datos", "decimo.csv");
+function buildSystem() {
+  return `Eres una analista senior (voz femenina, español MX/EC). Reglas:
+- Responde SIEMPRE en español latino, sin asteriscos ni prefacios.
+- No digas "según el CSV" ni "no puedo"; si falta algo, deduce con lo disponible y explica.
+- Si piden promedios, listados, ordenamientos, cálculos: hazlos.
+- Cuando incluyas listas/tablas en texto, usa formato Markdown si te resulta natural.
+- Devuelve SOLO el texto final para el usuario.`;
+}
+
+function rowsToCompactText(rows) {
+  if (!rows?.length) return '';
+  const cols = Object.keys(rows[0]);
+  const head = cols.join(' | ');
+  const body = rows.slice(0, 120).map(r => cols.map(c => (r[c] ?? '')).join(' | ')).join('\n');
+  return `${head}\n${'-'.repeat( head.length )}\n${body}`;
+}
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") {
-      res.status(405).json({ error: "Método no permitido. Usa POST con JSON." });
-      return;
+    if (req.method !== 'POST') {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).end(JSON.stringify({ error: 'Método no permitido. Usa POST con JSON.' }));
     }
 
-    if (!API_KEY) {
-      res.status(500).json({ error: "Falta la variable de entorno 'open_ai_key' (o 'OPENAI_API_KEY')." });
-      return;
+    const body = req.body || (await req.json?.()) || {};
+    const q = String(body.q || body.question || '').trim();
+    if (!q) return res.status(400).json({ error: 'Falta el campo q' });
+
+    const rows = await loadCsvRows();
+    const csvText = rowsToCompactText(rows);
+
+    if (!client || !apiKey) {
+      // Respuesta de emergencia si no hay API key
+      const fallback = `Para calcular el promedio u otros análisis del CSV, necesito tu clave de OpenAI configurada como "open_ai_key".
+Datos disponibles: ${rows.length} filas. Ejemplo de columnas: ${rows[0] ? Object.keys(rows[0]).slice(0,6).join(', ') : 'N/D'}.`;
+      return res.status(200).json({ respuesta: fallback });
     }
 
-    // Cuerpo
-    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const q = String(body.q || body.question || "").trim();
+    const system = buildSystem();
+    const user = `PREGUNTA: ${q}
 
-    if (!q) {
-      res.status(400).json({ error: "Falta la pregunta (q / question) en el cuerpo de la solicitud." });
-      return;
-    }
+Contexto CSV (vista compacta, hasta ~120 filas):
+${csvText || '[sin datos]'}
 
-    // Leer CSV
-    let csvText = "";
-    try {
-      csvText = await fs.readFile(CSV_PATH, "utf8");
-    } catch {
-      res.status(500).json({ error: `No se encontró el archivo CSV en: ${CSV_PATH}` });
-      return;
-    }
+Responde en español latino y de forma directa para el usuario.`;
 
-    // Parsear CSV
-    let rows = [];
-    try {
-      rows = parseCsv(csvText, { columns: true, skip_empty_lines: true });
-    } catch (e) {
-      // Reintento por si el separador fuera ;
-      rows = parseCsv(csvText, { columns: true, skip_empty_lines: true, delimiter: ";" });
-    }
-
-    // Para no pasar todo el CSV si es muy grande, mandamos un preview
-    const preview = rows.slice(0, 30);
-
-    const prompt = `
-Eres una analista que responde en español (voz femenina MX/EC). 
-Responde de forma clara en español. Si corresponde, incluye tablas en Markdown.
-
-Contexto (muestra de los datos CSV):
-${JSON.stringify(preview, null, 2)}
-
-Pregunta del usuario:
-${q}
-`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // puedes cambiarlo por gpt-5.1 si tu cuenta lo permite
+    const completion = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-5.1-mini', // ajusta si tienes 5.1 completo
+      temperature: 0.2,
       messages: [
-        { role: "system", content: "Eres una analista que responde en español latino, clara y precisa. Usa tablas Markdown si aplica." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.2
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ]
     });
 
-    const respuesta = completion.choices?.[0]?.message?.content?.trim() || "No hubo respuesta del modelo.";
-
-    res.status(200).json({
-      respuesta,
-      filas_previas: preview.length
-    });
-  } catch (error) {
-    console.error("ASK ERROR:", error);
-    res.status(500).json({ error: "Error interno.", detalle: String(error?.message || error) });
+    const respuesta = completion.choices?.[0]?.message?.content?.trim() || 'No obtuve respuesta.';
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).end(JSON.stringify({ respuesta }));
+  } catch (err) {
+    console.error('ask error:', err);
+    return res.status(200).json({ respuesta: 'Ocurrió un problema procesando la consulta. Intenta nuevamente.' });
   }
 }
