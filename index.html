@@ -1,379 +1,346 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LLexium – CSV/PDF con GPT</title>
-  <link rel="icon" href="data:," />
-  <style>
-    :root {
-      --bg: #ffffff;
-      --ink: #111827;      /* zinc-900 */
-      --muted: #6b7280;    /* gray-500 */
-      --accent: #2563eb;   /* blue-600 */
-      --accent-2: #f59e0b; /* amber-500 */
-      --border: #e5e7eb;   /* gray-200 */
-      --danger: #dc2626;   /* red-600 */
-    }
-    * { box-sizing: border-box; }
-    html, body {
-      height: 100%;
-      margin: 0;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Noto Sans', 'Helvetica Neue', Arial, "Apple Color Emoji", "Segoe UI Emoji";
-    }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CCSV/PDF ↔ GPT (MX/EC)</title>
 
-    .page { display: grid; grid-template-rows: auto 1fr 1fr; height: 100dvh; }
+<style>
+  :root{
+    --bg:#fff;
+    --fg:#111;
+    --muted:#6b7280;
+    --brand:#2663ff;
+    --border:#e5e7eb;
+    --card:#fafafa;
+  }
+  html,body{height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  *{box-sizing:border-box}
 
-    header {
-      position: sticky; top: 0; z-index: 1000; background: var(--bg);
-      border-bottom: 1px solid var(--border);
-      padding: 10px 12px 12px;
-    }
+  .wrap{max-width:1160px;margin:0 auto;padding:16px}
+  .header-fixed{
+    position: sticky; top: 0; z-index: 1000;
+    background: var(--bg);
+    border-bottom:1px solid var(--border);
+    transition: box-shadow 220ms ease, backdrop-filter 220ms ease, border-color 220ms ease;
+  }
+  .header-fixed.is-stuck{
+    box-shadow: 0 6px 22px -12px rgba(0,0,0,.25);
+    backdrop-filter: saturate(1.15) blur(3px);
+    border-color: rgba(0,0,0,.06);
+  }
 
-    .media-row {
-      display: grid;
-      grid-template-columns: 1fr 2fr 1fr; /* video al centro */
-      gap: 10px; align-items: center; width: 100%;
-    }
-    .media-row img {
-      width: 100%;
-      height: 110px;
-      object-fit: contain;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: #fff;
-    }
+  .header-grid{
+    display:grid; grid-template-columns: 1fr min(720px, 70vw) 1fr;
+    align-items:center; gap:16px; padding:8px 0;
+  }
+  .brand-left img, .brand-right img{max-height:64px; width:auto; display:block}
+  .video-shell{
+    border-radius:14px; overflow:hidden; background:#000; aspect-ratio:16/6.5;
+    border:1px solid var(--border);
+  }
+  #heroVideo{width:100%; height:100%; object-fit:cover; display:block}
 
-    /* VIDEO completo (sin recortes) y 5% más estrecho */
-    .hero-video {
-      width: 95%;
-      max-width: 980px;
-      aspect-ratio: 16 / 9;
-      height: auto;
-      object-fit: contain;
-      background: #000;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      display: block;
-      margin-inline: auto;
-    }
+  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px}
+  .row{display:flex; gap:12px; flex-wrap:wrap}
+  .grow{flex:1 1 auto}
+  .textarea{
+    width:100%; min-height:64px; resize:vertical; border:1px solid var(--border);
+    padding:10px 12px; border-radius:10px; font-size:16px; outline:none;
+  }
+  .btn{
+    appearance:none; border:1px solid var(--border); background:#fff; color:#111; cursor:pointer;
+    padding:10px 14px; border-radius:10px; font-weight:600; transition:.15s ease;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn.primary{background:var(--brand); color:#fff; border-color:transparent}
+  .btn.ghost{background:#fff}
+  .btn.warn{background:#ffecec; border-color:#fbcaca; color:#a00000}
 
-    .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
-    textarea {
-      flex: 1 1 auto; min-height: 72px; max-height: 200px; width: 100%;
-      padding: 10px 12px; resize: vertical; border-radius: 12px; border: 1px solid var(--border); font-size: 15px;
-    }
-    .btn {
-      padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border);
-      background: #fff; cursor: pointer; font-weight: 600;
-    }
-    .btn:hover { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
-    .btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
-    .btn.yellow { background: var(--accent-2); color: #111; border-color: var(--accent-2); }
-    .btn.danger  { background: var(--danger); color: #fff; border-color: var(--danger); }
-    .btn.mic { font-size: 18px; padding: 12px 18px; }
-    select { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: #fff; font-weight: 600; }
+  .section-title{font-weight:700; margin:16px 0 10px}
+  .muted{color:var(--muted); font-size:14px}
 
-    main { display: grid; grid-template-rows: 1fr 1fr; height: 100%; }
-    .panel { padding: 12px; overflow-y: auto; }
-    .panel + .panel { border-top: 1px solid var(--border); }
-    .panel h2 { margin: 4px 0 10px; font-size: 16px; color: var(--muted); font-weight: 700; letter-spacing: 0.2px; }
-    .result { max-width: 1200px; margin: 0 auto; line-height: 1.55; font-size: 15px; }
-    .result p { margin: 0 0 10px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; color: #111; background: #fafafa; border: 1px dashed var(--border); border-radius: 12px; padding: 10px; }
+  #status{min-height:22px; margin-top:4px; color:var(--muted)}
+  #textOutput{white-space:pre-wrap; line-height:1.55}
+  #tableOutput{margin-top:8px}
 
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
-    th { background: #f8fafc; }
+  /* markdown tablas simple */
+  .table{width:100%; border-collapse:collapse; margin:8px 0; font-size:14px}
+  .table th,.table td{border:1px solid var(--border); padding:8px; text-align:left}
+  .table th{background:#f4f5f7}
 
-    @media (max-width: 1024px) {
-      .media-row img { height: 95px; }
-    }
-    @media (max-width: 768px) {
-      .media-row { grid-template-columns: 1fr; }
-      .media-row img { height: 80px; }
-      .hero-video { width: 96%; max-width: 800px; }
-    }
-  </style>
+  /* móvil */
+  @media (max-width: 900px){
+    .header-grid{grid-template-columns: 1fr}
+    .brand-left,.brand-right{display:none}
+  }
+</style>
 </head>
 <body>
-  <div class="page">
-    <header>
-      <div class="media-row">
-        <img id="leftImg" alt="left" src="left.png" />
-        <video
-          id="heroVideo"
-          class="hero-video"
-          src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4"
-          preload="metadata"
-          muted
-          playsinline
-          autoplay
-          loop
-        ></video>
-        <img id="rightImg" alt="right" src="right.png" />
-      </div>
 
-      <div class="controls">
-        <textarea id="question" placeholder="Escribe tu pregunta (o usa Dictado)…"></textarea>
+  <!-- HEADER: logos + video (sticky con sombra al “pegarse”) -->
+  <header class="header-fixed">
+    <div class="wrap header-grid">
+      <div class="brand-left"><img src="left.png" alt="Santillana" /></div>
+      <div class="video-shell">
+        <video id="heroVideo" autoplay muted playsinline loop preload="auto">
+          <!-- usa tu fuente actual, dejo una genérica de ejemplo por si acaso -->
+          <source src="lexium.mp4" type="video/mp4" />
+        </video>
       </div>
-      <div class="controls">
+      <div class="brand-right"><img src="right.png" alt="Compartir" /></div>
+    </div>
+  </header>
+
+  <!-- CONSULTA -->
+  <main class="wrap">
+    <div class="card">
+      <textarea id="questionInput" class="textarea" placeholder="Escribe tu pregunta o usa el micrófono…"></textarea>
+      <div class="row" style="margin-top:10px">
         <button id="sendBtn" class="btn primary">Enviar</button>
-        <button id="micBtn" class="btn mic" title="Dictado">🎤 Dictado</button>
-
-        <select id="exportType" title="Tipo de exportación">
-          <option value="pdf">PDF</option>
-          <option value="xlsx">XLSX</option>
-          <option value="doc">DOC</option>
-        </select>
-        <button id="exportBtn" class="btn">Exportar</button>
-
-        <button id="muteBtn" class="btn">🔇 Silenciar voz</button>
-        <button id="clearBtn" class="btn">🧹 Limpiar</button>
-        <button id="newSessionBtn" class="btn yellow">🆕 Nueva sesión</button>
+        <button id="dictateBtn" class="btn ghost">🎤 Dictado</button>
+        <button id="muteBtn" class="btn ghost">🔇 Silenciar voz</button>
+        <button id="clearBtn" class="btn ghost">🧹 Limpiar</button>
+        <button id="newSessionBtn" class="btn ghost">🆕 Nueva sesión</button>
+        <span id="status" class="muted grow"></span>
       </div>
-    </header>
+    </div>
 
-    <main>
-      <section class="panel" id="textPanel">
-        <h2>Respuesta</h2>
-        <div id="textOutput" class="result"></div>
-      </section>
+    <h3 class="section-title">Respuesta</h3>
+    <div id="textOutput" class="card"></div>
 
-      <section class="panel" id="tablePanel">
-        <h2>Tablas y Listas</h2>
-        <div id="tableOutput" class="result"></div>
-      </section>
-    </main>
-  </div>
+    <h3 class="section-title">Tablas y Listas</h3>
+    <div id="tableOutput" class="card"></div>
+  </main>
 
 <script>
+/* ----------------------------
+   1) Header pegado con sombra
+----------------------------- */
 (() => {
-  // ===== Estado de sesión y elementos =====
-  let sessionId = newSessionId();
-  let ttsEnabled = true;    // control por botón "Silenciar voz"
-  let typing = false;
+  const header = document.querySelector('.header-fixed');
+  if (!header) return;
 
-  const heroVideo   = document.getElementById('heroVideo');
-  const questionEl  = document.getElementById('question');
-  const textOutput  = document.getElementById('textOutput');
-  const tableOutput = document.getElementById('tableOutput');
+  const sentinel = document.createElement('div');
+  sentinel.style.position = 'absolute';
+  sentinel.style.top = '0'; sentinel.style.left = '0';
+  sentinel.style.width = '1px'; sentinel.style.height = '1px';
+  header.parentElement.insertBefore(sentinel, header);
 
-  function newSessionId() {
-    return 'S-' + new Date().toISOString().replace(/[:.]/g,'-');
-  }
-
-  function stripAsterisks(s) { return (s || '').replace(/\*/g, ''); }
-
-  // ====== TTS ======
-  function pickSpanishFemaleVoice() {
-    const voices = window.speechSynthesis.getVoices();
-    if (!voices || !voices.length) return null;
-
-    // Prioriza voces femeninas español MX/Latam
-    const preferred = [
-      'Microsoft Sabina Online (Natural) - Spanish (Mexico)',
-      'Microsoft Dalia Online (Natural) - Spanish (Mexico)',
-      'Google español de Estados Unidos',
-      'Google español',
-      'Paulina','Lucia','Conchita','Camila','Lupe'
-    ];
-
-    let candidate = voices.find(v => /es-|es_/.test(v.lang || '') && /female|mujer|woman/i.test(v.name));
-    if (candidate) return candidate;
-
-    for (const name of preferred) {
-      const v = voices.find(v => (v.name||'').includes(name));
-      if (v) return v;
-    }
-    return voices.find(v => (v.lang||'').startsWith('es')) || voices[0];
-  }
-
-  function speak(text) {
-    if (!ttsEnabled) return Promise.resolve();
-    return new Promise((resolve) => {
-      const utter = new SpeechSynthesisUtterance((text||'').replace(/\*/g,''));
-      const setVoice = () => {
-        const voice = pickSpanishFemaleVoice();
-        if (voice) utter.voice = voice;
-        utter.lang = (voice && voice.lang) || 'es-MX';
-        utter.rate = 1; utter.pitch = 1; utter.volume = 1;
-        window.speechSynthesis.speak(utter);
-        heroVideo.play().catch(()=>{});
-      };
-      if (window.speechSynthesis.getVoices().length) setVoice();
-      else window.speechSynthesis.onvoiceschanged = setVoice;
-
-      utter.onend   = () => { if (!typing) heroVideo.pause(); resolve(); };
-      utter.onerror = () => { if (!typing) heroVideo.pause(); resolve(); };
-    });
-  }
-
-  async function typeInto(el, text, delay = 8) {
-    typing = true; heroVideo.play().catch(()=>{});
-    el.innerHTML = '';
-    const s = text || '';
-    for (let i = 0; i < s.length; i++) {
-      el.innerHTML += s[i] === '\n' ? '<br/>' : s[i];
-      if (i % 3 === 0) await new Promise(r => setTimeout(r, delay));
-    }
-    typing = false; heroVideo.pause();
-  }
-
-  function renderTablesMarkdown(md) {
-    if (!md || !md.trim()) { tableOutput.innerHTML = ''; return; }
-    const blocks = md.split(/\n\n+/);
-    const htmlParts = blocks.map(block => {
-      if (/^\s*\|/.test(block) && /---/.test(block)) {
-        const lines  = block.trim().split(/\n/);
-        const header = lines[0].split('|').slice(1,-1).map(s=>s.trim());
-        const rows   = lines.slice(2).map(l => l.split('|').slice(1,-1).map(s => s.trim()));
-        const thead  = '<thead><tr>' + header.map(h=>`<th>${h}</th>`).join('') + '</tr></thead>';
-        const tbody  = '<tbody>' + rows.map(r=>'<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('') + '</tbody>';
-        return `<table>${thead}${tbody}</table>`;
-      }
-      return `<p>${block.replace(/\n/g,'<br/>')}</p>`;
-    });
-    tableOutput.innerHTML = htmlParts.join('\n');
-  }
-
-  async function ask(question) {
-    const q = stripAsterisks(question||'').trim();
-    if (!q) {
-      textOutput.textContent = 'Por favor, escribe una pregunta.';
-      return;
-    }
-
-    document.getElementById('sendBtn').disabled = true;
-    try {
-      await typeInto(textOutput, 'Procesando…');
-
-      const resp = await fetch('/api/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, sessionId })
-      });
-
-      const data = await resp.json().catch(()=>({texto:'',tablas_markdown:''}));
-      const texto  = (data.texto || data.text || '').replace(/\*/g,'');
-      const tablas = (data.tablas_markdown || data.tables_markdown || '').replace(/\*/g,'');
-
-      await typeInto(textOutput, texto || 'No se recibió respuesta.');
-      renderTablesMarkdown(tablas);
-
-      await speak(texto);
-    } catch (e) {
-      await typeInto(textOutput, 'Ocurrió un problema procesando la consulta. Intenta nuevamente.');
-    } finally {
-      document.getElementById('sendBtn').disabled = false;
-    }
-  }
-
-  // ====== Eventos de botones ======
-  document.getElementById('sendBtn').addEventListener('click', () => ask(questionEl.value));
-  questionEl.addEventListener('keydown', (e) => { if ((e.ctrlKey||e.metaKey) && e.key==='Enter') ask(questionEl.value); });
-
-  document.getElementById('clearBtn').addEventListener('click', () => {
-    textOutput.innerHTML=''; tableOutput.innerHTML='';
-  });
-
-  document.getElementById('muteBtn').addEventListener('click', () => {
-    ttsEnabled = !ttsEnabled;
-    document.getElementById('muteBtn').textContent = ttsEnabled ? '🔇 Silenciar voz' : '🔊 Activar voz';
-  });
-
-  document.getElementById('newSessionBtn').addEventListener('click', () => {
-    sessionId = newSessionId();
-    textOutput.innerHTML=''; tableOutput.innerHTML=''; questionEl.value='';
-  });
-
-  // ====== Dictado (asegurar una sola instancia y sin duplicar resultados) ======
-  let rec = null;
-  let listening = false;
-  const micBtn = document.getElementById('micBtn');
-
-  function ensureRecognizer() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return null;
-    const r = new SR();
-    r.lang = 'es-MX';
-    r.interimResults = false;
-    r.continuous = false;
-    return r;
-  }
-
-  micBtn.addEventListener('click', () => {
-    if (!rec) rec = ensureRecognizer();
-    if (!rec) { alert('Dictado no disponible en este navegador.'); return; }
-
-    if (!listening) {
-      listening = true; micBtn.classList.add('primary');
-      let collected = '';
-      rec.onresult = (e) => {
-        for (const res of e.results) collected += ' ' + res[0].transcript;
-      };
-      rec.onend = () => {
-        questionEl.value = (questionEl.value + ' ' + collected.trim()).trim();
-        listening = false; micBtn.classList.remove('primary');
-      };
-      rec.onerror = () => { listening = false; micBtn.classList.remove('primary'); };
-      rec.start();
-    } else {
-      rec.stop(); listening = false; micBtn.classList.remove('primary');
-    }
-  });
-
-  // ====== Exportar ======
-  document.getElementById('exportBtn').addEventListener('click', () => {
-    const type = document.getElementById('exportType').value;
-
-    if (type === 'pdf') {
-      // Vista previa de impresión (PDF desde el navegador)
-      const win = window.open('', '_blank');
-      const html = `
-        <html><head><meta charset="utf-8"><title>Exportar PDF</title>
-        <style>
-          body { font-family: system-ui, -apple-system, Segoe UI, Roboto; padding: 20px; }
-          h1,h2 { margin: 0 0 10px; }
-          table { width: 100%; border-collapse: collapse; }
-          th,td { border: 1px solid #e5e7eb; padding: 6px 8px; }
-          th { background: #f8fafc; }
-        </style>
-        </head><body>
-        <h1>Sesión ${sessionId}</h1>
-        <h2>Pregunta</h2><div>${(questionEl.value||'').replace(/</g,'&lt;')}</div>
-        <h2>Respuesta</h2><div>${textOutput.innerHTML}</div>
-        <h2>Tablas / Listas</h2><div>${tableOutput.innerHTML}</div>
-        <script>window.onload = () => window.print();</script>
-        </body></html>`;
-      win.document.write(html); win.document.close();
-    } else if (type === 'xlsx') {
-      alert('XLSX: por ahora usa la exportación PDF o DOC. (Si lo necesitas, te preparo XLSX luego)');
-    } else {
-      // DOC simple como HTML
-      const blob = new Blob([
-        `<!doctype html><html><head><meta charset='utf-8'></head><body>
-        <h1>Sesión ${sessionId}</h1>
-        <h2>Pregunta</h2><div>${(questionEl.value||'').replace(/</g,'&lt;')}</div>
-        <h2>Respuesta</h2><div>${textOutput.innerHTML}</div>
-        <h2>Tablas / Listas</h2><div>${tableOutput.innerHTML}</div>
-        </body></html>`
-      ], { type: 'application/msword' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `sesion-${sessionId}.doc`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    }
-  });
-
-  // Asegurar play del video en algunos navegadores
-  window.addEventListener('load', () => {
-    heroVideo && heroVideo.play().catch(()=>{});
-  });
+  const io = new IntersectionObserver(
+    (entries) => {
+      const e = entries[0];
+      if (e.isIntersecting) header.classList.remove('is-stuck');
+      else header.classList.add('is-stuck');
+    },
+    { rootMargin: `-${(header.offsetTop || 0) + 1}px 0px 0px 0px`, threshold: [0,1] }
+  );
+  io.observe(sentinel);
 })();
+
+/* --------------------------------
+   2) Voz femenina (ES-MX / ES-ES)
+---------------------------------- */
+const TTS = (() => {
+  let voices = [];
+  let preferredVoice = null;
+  let speaking = false;
+
+  const femaleMatches = [
+    /es[-_]?mx.*female/i, /mex.*female/i, /es[-_]?mx/i, /spanish.*mexico/i,
+    /es[-_]?es.*female/i, /español.*femenina/i, /spanish.*female/i
+  ];
+
+  function loadVoices() {
+    voices = speechSynthesis.getVoices() || [];
+    for (const m of femaleMatches) {
+      const v = voices.find(v => m.test(`${v.lang} ${v.name}`));
+      if (v) { preferredVoice = v; break; }
+    }
+    if (!preferredVoice) preferredVoice = voices.find(v => /^es/i.test(v.lang)) || null;
+  }
+
+  if ('speechSynthesis' in window) {
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }
+
+  function speak(text, { rate=0.98, pitch=1.02, volume=1 } = {}) {
+    if (!('speechSynthesis' in window)) return;
+    stop();
+    if (!text) return;
+    const u = new SpeechSynthesisUtterance(text);
+    if (preferredVoice) u.voice = preferredVoice;
+    u.lang = (preferredVoice && preferredVoice.lang) || 'es-MX';
+    u.rate = rate; u.pitch = pitch; u.volume = volume;
+    speaking = true;
+    u.onend = () => speaking = false;
+    u.onerror = () => speaking = false;
+    speechSynthesis.speak(u);
+  }
+  function stop(){ try{ speechSynthesis.cancel(); }catch{} speaking=false; }
+
+  return { speak, stop, get speaking(){ return speaking; } };
+})();
+
+/* -------------------------------------------------
+   3) Video sincronizado con interacción + lectura
+-------------------------------------------------- */
+const VideoSync = (() => {
+  const video = document.getElementById('heroVideo');
+  if (!video) return { onAskStart(){}, onAnswerShown(){} };
+
+  video.muted = true;
+  function fadeVolume(target=0.45, ms=350){
+    const step=50; const delta=(target-video.volume)/(ms/step); let t=0;
+    const iv=setInterval(()=>{ t+=step; let next=video.volume+delta; next=Math.min(1,Math.max(0,next)); video.volume=next; if(t>=ms) clearInterval(iv); }, step);
+  }
+  async function playSafely(){ try{ await video.play(); }catch(e){} }
+
+  return {
+    onAskStart(){ fadeVolume(0.55,400); playSafely(); },
+    onAnswerShown(){
+      if (TTS.speaking) fadeVolume(0.18,400); else fadeVolume(0.20,400);
+      setTimeout(()=>{ try{ video.pause(); }catch{} },1200);
+    }
+  };
+})();
+
+/* -------------------------------------------------------------------
+   4) UI helpers
+-------------------------------------------------------------------- */
+const $ = sel => document.querySelector(sel);
+const questionEl = $('#questionInput');
+const textOut = $('#textOutput');
+const tableOut = $('#tableOutput');
+const statusEl = $('#status');
+
+function setStatus(msg){ statusEl.textContent = msg || ''; }
+function setDisabled(disabled){
+  ['sendBtn','dictateBtn','muteBtn','clearBtn','newSessionBtn'].forEach(id=>{
+    const b = document.getElementById(id); if(b) b.disabled = !!disabled;
+  });
+}
+
+/* -------------------------------------------------------------------
+   5) Render de respuesta + markdown tabular simple
+-------------------------------------------------------------------- */
+function renderText(text){
+  textOut.textContent = text || '';
+}
+function renderTables(md=''){
+  // Si backend envía HTML, lo ponemos directo. Si envía markdown simple, puedes parsearlo aquí.
+  // Por ahora, asumimos que envía HTML de tablas (o lo dejas vacío).
+  tableOut.innerHTML = md || '';
+}
+
+/* -------------------------------------------------------------------
+   6) Llamada al backend  /api/ask
+-------------------------------------------------------------------- */
+async function askServer(question){
+  setStatus('Procesando…'); setDisabled(true);
+  try{
+    const r = await fetch('/api/ask', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ question })
+    });
+    const data = await r.json().catch(()=>({}));
+    if (!r.ok){
+      throw new Error(data?.texto || 'Hubo un error');
+    }
+    renderText(data?.texto || '');
+    renderTables(data?.tablas_markdown || '');
+    setStatus('');
+
+    // 🔊 voz + 🎬 video cuando ya está pintado
+    if (window.__onAnswerRendered) window.__onAnswerRendered();
+
+  }catch(err){
+    renderText('');
+    renderTables('');
+    setStatus('Ocurrió un problema procesando la consulta. Intenta nuevamente.');
+    console.error(err);
+  }finally{
+    setDisabled(false);
+  }
+}
+
+/* Expone para el bloque que habla y ajusta video */
+window.__onAnswerRendered = function(){
+  const plain = textOut ? textOut.innerText.trim() : '';
+  if (plain) TTS.speak(plain, {rate:0.98, pitch:1.02, volume:1});
+  VideoSync.onAnswerShown();
+};
+
+/* -------------------------------------------------------------------
+   7) Botones básicos
+-------------------------------------------------------------------- */
+$('#sendBtn').addEventListener('click', ()=>{
+  const q = (questionEl.value || '').trim();
+  if (!q){ renderText('Por favor, escribe una pregunta.'); renderTables(''); return; }
+  TTS.stop();
+  VideoSync.onAskStart();
+  askServer(q);
+});
+
+$('#clearBtn').addEventListener('click', ()=>{
+  questionEl.value=''; renderText(''); renderTables(''); setStatus('');
+  TTS.stop();
+});
+$('#muteBtn').addEventListener('click', ()=>{ TTS.stop(); try{ $('#heroVideo').volume=0.2; }catch{}; });
+$('#newSessionBtn').addEventListener('click', ()=>{
+  // Simple: limpia todo. Si luego quieres manejar ID de sesión, aquí.
+  questionEl.value=''; renderText(''); renderTables(''); setStatus('Nueva sesión iniciada.');
+  TTS.stop();
+});
+
+/* -------------------------------------------------------------------
+   8) Dictado por voz (sin duplicados, español, un solo resultado)
+-------------------------------------------------------------------- */
+const SpeechInput = (() => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let listening = false;
+
+  function available(){ return !!SR; }
+
+  function start(){
+    if (!available()) { alert('Tu navegador no soporta dictado por voz (Web Speech API).'); return; }
+    if (listening) return; // evita duplicado
+    listening = true; setStatus('🎤 Escuchando…');
+
+    recognition = new SR();
+    recognition.lang = 'es-MX';               // preferencia MX
+    recognition.interimResults = false;
+    recognition.continuous = false;           // una sola frase
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (e)=>{
+      const t = e.results?.[0]?.[0]?.transcript || '';
+      if (t){
+        questionEl.value = questionEl.value ? (questionEl.value + ' ' + t) : t;
+      }
+    };
+    recognition.onerror = (e)=>{ console.warn('STT error', e.error); };
+    recognition.onend = ()=>{ listening=false; setStatus(''); };
+
+    try{ recognition.start(); }catch{}
+  }
+
+  function stop(){
+    try{ recognition && recognition.stop(); }catch{}
+    listening = false; setStatus('');
+  }
+
+  return { start, stop, available };
+})();
+
+$('#dictateBtn').addEventListener('click', ()=>{
+  // toggle simple: si ya escuchando, se ignora; al terminar, onend limpia estado
+  SpeechInput.start();
+});
 </script>
 </body>
 </html>
