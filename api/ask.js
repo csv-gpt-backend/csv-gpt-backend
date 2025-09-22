@@ -90,11 +90,22 @@ Devuelve SOLO un JSON con esta forma exacta:
       texto: String(parsed.texto || parsed.text || '').replace(/\*/g,''),
       tablas_markdown: String(parsed.tablas_markdown || '').replace(/\*/g,'')
     });
-  } catch (err) {
-    console.error('ASK_ERROR', err?.stack || err);
-    res.status(200).json({
-      texto: 'Ocurrió un problema procesando la consulta. Verifica CSV_FILE y la API key.',
-      tablas_markdown: ''
-    });
+    
+} catch (err) {
+  console.error('ASK_ERROR', err?.stack || err);
+  const msg = (err?.response?.data?.error?.message) || err?.message || 'desconocido';
+  res.status(200).json({
+    texto: 'Error backend: ' + msg,
+    tablas_markdown: ''
+  });
+}
+
+
+
+
+
+
+
+    
   }
 }
