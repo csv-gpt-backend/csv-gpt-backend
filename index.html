@@ -1,488 +1,264 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSV GPT</title>
-    <style>
-        :root {
-            --color-primary: #007BFF;
-            --color-secondary: #28a745;
-            --color-warning: #ffc107;
-            --color-danger: #dc3545;
-            --color-light: #f8f9fa;
-            --color-dark: #343a40;
-        }
-
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: white;
-            color: var(--color-dark);
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-
-        .fixed-top {
-            position: fixed;
-            top: 0;
-            width: 100%;
-            background-color: white;
-            z-index: 1000;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .header-content {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            gap: 20px;
-        }
-
-        .header-content img, .header-content video {
-            max-height: 150px;
-            width: auto;
-            border-radius: 10px;
-        }
-
-        .header-content video {
-            max-width: 50%;
-        }
-
-        .controls-area {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-            margin-top: 20px;
-        }
-
-        .controls-top {
-            display: flex;
-            align-items: center;
-            width: 100%;
-            max-width: 800px;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .controls-top input[type="text"] {
-            flex-grow: 1;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 16px;
-        }
-
-        .controls-bottom {
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
-            gap: 10px;
-            width: 100%;
-        }
-
-        .controls-bottom button, .controls-bottom select {
-            padding: 10px 15px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background-color 0.3s ease;
-        }
-        
-        button.action-button {
-            background-color: var(--color-primary);
-            color: white;
-        }
-
-        button.action-button:hover {
-            background-color: #0056b3;
-        }
-
-        #mic-btn {
-            background-color: var(--color-secondary);
-            color: white;
-            padding: 12px 20px;
-            font-size: 16px;
-        }
-
-        #mic-btn:hover {
-            background-color: #1e7e34;
-        }
-
-        #new-session-btn {
-            background-color: var(--color-warning);
-        }
-
-        #new-session-btn:hover {
-            background-color: #d69900;
-        }
-
-        main {
-            display: flex;
-            flex-direction: column;
-            width: 100%;
-            padding: 20px;
-            box-sizing: border-box;
-            margin-top: 250px; /* Adjusted to a  ccommodate fixed header */
-        }
-
-        .content-section {
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            background-color: var(--color-light);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            max-height: 40vh; /* Ajustado para scroll */
-            overflow-y: auto; /* Permite el scroll */
-        }
-
-        #text-response-area {
-            min-height: 200px;
-        }
-
-        #table-response-area {
-            min-height: 200px;
-        }
-
-        #table-response-area table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        #table-response-area th, #table-response-area td {
-            border: 1px solid #ccc;
-            padding: 8px;
-            text-align: left;
-        }
-
-        #table-response-area th {
-            background-color: #f2f2f2;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CSV/PDF ↔ GPT (MX/EC)</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root{
+      --bg:#fff;--ink:#111827;--muted:#6b7280;--border:#e5e7eb;
+      --blue:#2563eb;--amber:#f59e0b;--red:#dc2626
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial}
+    .page{display:grid;grid-template-rows:auto 1fr 1fr;height:100vh}
+    header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--border);padding:12px 10px}
+    .media-row{display:grid;grid-template-columns:1fr 2fr 1fr;gap:10px;align-items:center}
+    .media-row img{width:100%;height:120px;object-fit:contain;border-radius:12px;border:1px solid var(--border);background:#fff}
+    .media-row video{width:100%;height:120px;object-fit:cover;border-radius:12px;border:none;background:#000}
+    .controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px}
+    textarea{width:min(1100px,98%);height:70px;padding:10px 12px;border:1px solid var(--border);
+      border-radius:12px;font-size:15px;resize:vertical}
+    .btn{padding:10px 14px;border:1px solid var(--border);border-radius:12px;background:#fff;font-weight:600;cursor:pointer}
+    .btn:hover{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+    .btn.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+    .btn.mic{font-size:18px;padding:12px 18px}
+    .btn.yellow{background:var(--amber);border-color:var(--amber)}
+    select{padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-weight:600}
+    main{display:grid;grid-template-rows:1fr 1fr;height:100%}
+    .panel{padding:12px;overflow:auto}
+    .panel+.panel{border-top:1px solid var(--border)}
+    .panel h2{margin:4px 0 10px;color:var(--muted);font-size:16px}
+    .result{max-width:1200px;margin:0 auto;line-height:1.55;font-size:15px;min-height:60px}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{border:1px solid var(--border);padding:6px 8px;text-align:left}
+    th{background:#f8fafc}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#fafafa;border:1px dashed var(--border);padding:8px;border-radius:10px}
+    .error{color:var(--red)}
+  </style>
+  <!-- Export helpers -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
+  <div class="page">
+    <header>
+      <div class="media-row">
+        <img id="leftImg" src="/left.png" alt="Left Image" onerror="this.style.opacity=0.2" />
+        <video id="heroVideo" src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" muted playsinline></video>
+        <img id="rightImg" src="/right.png" alt="Right Image" onerror="this.style.opacity=0.2" />
+      </div>
 
-    <div class="fixed-top">
-        <div class="header-content">
-            <img src="/public/left.png" alt="Left Image" id="left-img">
-            <video id="background-video" src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" muted loop></video>
-            <img src="/public/right.png" alt="Right Image" id="right-img">
-        </div>
-        
-        <div class="controls-area">
-            <div class="controls-top">
-                <input type="text" id="user-input" placeholder="Escribe tu pregunta o usa el micrófono...">
-                <button class="action-button" id="send-btn">Enviar</button>
-                <button id="mic-btn">🎙️</button>
-            </div>
-            <div class="controls-bottom">
-                <select id="export-options">
-                    <option value="">Exportar</option>
-                    <option value="pdf">PDF</option>
-                    <option value="xls">XLS</option>
-                    <option value="doc">DOC</option>
-                </select>
-                <button class="action-button" id="mute-btn">🔇 Silenciar Voz</button>
-                <button class="action-button" id="clear-btn">Limpiar</button>
-                <button id="new-session-btn">Nueva Sesión</button>
-                <a href="historial.html" target="_blank" style="text-decoration: none;">
-                    <button class="action-button">Ver Historial</button>
-                </a>
-            </div>
-        </div>
-    </div>
-    
+      <div class="controls">
+        <textarea id="question" placeholder="Escribe tu pregunta o usa el micrófono…"></textarea>
+        <button id="sendBtn" class="btn primary">Enviar</button>
+        <button id="micBtn" class="btn mic">🎤</button>
+      </div>
+
+      <div class="controls">
+        <select id="exportType">
+          <option value="pdf">PDF</option>
+          <option value="xlsx">XLSX</option>
+          <option value="doc">DOC</option>
+        </select>
+        <button id="exportBtn" class="btn">Exportar</button>
+        <button id="muteBtn" class="btn">🔇 Silenciar voz</button>
+        <button id="clearBtn" class="btn">🧹 Limpiar</button>
+        <button id="newSessionBtn" class="btn yellow">🆕 Nueva sesión</button>
+      </div>
+    </header>
+
     <main>
-        <div class="content-section" id="text-response-area">
-            <h3>Respuesta</h3>
-            <div id="text-output"></div>
-        </div>
-        <div class="content-section" id="table-response-area">
-            <h3>Tablas y Listas</h3>
-            <div id="table-output"></div>
-        </div>
+      <section class="panel">
+        <h2>Respuesta</h2>
+        <div id="textOutput" class="result"></div>
+      </section>
+      <section class="panel">
+        <h2>Tablas y Listas</h2>
+        <div id="tableOutput" class="result"></div>
+      </section>
     </main>
+  </div>
 
-    <!-- Modal para notificaciones -->
-    <div id="modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); padding:20px; background-color:#fff; border:1px solid #ccc; border-radius:8px; box-shadow:0 4px 8px rgba(0,0,0,0.2);">
-        <p id="modal-message"></p>
-        <button onclick="document.getElementById('modal').style.display='none'">Cerrar</button>
-    </div>
+<script>
+(() => {
+  // ===== Estado de sesión =====
+  let sessionId = newSessionId();
+  let ttsEnabled = true;
+  let typing = false;
 
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Variables globales
-        let db, auth, userId;
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  function newSessionId(){ return 'S-' + new Date().toISOString().replace(/[:.]/g,'-'); }
+  const heroVideo = document.getElementById('heroVideo');
+  const textOutput = document.getElementById('textOutput');
+  const tableOutput = document.getElementById('tableOutput');
+  const questionEl = document.getElementById('question');
 
-        let chatHistory = [];
+  // ===== Utilidades de voz =====
+  function pickSpanishFemaleVoice(){
+    const voices = window.speechSynthesis.getVoices();
+    if(!voices || !voices.length) return null;
+    const prefer=['Microsoft Sabina Online (Natural) - Spanish (Mexico)','Microsoft Dalia Online (Natural) - Spanish (Mexico)','Google español','Google español de Estados Unidos','Paulina','Lucia','Conchita','Camila','Lupe'];
+    let v = voices.find(x => /es-|es_/.test(x.lang||'') && /female|mujer|woman/i.test(x.name));
+    if(v) return v;
+    for(const n of prefer){ const cand=voices.find(x => (x.name||'').includes(n)); if(cand) return cand; }
+    return voices.find(x => (x.lang||'').startsWith('es')) || voices[0];
+  }
+  function speak(text){
+    if(!ttsEnabled) return Promise.resolve();
+    return new Promise(resolve=>{
+      const u = new SpeechSynthesisUtterance(String(text||'').replace(/\*/g,''));
+      const set = () => {
+        const v = pickSpanishFemaleVoice();
+        if(v) u.voice = v;
+        u.lang = (v && v.lang) || 'es-MX'; u.rate = 1; u.pitch = 1; u.volume = 1;
+        window.speechSynthesis.speak(u); heroVideo.play().catch(()=>{});
+      };
+      if(window.speechSynthesis.getVoices().length) set();
+      else window.speechSynthesis.onvoiceschanged = set;
+      u.onend = () => { if(!typing) heroVideo.pause(); resolve(); };
+      u.onerror = () => { if(!typing) heroVideo.pause(); resolve(); };
+    });
+  }
 
-        // Inicialización de Firebase
-        if (Object.keys(firebaseConfig).length > 0) {
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
+  async function typeInto(el, text, delay=6){
+    typing = true; heroVideo.play().catch(()=>{});
+    el.innerHTML=''; 
+    const s = String(text||'');
+    for(let i=0;i<s.length;i++){
+      el.innerHTML += s[i]==='\n' ? '<br/>' : s[i];
+      if(i % 3 === 0) await new Promise(r=>setTimeout(r, delay));
+    }
+    typing = false; heroVideo.pause();
+  }
 
-            onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    userId = user.uid;
-                    console.log("Usuario autenticado con UID:", userId);
-                } else {
-                    const __initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                    try {
-                        if (__initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    } catch (error) {
-                        console.error("Error signing in:", error);
-                    }
-                }
-            });
-        } else {
-            console.error("Firebase config not available. Session saving will not work.");
-        }
+  function renderTablesMarkdown(md){
+    if(!md || !md.trim()){ tableOutput.innerHTML=''; return; }
+    const blocks = md.split(/\n\n+/);
+    const html = blocks.map(block=>{
+      if(/^\s*\|/.test(block) && /---/.test(block)){
+        const lines = block.trim().split(/\n/);
+        const header = lines[0].split('|').slice(1,-1).map(x=>x.trim());
+        const rows = lines.slice(2).map(l=>l.split('|').slice(1,-1).map(x=>x.trim()));
+        const thead = '<thead><tr>'+header.map(h=>`<th>${h}</th>`).join('')+'</tr></thead>';
+        const tbody = '<tbody>'+rows.map(r=>'<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('')+'</tbody>';
+        return `<table>${thead}${tbody}</table>`;
+      }
+      return `<p>${block.replace(/\n/g,'<br/>')}</p>`;
+    }).join('\n');
+    tableOutput.innerHTML = html;
+  }
 
-        // DOM elements
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const micBtn = document.getElementById('mic-btn');
-        const exportOptions = document.getElementById('export-options');
-        const muteBtn = document.getElementById('mute-btn');
-        const clearBtn = document.getElementById('clear-btn');
-        const newSessionBtn = document.getElementById('new-session-btn');
-        const video = document.getElementById('background-video');
-        const textOutput = document.getElementById('text-output');
-        const tableOutput = document.getElementById('table-output');
+  // ===== Llamada a la API =====
+  async function ask(question){
+    const q = String(question||'').replace(/\*/g,'').trim();
+    if(!q){ await typeInto(textOutput, 'Escribe una pregunta.'); return; }
 
-        let isMuted = false;
-        let isRecording = false;
+    document.getElementById('sendBtn').disabled = true;
+    await typeInto(textOutput, 'Procesando…');
+    tableOutput.innerHTML = '';
 
-        // --- Funciones de la Aplicación ---
+    try{
+      const resp = await fetch(new URL('/api/ask', location.origin), {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ question: q, sessionId })
+      });
 
-        // Función para mostrar notificaciones
-        function showNotification(message) {
-            const modal = document.getElementById('modal');
-            const modalMessage = document.getElementById('modal-message');
-            modalMessage.textContent = message;
-            modal.style.display = 'block';
-        }
+      const rawText = await resp.text();
+      let data = {};
+      try{ data = JSON.parse(rawText); }catch{ data = { texto: rawText, tablas_markdown:'' }; }
 
-        // Manejo del video
-        function playVideo() {
-            video.currentTime = 0;
-            video.play();
-        }
+      if(!resp.ok){
+        await typeInto(textOutput, `Error (${resp.status}): ${data.texto || rawText}`);
+        return;
+      }
 
-        function pauseVideo() {
-            video.pause();
-        }
+      const texto = String(data.texto||'').replace(/\*/g,'');
+      const tablas = String(data.tablas_markdown||'').replace(/\*/g,'');
 
-        // Manejo de la voz (Texto a Voz)
-        // La voz de mujer en español ecuatoriano/mexicano se gestionará en el backend como solicitaste.
-        // Aquí solo se simulará la reproducción de voz.
-        async function speakResponse(text) {
-            // Simulamos la duración de la voz
-            const duration = text.length * 50; // 50ms por caracter
-            playVideo();
-            await new Promise(resolve => setTimeout(resolve, duration));
-            pauseVideo();
-        }
+      await typeInto(textOutput, texto);
+      renderTablesMarkdown(tablas);
+      await speak(texto);
+    }catch(err){
+      await typeInto(textOutput, 'Ocurrió un error. Por favor, intenta de nuevo.');
+    }finally{
+      document.getElementById('sendBtn').disabled = false;
+    }
+  }
 
-        // Manejo del micrófono (Voz a Texto)
-        if ('webkitSpeechRecognition' in window) {
-            const recognition = new webkitSpeechRecognition();
-            recognition.continuous = false;
-            recognition.lang = 'es-MX'; // Idioma español
-            recognition.interimResults = false;
+  // ===== Eventos =====
+  document.getElementById('sendBtn').addEventListener('click', ()=>ask(questionEl.value));
+  questionEl.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='Enter') ask(questionEl.value); });
+  document.getElementById('clearBtn').addEventListener('click', ()=>{ textOutput.innerHTML=''; tableOutput.innerHTML=''; });
+  document.getElementById('newSessionBtn').addEventListener('click', ()=>{
+    sessionId = newSessionId(); textOutput.innerHTML=''; tableOutput.innerHTML=''; questionEl.value='';
+  });
+  document.getElementById('muteBtn').addEventListener('click', ()=>{ ttsEnabled = !ttsEnabled; });
 
-            micBtn.addEventListener('click', () => {
-                if (isRecording) {
-                    recognition.stop();
-                    isRecording = false;
-                    micBtn.textContent = '🎙️';
-                } else {
-                    recognition.start();
-                    isRecording = true;
-                    micBtn.textContent = '🔴 Grabando...';
-                    showNotification('Escuchando...');
-                }
-            });
+  // ===== Dictado =====
+  const micBtn = document.getElementById('micBtn');
+  let rec=null,listening=false;
+  function ensureRecognizer(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR) return null; const r=new SR(); r.lang='es-MX'; r.interimResults=true; r.continuous=false; return r;
+  }
+  micBtn.addEventListener('click', ()=>{
+    if(!rec) rec = ensureRecognizer();
+    if(!rec){ alert('Dictado no disponible en este navegador.'); return; }
+    if(!listening){
+      rec.start(); listening=true; micBtn.classList.add('primary');
+      rec.onresult = e => { const t = Array.from(e.results).map(r=>r[0].transcript).join(' '); questionEl.value = (questionEl.value+' '+t).trim(); };
+      rec.onend = ()=>{ listening=false; micBtn.classList.remove('primary'); };
+      rec.onerror = ()=>{ listening=false; micBtn.classList.remove('primary'); };
+    }else{
+      rec.stop(); listening=false; micBtn.classList.remove('primary');
+    }
+  });
 
-            recognition.onresult = (event) => {
-                const transcript = event.results[0][0].transcript;
-                userInput.value = transcript;
-                isRecording = false;
-                micBtn.textContent = '🎙️';
-                showNotification('Grabación finalizada.');
-            };
+  // ===== Exportar =====
+  document.getElementById('exportBtn').addEventListener('click', async ()=>{
+    const type = document.getElementById('exportType').value;
+    const container = document.createElement('div');
+    container.innerHTML = `
+      <h1>Sesión ${sessionId}</h1>
+      <h2>Pregunta</h2><div class="mono">${(questionEl.value||'').replace(/</g,'&lt;')}</div>
+      <h2>Resultado</h2><div>${textOutput.innerHTML}</div>
+      <h2>Listas / Tablas</h2><div>${tableOutput.innerHTML}</div>
+    `;
 
-            recognition.onerror = (event) => {
-                console.error("Error de reconocimiento de voz:", event.error);
-                showNotification('Error en el reconocimiento de voz. Por favor, intenta de nuevo.');
-                isRecording = false;
-                micBtn.textContent = '🎙️';
-            };
-        } else {
-            micBtn.style.display = 'none';
-            console.error("Reconocimiento de voz no soportado en este navegador.");
-        }
-
-        // Enviar pregunta
-        sendBtn.addEventListener('click', async () => {
-            const question = userInput.value.trim();
-            if (question === '') {
-                showNotification("Por favor, ingresa una pregunta.");
-                return;
-            }
-
-            textOutput.innerHTML = "Analizando tu pregunta...";
-            tableOutput.innerHTML = "";
-            userInput.value = "";
-
-            try {
-                // Paso 1: Leer los archivos locales. En un entorno real, esto se haría
-                // a través de un backend. Aquí simulamos la lectura.
-                const pdfFiles = ['emocionales.pdf', 'lexium.pdf', 'evaluaciones.pdf'];
-                const csvFile = '/datos/decimo.csv';
-                
-                const formData = new FormData();
-                formData.append('question', question);
-
-                const filesToProcess = [...pdfFiles, csvFile];
-                for (const filePath of filesToProcess) {
-                    try {
-                        const response = await fetch(filePath);
-                        if (!response.ok) throw new Error(`Error al cargar el archivo: ${filePath}`);
-                        const blob = await response.blob();
-                        formData.append('files', blob, filePath.substring(filePath.lastIndexOf('/') + 1));
-                    } catch (e) {
-                        console.error(`Error procesando el archivo ${filePath}:`, e);
-                        showNotification(`Error: No se pudo cargar el archivo ${filePath}.`);
-                        return;
-                    }
-                }
-
-                // Paso 2: Conexión con el backend del usuario
-                const response = await fetch('https://csv-gpt-backend.vercel.app', {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Error del servidor: ${response.statusText}`);
-                }
-
-                const data = await response.json();
-                
-                // Asumiendo que el backend devuelve un objeto con 'text' y 'tables'
-                const { text, tables } = data;
-
-                // Mostrar la respuesta de texto
-                textOutput.innerHTML = text;
-
-                // Reproducir la respuesta de voz (simulación) y controlar el video
-                if (!isMuted) {
-                    await speakResponse(text);
-                }
-
-                // Mostrar las tablas si existen
-                if (tables && tables.length > 0) {
-                    let tableHTML = '';
-                    tables.forEach(table => {
-                        tableHTML += `<table><thead><tr>`;
-                        table.columns.forEach(col => {
-                            tableHTML += `<th>${col}</th>`;
-                        });
-                        tableHTML += `</tr></thead><tbody>`;
-                        table.data.forEach(row => {
-                            tableHTML += `<tr>`;
-                            row.forEach(cell => {
-                                tableHTML += `<td>${cell}</td>`;
-                            });
-                            tableHTML += `</tr>`;
-                        });
-                        tableHTML += `</tbody></table>`;
-                    });
-                    tableOutput.innerHTML = tableHTML;
-                } else {
-                    tableOutput.innerHTML = "<p>No hay tablas o listas para mostrar.</p>";
-                }
-
-                // Guardar la sesión en la memoria de la página
-                chatHistory.push({ question, text, tables });
-                
-            } catch (error) {
-                console.error("Error al obtener la respuesta:", error);
-                textOutput.innerHTML = "Ocurrió un error. Por favor, intenta de nuevo.";
-            }
+    if(type==='pdf'){
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit:'pt', format:'a4' });
+      const canvas = await html2canvas(container, { scale:2, windowWidth:1000 });
+      const img = canvas.toDataURL('image/png');
+      const pw = pdf.internal.pageSize.getWidth();
+      const ih = canvas.height * ((pw-32)/canvas.width);
+      pdf.addImage(img,'PNG',16,16,pw-32,ih); pdf.save(`sesion-${sessionId}.pdf`);
+    }else if(type==='xlsx'){
+      const wb = XLSX.utils.book_new();
+      const texto = textOutput.innerText || '';
+      const wsTexto = XLSX.utils.aoa_to_sheet([[`Sesión ${sessionId}`],['Resultado'],[texto]]);
+      XLSX.utils.book_append_sheet(wb, wsTexto, 'Texto');
+      const tables = Array.from(tableOutput.querySelectorAll('table'));
+      if(!tables.length){
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['No hay tablas']]), 'Tablas');
+      }else{
+        tables.forEach((tbl, i)=>{
+          const rows = Array.from(tbl.querySelectorAll('tr')).map(tr=>Array.from(tr.children).map(td=>td.innerText));
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), `Tabla_${i+1}`);
         });
-
-        // Botón para silenciar la voz
-        muteBtn.addEventListener('click', () => {
-            isMuted = !isMuted;
-            muteBtn.textContent = isMuted ? '🔊 Habilitar Voz' : '🔇 Silenciar Voz';
-        });
-
-        // Botón para limpiar
-        clearBtn.addEventListener('click', () => {
-            userInput.value = '';
-            textOutput.innerHTML = '';
-            tableOutput.innerHTML = '';
-        });
-
-        // Botón de nueva sesión (borra memoria y guarda en Firestore)
-        newSessionBtn.addEventListener('click', async () => {
-            if (chatHistory.length > 0) {
-                if (db && userId) {
-                    try {
-                        const sessionsRef = collection(db, `artifacts/${appId}/users/${userId}/sessions`);
-                        await setDoc(doc(sessionsRef), {
-                            timestamp: new Date(),
-                            history: chatHistory
-                        });
-                        showNotification("Sesión guardada y reiniciada.");
-                    } catch (e) {
-                        console.error("Error al guardar la sesión:", e);
-                        showNotification("Error al guardar la sesión. Intenta de nuevo.");
-                    }
-                }
-            }
-            chatHistory = [];
-            userInput.value = '';
-            textOutput.innerHTML = '';
-            tableOutput.innerHTML = '';
-            showNotification("Nueva sesión iniciada.");
-        });
-
-        // Función para exportar (PDF, XLS, DOC)
-        exportOptions.addEventListener('change', (event) => {
-            const format = event.target.value;
-            if (format) {
-                // Aquí iría la lógica de exportación. Necesitarías una biblioteca
-                // como jspdf, SheetJS, o similar.
-                // Como ejemplo, mostraremos una notificación.
-                showNotification(`La función de exportar a ${format.toUpperCase()} está en desarrollo.`);
-                exportOptions.value = ""; // Resetea el selector
-            }
-        });
-
-    </script>
+      }
+      XLSX.writeFile(wb, `sesion-${sessionId}.xlsx`);
+    }else{
+      const blob = new Blob([`<!doctype html><meta charset="utf-8"><body>${container.innerHTML}</body>`],
+        { type:'application/msword' });
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`sesion-${sessionId}.doc`; a.click(); URL.revokeObjectURL(a.href);
+    }
+  });
+})();
+</script>
 </body>
 </html>
