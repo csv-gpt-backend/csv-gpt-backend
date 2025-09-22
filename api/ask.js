@@ -1,85 +1,92 @@
-import fs from "fs";
+// api/ask.js
+
+import fs from "fs/promises";
 import path from "path";
-import Papa from "papaparse";
+import { parse as parseCsv } from "csv-parse/sync";
 import OpenAI from "openai";
 
-export const config = {
-  runtime: "nodejs"
-};
+export const config = { runtime: "nodejs" };
 
-// Ruta al CSV dentro de /datos
-const csvFilePath = path.join(process.cwd(), "datos", "decimo.csv");
+// Soporta tu variable 'open_ai_key' (minúsculas) y también la estándar OPENAI_API_KEY
+const API_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY;
 
-// Inicializar OpenAI
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: API_KEY
 });
 
+// Ruta al CSV dentro de /datos
+const CSV_PATH = path.join(process.cwd(), "datos", "decimo.csv");
+
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Método no permitido. Usa POST con JSON." });
-  }
-
   try {
-    const { q } = req.body;
-
-    if (!q || typeof q !== "string") {
-      return res.status(400).json({ error: "Falta la pregunta (q) en el cuerpo de la solicitud." });
+    if (req.method !== "POST") {
+      res.status(405).json({ error: "Método no permitido. Usa POST con JSON." });
+      return;
     }
 
-    // Verificar si existe el archivo CSV
-    if (!fs.existsSync(csvFilePath)) {
-      return res.status(500).json({
-        error: `No se encontró el archivo CSV en la ruta: ${csvFilePath}`
-      });
+    if (!API_KEY) {
+      res.status(500).json({ error: "Falta la variable de entorno 'open_ai_key' (o 'OPENAI_API_KEY')." });
+      return;
+    }
+
+    // Cuerpo
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+    const q = String(body.q || body.question || "").trim();
+
+    if (!q) {
+      res.status(400).json({ error: "Falta la pregunta (q / question) en el cuerpo de la solicitud." });
+      return;
     }
 
     // Leer CSV
-    const csvData = fs.readFileSync(csvFilePath, "utf8");
+    let csvText = "";
+    try {
+      csvText = await fs.readFile(CSV_PATH, "utf8");
+    } catch {
+      res.status(500).json({ error: `No se encontró el archivo CSV en: ${CSV_PATH}` });
+      return;
+    }
 
     // Parsear CSV
-    const parsed = Papa.parse(csvData, {
-      header: true,
-      skipEmptyLines: true
-    });
+    let rows = [];
+    try {
+      rows = parseCsv(csvText, { columns: true, skip_empty_lines: true });
+    } catch (e) {
+      // Reintento por si el separador fuera ;
+      rows = parseCsv(csvText, { columns: true, skip_empty_lines: true, delimiter: ";" });
+    }
 
-    const rows = parsed.data;
+    // Para no pasar todo el CSV si es muy grande, mandamos un preview
+    const preview = rows.slice(0, 30);
 
-    // Crear contexto con los datos del CSV
-    const context = JSON.stringify(rows.slice(0, 20), null, 2);
-
-    // Enviar a OpenAI
     const prompt = `
-      Contexto con datos del CSV:
-      ${context}
+Eres una analista que responde en español (voz femenina MX/EC). 
+Responde de forma clara en español. Si corresponde, incluye tablas en Markdown.
 
-      Pregunta del usuario:
-      ${q}
+Contexto (muestra de los datos CSV):
+${JSON.stringify(preview, null, 2)}
 
-      Por favor responde de forma clara, en español y si corresponde incluye los datos en forma de tabla Markdown.
-    `;
+Pregunta del usuario:
+${q}
+`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
+      model: "gpt-4o-mini", // puedes cambiarlo por gpt-5.1 si tu cuenta lo permite
       messages: [
-        { role: "system", content: "Eres un asistente que responde en español y genera respuestas claras." },
+        { role: "system", content: "Eres una analista que responde en español latino, clara y precisa. Usa tablas Markdown si aplica." },
         { role: "user", content: prompt }
-      ]
+      ],
+      temperature: 0.2
     });
 
-    const respuesta = completion.choices[0].message.content.trim();
+    const respuesta = completion.choices?.[0]?.message?.content?.trim() || "No hubo respuesta del modelo.";
 
-    return res.status(200).json({
+    res.status(200).json({
       respuesta,
-      dataPreview: rows.slice(0, 5)
+      filas_previas: preview.length
     });
-
   } catch (error) {
-    console.error("Error en /api/ask:", error);
-
-    return res.status(500).json({
-      error: "Error interno en el servidor.",
-      detalles: error.message
-    });
+    console.error("ASK ERROR:", error);
+    res.status(500).json({ error: "Error interno.", detalle: String(error?.message || error) });
   }
 }
