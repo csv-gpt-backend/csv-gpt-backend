@@ -1,13 +1,19 @@
 {
   "name": "csv-gpt-backend",
-  "private": true,
+  "version": "1.0.0",
+  "description": "Backend para procesar CSV y PDFs con GPT",
+  "main": "index.js",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "node api/ask.js"
+  },
   "dependencies": {
-    "openai": "^4.55.0",
-    "csv-parse": "^5.5.6"
+    "csv-parse": "^5.5.3",
+    "openai": "^4.54.0",
     "pdf-parse": "^1.1.1"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
-
-
