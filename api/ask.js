@@ -1,110 +1,140 @@
-// api/ask.js – Vercel Serverless (Node.js 20)
-// Lee datos/decimo.csv, usa tu variable 'open_ai_key' y responde JSON { respuesta: "..." }
+// api/ask.js
+export const config = {
+  runtime: 'nodejs',
+};
 
-//export const config = { runtime: 'nodejs20.x' };
-
+import OpenAI from 'openai';
 import fs from 'fs/promises';
 import path from 'path';
 import { parse as parseCsv } from 'csv-parse/sync';
-import OpenAI from 'openai';
 
-// Usa tu variable tal como la registraste en Vercel
-const apiKey = process.env.open_ai_key || process.env.OPENAI_API_KEY || '';
-const client = apiKey ? new OpenAI({ apiKey }) : null;
+function ok(v) { return v !== undefined && v !== null && String(v).trim() !== ''; }
 
-// Carga CSV (intenta datos/decimo.csv y luego /decimo.csv)
-async function loadCsvRows() {
-  const roots = [process.cwd()];
-  const candidates = [
-    path.join(roots[0], 'datos', 'decimo.csv'),
-    path.join(roots[0], 'decimo.csv')
-  ];
-  let buf = null;
-  for (const p of candidates) {
-    try {
-      buf = await fs.readFile(p);
-      break;
-    } catch {}
-  }
-  if (!buf) return [];
-  const raw = buf.toString('utf8');
+async function loadCSVMaybe(fileRel) {
   try {
-    return parseCsv(raw, { columns: true, skip_empty_lines: true });
+    const abs = path.join(process.cwd(), fileRel);
+    const buf = await fs.readFile(abs);
+    const text = buf.toString('utf8');
+    let rows = [];
+    try {
+      rows = parseCsv(text, { columns: true, skip_empty_lines: true });
+    } catch {
+      rows = parseCsv(text, { columns: true, skip_empty_lines: true, delimiter: ';' });
+    }
+    return { text, rows };
   } catch {
-    return parseCsv(raw, { columns: true, skip_empty_lines: true, delimiter: ';' });
+    // Si no existe, no hacemos nada
+    return { text: '', rows: [] };
   }
-}
-
-function buildSystem() {
-  return `Eres una analista senior (voz femenina, español MX/EC). Reglas:
-- Responde SIEMPRE en español latino, sin asteriscos ni prefacios.
-- No digas "según el CSV" ni "no puedo"; si falta algo, deduce con lo disponible y explica.
-- Si piden promedios, listados, ordenamientos, cálculos: hazlos.
-- Cuando incluyas listas/tablas en texto, usa formato Markdown si te resulta natural.
-- Devuelve SOLO el texto final para el usuario.`;
-}
-
-function rowsToCompactText(rows) {
-  if (!rows?.length) return '';
-  const cols = Object.keys(rows[0]);
-  const head = cols.join(' | ');
-  const body = rows.slice(0, 120).map(r => cols.map(c => (r[c] ?? '')).join(' | ')).join('\n');
-  return `${head}\n${'-'.repeat( head.length )}\n${body}`;
 }
 
 export default async function handler(req, res) {
+  // Evita cache en proxies
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+
+  // CORS simple (por si abres desde otro origen)
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    return res.status(204).end();
+  }
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  if (req.method !== 'POST') {
+    return res.status(200).json({ texto: 'Método no permitido. Usa POST con JSON.', tablas_markdown: '' });
+  }
+
   try {
-    if (req.method !== 'POST') {
-      res.setHeader('Content-Type', 'application/json');
-      return res.status(200).end(JSON.stringify({ error: 'Método no permitido. Usa POST con JSON.' }));
+    // 1) Entrada
+    let body = {};
+    try {
+      body = typeof req.body === 'object' && req.body !== null ? req.body : await req.json?.() || {};
+    } catch {
+      body = req.body || {};
+    }
+    const question = (body.question || body.q || '').toString().replace(/\*/g, '').trim();
+    const sessionId = (body.sessionId || '').toString();
+
+    if (!ok(question)) {
+      return res.status(200).json({
+        texto: 'Pregunta vacía. Escribe algo para analizar.',
+        tablas_markdown: ''
+      });
     }
 
-    const body = req.body || (await req.json?.()) || {};
-    const q = String(body.q || body.question || '').trim();
-    if (!q) return res.status(400).json({ error: 'Falta el campo q' });
+    // 2) Config / OpenAI client
+    const apiKey = process.env.open_ai_key || process.env.OPENAI_API_KEY;
+    if (!ok(apiKey)) {
+      return res.status(200).json({
+        texto: 'Falta la API Key. Define la variable de entorno "open_ai_key" (o OPENAI_API_KEY) en Vercel.',
+        tablas_markdown: ''
+      });
+    }
+    const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const client = new OpenAI({ apiKey });
 
-    const rows = await loadCsvRows();
-    const csvText = rowsToCompactText(rows);
+    // 3) Carga CSV opcional
+    const csvFile = process.env.CSV_FILE || 'datos/decimo.csv';
+    const { text: csvText } = await loadCSVMaybe(csvFile);
+    const csvSnippet = csvText.length > 200_000 ? csvText.slice(0, 200_000) : csvText;
 
-    if (!client || !apiKey) {
-      // Respuesta de emergencia si no hay API key
-      const fallback = `Para calcular el promedio u otros análisis del CSV, necesito tu clave de OpenAI configurada como "open_ai_key".
-Datos disponibles: ${rows.length} filas. Ejemplo de columnas: ${rows[0] ? Object.keys(rows[0]).slice(0,6).join(', ') : 'N/D'}.`;
-      return res.status(200).json({ respuesta: fallback });
+    // 4) Prompts
+    const systemPrompt = `
+Eres una analista senior (voz femenina, español MX/EC). Reglas duras:
+- Contesta SIEMPRE en español latino (MX/EC). No uses asteriscos.
+- No digas "Según el CSV..."; solo entrega la respuesta.
+- Si faltan datos, deduce con lo disponible y explica brevemente.
+- Cuando pidan listas/tablas, entrega tablas Markdown con encabezados y filas numeradas.
+- Devuelve SIEMPRE una explicación clara (podrá convertirse a voz).
+`;
+
+    const userPrompt = `
+PREGUNTA: ${question}
+
+CONTEXTOS:
+- CSV (${csvFile}): 
+${csvSnippet || '(No disponible o vacío)'}
+
+FORMATO DE SALIDA:
+Responde en texto claro. Si corresponde, incluye tablas Markdown en tu explicación o a continuación.
+`;
+
+    // 5) Llamada al modelo
+    let completion;
+    try {
+      completion = await client.chat.completions.create({
+        model: MODEL,
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ]
+      });
+    } catch (err) {
+      console.error('OpenAI ERROR:', err);
+      return res.status(200).json({
+        texto: `ERROR (OpenAI): ${err?.message || JSON.stringify(err)}`,
+        tablas_markdown: ''
+      });
     }
 
-    const system = buildSystem();
-    const user = `PREGUNTA: ${q}
+    const respuesta =
+      completion?.choices?.[0]?.message?.content?.trim() ||
+      'No obtuve respuesta del modelo.';
 
-Contexto CSV (vista compacta, hasta ~120 filas):
-${csvText || '[sin datos]'}
-
-Responde en español latino y de forma directa para el usuario.`;
-
-    const completion = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-5.1-mini', // ajusta si tienes 5.1 completo
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
-      ]
-    });
-
-    const respuesta = completion.choices?.[0]?.message?.content?.trim() || 'No obtuve respuesta.';
+    // 6) Entrega uniforme
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).json({
-  texto: respuesta,
-  tablas_markdown: ''   // o lo que corresponda si generas tablas
-});
+      texto: respuesta,
+      tablas_markdown: '' // si luego extraes tablas, ponlas aquí
+    });
 
-    
-  } 
-} catch (err) {
-  console.error('ASK ERROR:', err); // Esto saldrá también en logs de Vercel
-
-  return res.status(200).json({
-    texto: `ERROR DETECTADO: ${err?.message || JSON.stringify(err)}`,
-    tablas_markdown: ''
-  });
-}
+  } catch (err) {
+    console.error('ASK ERROR:', err);
+    return res.status(200).json({
+      texto: `ERROR DETECTADO: ${err?.message || JSON.stringify(err)}`,
+      tablas_markdown: ''
+    });
+  }
 }
