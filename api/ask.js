@@ -1,6 +1,3 @@
-// /api/ask.js — CSV + OpenAI (sin PDFs)
-// Usa tu variable open_ai_key y el CSV en datos/decimo.csv
-
 import OpenAI from 'openai';
 import fs from 'fs/promises';
 import path from 'path';
@@ -10,6 +7,22 @@ const client = new OpenAI({ apiKey: process.env.open_ai_key });
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const CSV_PATH = process.env.CSV_FILE || 'datos/decimo.csv';
 
+// ⬇️ Pega la función aquí, justo después de las variables globales
+function buildSystemPrompt() {
+  return `Eres una analista senior (voz femenina, español Ecuador/México). Reglas duras:
+- Responde SIEMPRE en español neutral latino (MX/EC). No uses asteriscos ni formato extraño.
+- Cuando entregues listas o tablas, usa **Markdown con columnas claras**:
+  | # | NOMBRE | PROMEDIO |
+  |---|--------|----------|
+  | 1 | Juan   | 90       |
+- Todas las filas deben estar separadas por saltos de línea y contener | (pipes) correctamente.
+- Devuelve SIEMPRE la respuesta en un JSON con esta estructura exacta:
+{
+  "texto": "explicación en texto claro",
+  "tablas_markdown": "tablas en formato markdown correctamente formateadas"
+}`;
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
@@ -17,87 +30,39 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Body robusto
-    let body = {};
+    // Cargar el CSV (como lo tienes ahora)
+    const abs = path.join(process.cwd(), CSV_PATH);
+    let csvRaw = '';
     try {
-      body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      csvRaw = await fs.readFile(abs, 'utf8');
     } catch {
-      res.status(400).json({ error: 'JSON inválido' });
-      return;
+      // fallback HTTP si falla FS
+      const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+      const proto = req.headers['x-forwarded-proto'] || 'https';
+      const origin = host ? `${proto}://${host}` : '';
+      const url = origin + (CSV_PATH.startsWith('/') ? CSV_PATH : `/${CSV_PATH}`);
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status} al leer ${url}`);
+      csvRaw = await r.text();
     }
 
-    const question = String(body.question || '').replace(/\*/g,'').trim();
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const question = (body.question || '').replace(/\*/g, '').trim();
+
     if (!question) {
-      res.status(200).json({ texto: 'Escribe una pregunta.', tablas_markdown: '' });
-      return;
+      return res.status(200).json({ texto: 'Escribe una pregunta.', tablas_markdown: '' });
     }
 
-// INICIO MARCE 1
-
-// --- LECTURA DEL CSV (primero FS, si falla intento HTTP al mismo dominio) ---
-const abs = path.join(process.cwd(), CSV_PATH);
-let csvRaw = '';
-
-try {
-  csvRaw = await fs.readFile(abs, 'utf8');               // 1) intenta FS
-} catch {
-  // 2) fallback: HTTP a tu propio dominio
-  try {
-    // arma el origin real del request (https://tu-dominio.vercel.app)
-    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
-    const proto = req.headers['x-forwarded-proto'] || 'https';
-    const origin = host ? `${proto}://${host}` : '';
-    const url = origin + (CSV_PATH.startsWith('/') ? CSV_PATH : `/${CSV_PATH}`);
-
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`HTTP ${r.status} al leer ${url}`);
-    csvRaw = await r.text();
-  } catch (e2) {
-    return res.status(200).json({
-      texto: `No pude leer el CSV en "${CSV_PATH}". Intenta de nuevo o verifica permisos. Detalle: ${e2.message}`,
-      tablas_markdown: ''
-    });
-  }
-}
-// --- fin lectura CSV ---
-
-
-    // FIN MARCE 1
-
-    
-    // Leer CSV
-//    const abs = path.join(process.cwd(), CSV_PATH);
-  //  let csvRaw = '';
-   // try {
-     // csvRaw = await fs.readFile(abs, 'utf8');
-//    } catch (e) {
-  //    res.status(200).json({
-    //    texto: `No pude leer el CSV en "${CSV_PATH}". Verifica que el archivo exista en el deploy.`,
-//        tablas_markdown: ''
-//      });
-//      return;
-  //  }
-
-    // Intento de parseo (opcional, por si el modelo lo usa)
-    let csvRows = [];
-    try {
-      csvRows = parseCsv(csvRaw, { columns: true, skip_empty_lines: true });
-    } catch { /* si falla, seguimos con texto plano */ }
-
-    const system = `Eres una analista senior (voz femenina, español MX/EC). Reglas duras:
-- Responde siempre en español, sin asteriscos.
-- Cumple órdenes de orden/filtrado exactamente.
-- Realiza cálculos cuando aplique (promedios, rankings, etc.).
-- Si se piden listas/tablas, entrégalas en Markdown (cabeceras + filas numeradas).
-- Devuelve SOLO un JSON con forma exacta: {"texto": string, "tablas_markdown": string}.`;
+    // Usar la función buildSystemPrompt()
+    const system = buildSystemPrompt();
 
     const user = `PREGUNTA: ${question}
 
 CONTEXTO CSV (${CSV_PATH}):
 ${csvRaw.slice(0, 200000)}
 
-FORMATO DE RESPUESTA (estricto):
-{"texto":"explicación sin asteriscos","tablas_markdown":"tablas Markdown si aplica o cadena vacía"}`;
+FORMATO ESTRICTO DE RESPUESTA:
+{"texto":"explicación sin asteriscos","tablas_markdown":"tabla en markdown o cadena vacía"}`;
 
     const completion = await client.chat.completions.create({
       model: MODEL,
@@ -110,17 +75,13 @@ FORMATO DE RESPUESTA (estricto):
     });
 
     const raw = completion.choices?.[0]?.message?.content || '{}';
-    let parsed;
-    try { parsed = JSON.parse(raw); }
-    catch { parsed = { texto: raw, tablas_markdown: '' }; }
+    const parsed = JSON.parse(raw);
 
     res.status(200).json({
-      texto: String(parsed.texto || parsed.text || '').replace(/\*/g,''),
-      tablas_markdown: String(parsed.tablas_markdown || '').replace(/\*/g,'')
+      texto: parsed.texto || '',
+      tablas_markdown: parsed.tablas_markdown || ''
     });
   } catch (err) {
-    console.error('ASK_ERROR', err?.stack || err);
-    const msg = (err?.response?.data?.error?.message) || err?.message || 'desconocido';
-    res.status(200).json({ texto: 'Error backend: ' + msg, tablas_markdown: '' });
+    res.status(200).json({ texto: `Error backend: ${err.message}`, tablas_markdown: '' });
   }
 }
