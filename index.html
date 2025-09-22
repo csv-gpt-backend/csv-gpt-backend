@@ -171,7 +171,65 @@
       </section>
     </main>
   </div>
+// INICIO MARCELO 2
+  <!-- Contenedor donde se mostrará la tabla -->
+<div id="tables" style="overflow-x:auto; margin-top:10px;"></div>
 
+<script>
+  // Función para convertir Markdown en tabla HTML
+  function renderMarkdownTable(markdown) {
+    const lines = markdown.trim().split('\n');
+    if (lines.length < 2) return '';
+
+    // Encabezados
+    const headers = lines[0].split('|').map(h => h.trim()).filter(h => h);
+
+    // Filas de datos
+    const rows = lines.slice(2).map(line =>
+      line.split('|').map(c => c.trim()).filter(c => c)
+    );
+
+    let html = '<table border="1" cellpadding="5" cellspacing="0"><thead><tr>';
+    headers.forEach(h => { html += `<th>${h}</th>`; });
+    html += '</tr></thead><tbody>';
+
+    rows.forEach(row => {
+      html += '<tr>';
+      row.forEach(cell => { html += `<td>${cell}</td>`; });
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    return html;
+  }
+
+  // Función para actualizar la sección de tablas
+  function updateTable(markdown) {
+    const container = document.getElementById('tables');
+    container.innerHTML = renderMarkdownTable(markdown);
+  }
+
+  // Ejemplo: Cuando recibes la respuesta del backend
+  async function enviarPregunta() {
+    const question = document.getElementById('question').value;
+    const res = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    const data = await res.json();
+
+    // Texto general
+    document.getElementById('answer').textContent = data.texto;
+
+    // Tabla en Markdown → HTML
+    if (data.tablas_markdown) {
+      updateTable(data.tablas_markdown);
+    }
+  }
+</script>
+
+  //FIN MARCELO 2
   <script>
     const video = document.getElementById('heroVideo');
     const sendBtn = document.getElementById('sendBtn');
