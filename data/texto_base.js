@@ -1,7 +1,8 @@
 // /data/texto_base.js
 // IMPORTANTE:
-// - No uses backticks ` dentro del texto. Si aparecen, cámbialos por comillas simples '
-// - Si tu texto contiene ${, cámbialo por \${ para evitar interpolación.
+// - Usa String.raw para no escapar \n ni \.
+// - Si tu texto tiene ${...}, escribe \${...}.
+// - No uses backticks ` dentro del contenido; usa comillas simples ' si los necesitas.
 
 export const TEXTO_BASE = String.raw`Ficha técnica
 Prueba de Habilidades Emocionales (HE)
@@ -35,4 +36,4 @@ Los grados escolares que están baremados incluyen:
 • Preparatoria (tres grados)
 • Adulto (aquellas personas que han terminado estudios a nivel de educación media y no tienen una educación formal a nivel superior)
 • Profesional (aquellas personas que cuentan con estudios a nivel universitario)
-`; // <-- MUY IMPORTANTE: este backtick de cierre y el punto y coma
+`;
