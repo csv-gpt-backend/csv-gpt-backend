@@ -3,62 +3,97 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>uuuAsistente · CSV</title>
+<title>hhAsistente · CSV</title>
 <style>
   :root{
-    --headerH: 45vh;       /* Parte fija arriba = 45% de la pantalla */
+    color-scheme: light dark;
+    --headerH: 45vh;          /* PARTE 1 = 45% de pantalla */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
-  html,body{ height:100%; margin:0; font-family:Arial, system-ui, sans-serif; background:#fff; color:#111; }
+  html,body{ height:100%; }
+  body{ margin:0; font-family:Arial, system-ui, sans-serif; background:#fff; color:#111; }
 
   /* ===== PARTE 1: FIJA (no se mueve) ===== */
   header{
     position: fixed; top:0; left:0; right:0; height:var(--headerH);
     background:#fff; border-bottom:1px solid #eee; z-index:20;
   }
+  /* Link de historial en esquina superior derecha, sutil */
   #histLink{
-    position:absolute; top:6px; right:10px; font-size:12px; color:#666; text-decoration:none;
-    opacity:.55; text-shadow:0 1px 1px rgba(0,0,0,.06); transition: opacity .15s ease;
+    position:absolute; top:6px; right:10px;
+    font-size:12px; color:#666; text-decoration:none;
+    opacity:.55; text-shadow:0 1px 1px rgba(0,0,0,.06);
+    transition: opacity .15s ease;
   }
-  #histLink:hover{ opacity:.85; text-decoration:underline; }
+  #histLink:hover{ opacity:.8; text-decoration:underline; }
 
   .topbar{
-    position:relative; height:100%;
-    display:grid; grid-template-columns:1fr 2fr 1fr; gap:12px; align-items:center; padding:0 var(--pad);
+    position:relative;
+    height:100%;
+    display:grid;
+    grid-template-columns:1fr 2fr 1fr;   /* 25% - 50% - 25% */
+    gap:12px; align-items:center; padding:0 var(--pad);
   }
-  .topbar img{ max-height: calc(var(--headerH) - 48px); width:auto; object-fit:contain; }
-  .video-wrap{ width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; }
-  .video-box{ width:100%; height:75%; display:flex; align-items:center; justify-content:center; }
-  .video-box video{ width:100%; height:100%; object-fit:contain; border:0; background:#fff; }
+  .topbar img{
+    max-height: calc(var(--headerH) - 48px);
+    width: auto; object-fit: contain;
+  }
+  .video-wrap{
+    width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; /* arranca desde la primera línea */
+    padding-top: 0;
+  }
+  /* 8% más pequeño que antes: reduce la caja interior del video */
+  .video-box{
+    width: 100%;
+    height: 75%;  /* ~8% menos que el ajuste previo */
+    display:flex; align-items:center; justify-content:center;
+  }
+  .video-box video{
+    width: 100%; height: 100%;
+    object-fit: contain; border:0; background:#fff;
+  }
 
-  /* ===== Debajo de la franja fija ===== */
+  /* ===== BLOQUE INFERIOR (debajo de la franja fija) ===== */
   main{ padding-top: var(--headerH); }
-  #below{ height: calc(100vh - var(--headerH)); display:flex; flex-direction:column; min-height: 320px; }
-
-  /* PARTE 2 */
-  #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; }
-  .controls{ margin-bottom:10px; }
-  .controls .row{
-    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; width:100%;
+  #below{
+    height: calc(100vh - var(--headerH));
+    display:flex; flex-direction:column; min-height: 320px;
   }
+
+  /* PARTE 2: caja de texto + botones + respuesta */
+  #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; overflow:visible; }
+  .controls{ margin-bottom:12px; }
+  .controls .row{
+    display:flex; flex-wrap:wrap; gap:8px;
+    justify-content:center; align-items:center; width:100%; text-align:center; /* CENTRADOS respecto a la página */
+  }
+
   textarea{
     width:min(1100px,98%); height:64px; padding:10px; font-size:15px;
     border:1px solid #e6e6e6; border-radius:8px; background:#fff; outline:none;
   }
   button, select{
-    padding:10px 12px; font-size:14px; cursor:pointer; border:none; outline:none; border-radius:8px; background:#f3f3f3; color:#111;
+    padding:10px 12px; font-size:14px; cursor:pointer;
+    border:none; outline:none; border-radius:8px; background:#f3f3f3; color:#111;
   }
   button:hover, select:hover{ background:#ececec; }
-  .new{ background:#ffe082; } .stop{ background:#ffcdd2; } .mic{ font-size:18px; padding:12px 16px; }
-  h2{ margin:0 0 10px 0; font-size:18px; font-weight:normal; }
+  .mic{ font-size:18px; padding:12px 16px; }
+  .new{ background:#ffe082; }  /* botón amarillo */
+  .stop{ background:#ffcdd2; } /* botón detener voz */
+  .small{ font-size:12px; color:#666; }
+  h2{
+    margin:0 0 10px 0; font-size:18px;
+    font-family: Arial, Helvetica, sans-serif; font-weight: normal; /* Arial normal para títulos parte 2 y 3 */
+  }
   .muted{ opacity:.5; }
-  .status{ margin:6px 0 0; text-align:center; font-size:12px; color:#666; }
-  .badge{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
-  .gpt{ background:#f0e6ff; color:#402060; }
 
-  /* PARTE 3 */
-  #pane3{ flex:1 1 auto; min-height:140px; overflow:auto; padding:14px 16px; }
+  /* PARTE 3: lo que queda, con scroll propio */
+  #pane3{
+    flex:1 1 auto; min-height:140px; overflow:auto; padding:14px 16px;
+  }
+
+  /* Tablas y listas */
   table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; }
   th,td{ border:1px solid #e5e5e5; padding:6px 8px; text-align:left; vertical-align:top; }
   th{ background:#fafafa; }
@@ -68,6 +103,7 @@
 </head>
 <body>
 
+<!-- ===== PARTE 1 (FIJA 45%): IMÁGENES + VIDEO ===== -->
 <header>
   <div class="topbar">
     <a id="histLink" href="/historial.html">Historial</a>
@@ -81,13 +117,16 @@
   </div>
 </header>
 
+<!-- ===== PARTES 2 y 3 (debajo de la franja fija) ===== -->
 <main>
   <div id="below">
 
-    <!-- PARTE 2 -->
+    <!-- PARTE 2: caja de texto + botones + RESPUESTA -->
     <section id="pane2">
       <div class="controls">
-        <div class="row"><textarea id="q" placeholder="Escribe tu pregunta (o usa el micrófono)…"></textarea></div>
+        <div class="row">
+          <textarea id="q" placeholder="Escribe tu pregunta (o usa el micrófono)…"></textarea>
+        </div>
         <div class="row">
           <button id="send">Enviar</button>
           <button id="mic" class="mic">🎤 Dictar</button>
@@ -102,14 +141,13 @@
           </select>
           <button id="export">Exportar</button>
         </div>
-        <div id="status" class="status"></div>
       </div>
 
       <h2>Respuesta (texto e información general)</h2>
       <div id="general"></div>
     </section>
 
-    <!-- PARTE 3 -->
+    <!-- PARTE 3: LISTAS/TABLAS (con scroll propio) -->
     <section id="pane3">
       <h2>Listas numeradas y tablas</h2>
       <div id="lists"></div>
@@ -120,51 +158,130 @@
 </main>
 
 <script>
-/* ============ Warmup + flush cache al cargar ============ */
-window.addEventListener("load", ()=>{ fetch("/api/answer?flush=1&q=__warmup").catch(()=>{}); });
+/* ========= Warmup + flush cache al cargar ========= */
+window.addEventListener("load", ()=>{
+  fetch("/api/answer?flush=1&q=__warmup").catch(()=>{});
+});
 
-/* ============ Voz femenina ============ */
+/* ========= Voz femenina fija en ES (bloqueada) ========= */
 const FEMALE_PRIORITY = [
   "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
   "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
   "Microsoft Helena Online (Natural) - Spanish (Spain)",
   "Microsoft Camila Online (Natural) - Spanish (Colombia)",
   "Microsoft Lorena Online (Natural) - Spanish (Mexico)",
-  "Google español de Estados Unidos","Google español","Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
+  "Google español de Estados Unidos", "Google español",
+  "Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
 ];
-function pickFemaleVoice(){
+const VOICE_KEY = "voz-femenina-preferida";
+let voices = [];
+function pickFemaleSpanishLocked(){
   const all = speechSynthesis.getVoices();
-  for(const name of FEMALE_PRIORITY){
-    const v=all.find(x=>x.name===name);
-    if(v) return v;
+  const saved = localStorage.getItem(VOICE_KEY);
+  if (saved){
+    const vSaved = all.find(v=>v.name===saved);
+    if (vSaved) return vSaved;
+    localStorage.removeItem(VOICE_KEY);
   }
-  return all.find(x=>/es/i.test(x.lang));
+  for (const name of FEMALE_PRIORITY){
+    const v = all.find(v=>v.name===name);
+    if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  }
+  let v = all.find(v=>/es|span/i.test(v.lang) && /(female|mujer|woman|Sabina|Dalia|Helena|Camila|Ana|Lucia|Isabel)/i.test(v.name));
+  if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  v = all.find(v=>/es/i.test(v.lang));
+  if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  return null;
 }
-let muted=false, speaking=false;
-const vid = document.getElementById("vid");
+speechSynthesis.onvoiceschanged = ()=>{ voices = speechSynthesis.getVoices(); };
+voices = speechSynthesis.getVoices();
+
+let muted=false;
+const vid=document.getElementById("vid");
+/* Para repetir el video mientras haya locución */
+let speaking = false;
 
 function speak(text){
   if(!text) return;
   const u=new SpeechSynthesisUtterance(text);
-  const v=pickFemaleVoice();
-  u.lang = v?.lang || "es-MX"; if(v) u.voice=v;
+  const v=pickFemaleSpanishLocked();
+  u.lang = v?.lang || "es-MX";
+  if (v) u.voice=v;
   u.volume = muted ? 0 : 1;
-  u.rate=1; u.pitch=1;
-  u.onstart=()=>{ speaking=true; vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{}); };
-  u.onend=()=>{ speaking=false; vid.loop=false; vid.pause(); };
+  u.rate = 1; u.pitch = 1;
+
+  u.onstart = ()=>{
+    speaking = true;
+    try {
+      vid.currentTime = 0;
+      vid.loop = true;             // repetir mientras hable
+      vid.play().catch(()=>{});
+    } catch {}
+  };
+  u.onend = ()=>{
+    speaking = false;
+    try {
+      vid.loop = false;
+      vid.pause();
+    } catch {}
+  };
   speechSynthesis.speak(u);
 }
-document.getElementById("stop").onclick=()=>{ speechSynthesis.cancel(); speaking=false; vid.loop=false; vid.pause(); };
-document.getElementById("mute").onclick=()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
 
-/* ============ UI helpers ============ */
-const q=document.getElementById("q"), $gen=document.getElementById("general"), $lists=document.getElementById("lists"), $tables=document.getElementById("tables"), $status=document.getElementById("status");
-function setBusy(b){ document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=b; el.style.opacity=b?.7:1; }); }
+/* Botón detener voz */
+document.getElementById("stop").onclick = ()=>{
+  try { speechSynthesis.cancel(); } catch {}
+  speaking = false;
+  try { vid.loop = false; vid.pause(); } catch {}
+};
 
-/* render listas / tablas */
+/* ========= Dictado (voz a texto) ========= */
+let rec,recOn=false;
+function toggleRec(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ alert("Reconocimiento de voz no soportado."); return; }
+  if(!rec){ rec=new SR(); rec.lang="es-MX"; rec.continuous=false; rec.interimResults=false; }
+  if(!recOn){
+    rec.start(); recOn=true; mic.classList.add("muted");
+    rec.onresult=e=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); };
+    rec.onend   =()=>{ recOn=false; mic.classList.remove("muted"); };
+  }else{ rec.stop(); recOn=false; mic.classList.remove("muted"); }
+}
+
+/* ========= Sesiones ========= */
+let sessionId="s-"+Date.now();
+let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
+const storeKey="sesiones-v1";
+function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
+function saveSession(){
+  const all=loadAllSessions();
+  const i=all.findIndex(s=>s.id===session.id);
+  if(i>=0) all[i]=session; else all.unshift(session);
+  localStorage.setItem(storeKey, JSON.stringify(all));
+}
+
+/* ========= UI ========= */
+const q=document.getElementById("q");
+const $gen=document.getElementById("general");
+const $lists=document.getElementById("lists");
+const $tables=document.getElementById("tables");
+const mic=document.getElementById("mic");
+
+document.getElementById("mute").onclick = ()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
+document.getElementById("clear").onclick= ()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; };
+document.getElementById("new").onclick  = ()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
+mic.onclick = toggleRec;
+
+/* ========= Render listas/tablas ========= */
 function renderLists(lists){
   $lists.innerHTML="";
-  if(!lists || !lists.length) return;
+  if(!lists||(Array.isArray(lists)&&lists.length===0)) return;
+  if(Array.isArray(lists) && typeof lists[0]==="string"){
+    const wrap=document.createElement("div"); wrap.className="list-card";
+    const ol=document.createElement("ol");
+    lists.forEach(item=>{ const li=document.createElement("li"); li.textContent=item; ol.appendChild(li); });
+    wrap.appendChild(ol); $lists.appendChild(wrap); return;
+  }
   (lists||[]).forEach(L=>{
     const wrap=document.createElement("div"); wrap.className="list-card";
     if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
@@ -180,14 +297,19 @@ function renderTables(tables){
     const table=document.createElement("table");
     const thead=document.createElement("thead");
     const trh=document.createElement("tr");
+
+    /* SIEMPRE añadimos columna # al comienzo (numerar desde 1) */
     const cols = t.columns && t.columns.length ? ["#", ...t.columns] : ["#"];
     cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
     thead.appendChild(trh);
+
     const tbody=document.createElement("tbody");
     (t.rows||[]).forEach((r,idx)=>{
       const tr=document.createElement("tr");
       const tdIdx=document.createElement("td"); tdIdx.textContent=String(idx+1); tr.appendChild(tdIdx);
-      (Array.isArray(r)?r:[r]).forEach(v=>{ const td=document.createElement("td"); td.textContent=v; tr.appendChild(td); });
+      (Array.isArray(r)?r:[r]).forEach(v=>{
+        const td=document.createElement("td"); td.textContent=v; tr.appendChild(td);
+      });
       tbody.appendChild(tr);
     });
     table.appendChild(thead); table.appendChild(tbody);
@@ -195,48 +317,105 @@ function renderTables(tables){
   });
 }
 
-/* ============ Enviar pregunta ============ */
+/* ========= Enviar ========= */
 document.getElementById("send").onclick = async ()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
 
-  setBusy(true);
-  const t0=performance.now();
-  $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML=""; $status.textContent="";
+  $gen.innerHTML="<em>Analizando…</em>";
+  $lists.innerHTML=""; $tables.innerHTML="";
 
-  try {
-    const r = await fetch("/api/answer",{
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ question: prompt })
-    }).then(x=>x.json());
+  const r=await fetch("/api/answer",{
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ question: prompt })
+  }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
 
-    const t1=performance.now();
-    const ms=Math.max(1, Math.round(t1-t0));
+  if(!r.ok){ $gen.textContent="Hubo un problema al analizar."; return; }
 
-    if(!r.ok){
-      $gen.textContent = "Hubo un problema al analizar: " + (r.error||"desconocido");
-      $status.textContent = "";
-      setBusy(false);
-      return;
-    }
+  const ans=r.answer||{};
+  $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
+  renderLists(ans.lists||ans.lista||[]);
+  renderTables(ans.tables||[]);
+  speak(ans.general||""); // locutar TODO el texto
 
-    const ans=r.answer||{};
-    $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
-    renderLists(ans.lists||[]);
-    renderTables(ans.tables||[]);
-
-    $status.innerHTML = `Listo en ${ms/1000}s <span class="badge gpt">🧠 GPT-5</span>`;
-    speak(ans.general||"");
-  } catch(e){
-    $gen.textContent = "Error: " + e.message;
-  }
-  setBusy(false);
+  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans });
+  saveSession();
 };
 
-/* limpiar */
-document.getElementById("clear").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; };
-document.getElementById("new").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
+/* ========= Exportar (toda la sesión activa) ========= */
+function sessionToHTML(sess){
+  const headerThumbs = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <img src="/left.png" alt="left" style="height:50px"/>
+      <video src="${vid.currentSrc||vid.src}" width="120" muted></video>
+      <img src="/right.png" alt="right" style="height:50px"/>
+    </div>
+  `;
+  let html = `<h1>Sesión ${sess.id}</h1><p>Iniciada: ${new Date(sess.startedAt).toLocaleString()}</p>${headerThumbs}`;
+  for(const it of (sess.items||[]).slice().reverse()){
+    html += `<hr><h2 style="font-family:Arial; font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
+    const a = it.a||{};
+    html += `<h2 style="font-family:Arial; font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
+    if (a.lists && a.lists.length){
+      html += `<h3 style="font-family:Arial; font-weight:normal;">Listas</h3>`;
+      a.lists.forEach(L=>{
+        html += `<h4>${L.title||""}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`;
+      });
+    }
+    if (a.tables && a.tables.length){
+      html += `<h3 style="font-family:Arial; font-weight:normal;">Tablas</h3>`;
+      a.tables.forEach(t=>{
+        const cols = ["#", ...(t.columns||[])];
+        html += `<h4>${t.title||"Tabla"}</h4><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%"><thead><tr>`;
+        cols.forEach(c=> html += `<th>${c}</th>` );
+        html += `</tr></thead><tbody>`;
+        (t.rows||[]).forEach((row,idx)=>{
+          const arr = Array.isArray(row)?row:[row];
+          html += `<tr><td>${idx+1}</td>` + arr.map(v=>`<td>${v}</td>`).join("") + `</tr>`;
+        });
+        html += `</tbody></table>`;
+      });
+    }
+  }
+  return html;
+}
+
+document.getElementById("export").onclick=()=>{
+  const kind=document.getElementById("exportKind").value;
+  const html = sessionToHTML(session);
+
+  if(kind==="pdf"){
+    const w = window.open("", "_blank");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+      <title>Exportación Sesión</title>
+      <style>body{font-family:Arial, sans-serif;}</style></head><body>${html}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  } else if(kind==="doc"){
+    const blob=new Blob([`<html><head><meta charset="UTF-8"></head><body>${html}</body></html>`],{type:"application/msword"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.doc`; a.click();
+  } else if(kind==="xls"){
+    // Exporta todas las tablas de la sesión en CSV múltiple
+    let csv="";
+    (session.items||[]).forEach(it=>{
+      const a=it.a||{};
+      (a.tables||[]).forEach(t=>{
+        csv += (t.title||"Tabla") + "\n";
+        const header = ["#", ...(t.columns||[])];
+        csv += header.map(h=>`"${String(h).replace(/"/g,'""')}"`).join(",") + "\n";
+        (t.rows||[]).forEach((row,idx)=>{
+          const arr = Array.isArray(row)?row:[row];
+          const line = [String(idx+1), ...arr.map(v=>String(v))];
+          csv += line.map(x=>`"${x.replace(/"/g,'""')}"`).join(",") + "\n";
+        });
+        csv += "\n";
+      });
+    });
+    const blob=new Blob([csv],{type:"application/vnd.ms-excel"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.xls`; a.click();
+  }
+};
 </script>
 </body>
 </html>
