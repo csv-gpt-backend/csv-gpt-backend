@@ -1,12 +1,11 @@
 // /api/answer.js
-// Analiza TXT (embebido), CSV (/datos/decimo.csv) y PDFs opcionales (/datos/pdfs/*.pdf)
-// y llama a OpenAI con tu clave (env: open_ai_key u OPENAI_API_KEY).
+// Analiza TXT embebido, CSV y PDFs opcionales
 import fs from "fs";
 import path from "path";
 
 export const config = { runtime: "nodejs" };
 
-// ---------- Utilidades ----------
+// Limitar longitud para evitar que OpenAI se sature
 function clip(s, max = 80000) {
   s = String(s || "");
   return s.length > max ? s.slice(0, max) + `\n[... recortado ...]` : s;
@@ -16,18 +15,18 @@ function safeRead(p) {
   try { return fs.readFileSync(p, "utf8"); } catch { return ""; }
 }
 
+// Lectura básica de PDFs como texto (si tienes pdf-parse instalado)
 async function readPDFsOrTxt() {
   const base = path.join(process.cwd(), "datos", "pdfs");
   try {
     if (!fs.existsSync(base)) return { text: "", files: [] };
     const files = fs.readdirSync(base).filter(f => f.toLowerCase().endsWith(".pdf"));
     if (files.length === 0) {
-      // admite .txt de respaldo
+      // Si no hay PDFs, admite .txt
       const txts = fs.readdirSync(base).filter(f => f.toLowerCase().endsWith(".txt"));
       const text = txts.map(f => safeRead(path.join(base, f))).join("\n\n");
       return { text, files: txts };
     }
-    // Intento de extracción con pdf-parse (si está instalado)
     try {
       const pdfParse = (await import("pdf-parse")).default;
       const out = [];
@@ -38,7 +37,6 @@ async function readPDFsOrTxt() {
       }
       return { text: out.join("\n\n"), files };
     } catch {
-      // Si no hay dependencias, no rompemos: el usuario puede subir .txt extraídos
       return { text: "", files };
     }
   } catch {
@@ -46,9 +44,8 @@ async function readPDFsOrTxt() {
   }
 }
 
-// ---------- Carga de fuentes locales ----------
+// Recolecta todas las fuentes locales
 async function gatherLocalCorpus() {
-  // 1) Texto embebido
   let textoBase = "";
   try {
     const mod = await import("../data/texto_base.js");
@@ -57,11 +54,8 @@ async function gatherLocalCorpus() {
     textoBase = "";
   }
 
-  // 2) CSV
   const csvPath = path.join(process.cwd(), "datos", "decimo.csv");
   const csv = safeRead(csvPath);
-
-  // 3) PDFs (o .txt en /datos/pdfs)
   const pdfs = await readPDFsOrTxt();
 
   return {
@@ -72,41 +66,40 @@ async function gatherLocalCorpus() {
   };
 }
 
-// ---------- OpenAI ----------
+// Llama a OpenAI usando tu API Key
 async function callOpenAI({ question, corpus, model, apiKey }) {
   const { textoBase, csv, pdfText } = corpus;
   const OpenAI = (await import("openai")).default;
   const client = new OpenAI({ apiKey });
 
   const system = `
-Eres una analista experta. Responde en ESPAÑOL neutro (MX/EC), con precisión.
+Eres una analista experta. Responde en ESPAÑOL neutro.
 REGLAS:
-- Ignora cualquier * (asteriscos) de la entrada.
-- No digas "según el archivo CSV", ni "no puedo realizar".
-- Puedes hacer cálculos psicométricos, promedios, regresiones simples, progresiones y estadística básica.
-- Cuando el usuario pida listas o tablas, entrégalos como tablas estructuradas.
-- Devuelve EXCLUSIVAMENTE JSON válido con esta forma:
+- Ignora cualquier * (asteriscos).
+- No digas "según el archivo CSV".
+- Puedes hacer cálculos psicométricos, promedios, regresiones simples y estadística.
+- Cuando haya listas o tablas, entrégalos como tablas JSON.
+- Devuelve EXCLUSIVAMENTE JSON con:
 {
-  "general": "<texto con explicación y cálculo si aplica>",
+  "general": "texto explicación",
   "tables": [
-    {"title":"...","columns":["Col1","Col2",...],"rows":[["v1","v2"],["..."]]}
+    {"title":"...","columns":["Col1","Col2"],"rows":[["v1","v2"]]}
   ]
 }
-No incluyas triple backticks ni texto fuera del JSON.
 `;
 
   const user = `
-PREGUNTA: ${String(question || "").replaceAll("*","")}
+PREGUNTA: ${question.replaceAll("*","")}
 
-FUENTES DISPONIBLES (puedes combinarlas):
+FUENTES DISPONIBLES:
 [TXT embebido]
-${textoBase ? textoBase : "(vacío)"}
+${textoBase || "(vacío)"}
 
 [CSV decimo.csv]
-${csv ? csv : "(vacío)"}
+${csv || "(vacío)"}
 
 [PDF/TXT]
-${pdfText ? pdfText : "(vacío)"}
+${pdfText || "(vacío)"}
 `;
 
   const resp = await client.chat.completions.create({
@@ -123,7 +116,7 @@ ${pdfText ? pdfText : "(vacío)"}
   return JSON.parse(content);
 }
 
-// ---------- Handler ----------
+// Endpoint
 export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   try {
@@ -132,7 +125,7 @@ export default async function handler(req, res) {
     const model = String(body.model || "");
     const apiKey = process.env.open_ai_key || process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ ok: false, error: "Falta la variable de entorno open_ai_key / OPENAI_API_KEY." });
+      return res.status(500).json({ ok: false, error: "Falta la variable open_ai_key en Vercel" });
     }
 
     const corpus = await gatherLocalCorpus();
@@ -145,9 +138,6 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error(err);
-    return res.status(200).json({
-      ok: false,
-      error: String(err?.message || err)
-    });
+    return res.status(200).json({ ok: false, error: String(err?.message || err) });
   }
 }
