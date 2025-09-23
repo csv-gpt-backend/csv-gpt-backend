@@ -1,152 +1,314 @@
-// /data/texto_base.js
-// IMPORTANTE:
-// - Usa String.raw para no escapar \n ni \.
-// - Si tu texto tiene ${...}, escribe \${...}.
-// - No uses backticks ` dentro del contenido; usa comillas simples ' si los necesitas.
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Asistente · CSV + TXT + PDF</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    --headerH: 34vh;          /* PARTE 1 ~15% más pequeña que antes */
+    --pad: 12px;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{ margin:0; font-family:system-ui,Arial,sans-serif; background:#fff; color:#111; }
 
-export const TEXTO_BASE = String.raw`Ficha técnica
-Prueba de Habilidades Emocionales (HE)
-I. Información general
-a) Esta prueba está dirigida a:
-• Ámbito laboral, todos los niveles organizacionales.
-• Ámbito educativo, todos los grados académicos a excepción de los tres primeros grados de primaria.
-b) Esta prueba fue desarrollada por:
-• Dr. Darwin B. Nelson y Dr. Gary Low en su versión original (2004)
-• Lic. Laura Elizondo W. en los desarrollos posteriores (rediseños, actualizaciones, tropicalización y baremación 1).
+  /* ===== PARTE 1: FIJA (no se mueve) ===== */
+  header{
+    position: fixed; top:0; left:0; right:0; height:var(--headerH);
+    background:#fff; border-bottom:1px solid #eee; z-index:20;
+  }
+  .topbar{
+    height:100%;
+    display:grid;
+    grid-template-columns:1fr 2fr 1fr;   /* 25% - 50% - 25% */
+    gap:12px; align-items:center; padding:0 var(--pad);
+  }
+  .topbar img{
+    max-height: calc(var(--headerH) - 50px);
+    width: auto; object-fit: contain;
+  }
+  .video-wrap{ width:100%; height:100%; }
+  .video-wrap video{
+    width:100%; height:100%; object-fit: contain;
+    border:0; background:#fff;
+  }
 
-II. Información detallada
-La “Prueba Habilidades Emocionales” es una prueba psicométrica diseñada para evaluar 3 conjuntos de habilidades integrados por 14 subpruebas independientes.
-Habilidades Intrapersonales (3 subpruebas), Habilidades Interpersonales/ Estilo de comunicación (5 subpruebas), Habilidades para la vida/ Propensión al cambio (6 subpruebas), todo agrupado bajo un mismo nombre.
-Algunas características importantes de esta prueba son las siguientes:
-• Subjetiva: Se basa en la percepción y autoevaluación del individuo.
-• Autoadministrable: Los evaluados pueden realizar la prueba por sí mismos sin la necesidad de supervisión constante.
-• Sin límite de tiempo: Se responde de manera reflexiva.
-• Formato electrónico: La prueba se presenta en un formato digital, lo que facilita su administración y permite un procesamiento más eficiente de los resultados.
+  /* ===== BLOQUE INFERIOR (debajo de la franja fija) ===== */
+  main{ padding-top: var(--headerH); }
+  #below{
+    height: calc(100vh - var(--headerH));
+    display:flex; flex-direction:column; min-height: 320px;
+  }
 
-1. Baremación: los criterios de baremación son una herramienta que permite entender y comparar los resultados de una prueba con relación a un grupo de referencia adecuado. Los baremos ayudan a tener una evaluación más precisa y equitativa, teniendo en cuenta las características individuales y el contexto en el que se encuentra cada persona evaluada.
-2. Subprueba: Componente específico de una prueba de evaluación psicométrica diseñada para evaluar una habilidad específica. Se administra de manera independiente.
-Estas subpruebas cuentan con normas referenciales que comparan el desempeño del individuo con los resultados obtenidos por personas de su mismo nivel escolar.
-La posición relativa del evaluado dentro del grupo de referencia se indica utilizando percentiles.
-La presentación de los resultados se realiza a través de una curva de distribución de frecuencias de Gauss en percentiles y se divide en tres rangos: por desarrollar, por fortalecer y por enriquecer.
-Estos rangos representan la distribución de los puntajes en un gráfico que tiene forma acampanada y simétrica.
-Tanto en el ámbito educativo como en el empresarial cada subprueba es baremada de acuerdo con el grado académico en el que se encuentra la persona.
-Los grados escolares que están baremados incluyen:
-• Primaria (tres grados superiores)
-• Secundaria (tres grados)
-• Preparatoria (tres grados)
-• Adulto (aquellas personas que han terminado estudios a nivel de educación media y no tienen una educación formal a nivel superior)
-• Profesional (aquellas personas que cuentan con estudios de nivel superior tales como carrera profesional, especialización, postgrado, maestría o doc- torado)
-3. Grupo de referencia: Conjunto de individuos que se utiliza como base de comparación para evaluar el rendimiento, comportamiento o características de un individuo en particular.
-4. Percentiles: Se basa en la idea de dividir una muestra de datos en 100 partes iguales, donde cada parte representa un percentil. Cada percentil indica el porcentaje de personas en el grupo de referencia que obtiene un resultado igual
-o inferior al de un individuo en particular.
-5. Curva de distribución de frecuencias de Gauss: Modelo matemático utilizado para describir la variación de los datos en una distribución normal, con una forma de campana simétrica alrededor de un valor medio.
-Estos criterios de baremación, permiten comparar el desempeño del evaluado con individuos de un mismo grado académico facilitando la interpretación de los resultados con relación a su grupo de referencia correspondiente.
-Además, cada subprueba de la Prueba Habilidades Emocionales tiene las siguien- tes características:
-• Cantidad de ítems 6 pertinente: La subprueba contiene la cantidad de ítems necesarios para realizar una evaluación relevante de la habilidad específica que se está midiendo. La cantidad de ítems se determina de acuerdo con criterios establecidos para garantizar una evaluación precisa y confiable.
-• Mismos ítems: Presenta el mismo conjunto de ítems para todos los niveles académicos. Esto significa que los ítems son iguales para todos los evalua- dos, independientemente de su nivel educativo. La diferencia en los resulta- dos se debe a la posterior baremación, que permite realizar un diagnóstico por grado según el grupo de referencia correspondiente.
-• Ítems de elección múltiple: Los ítems dentro de cada subprueba están cons- truidos en base a una propuesta de rendimiento óptimo 7 utilizando una escala Likert de frecuencia 8 a tres puntos (frecuentemente, algunas veces, rara vez).
-La construcción del conjunto global conocido como Prueba Habilidades Emocio- nales se basa en el análisis de diferentes teorías y modelos en concordancia con el conjunto al que pertenece y a las subpruebas que lo integran, se mencionan a continuación las principales referencias.
-Para sustentar los 3 conjuntos de habilidades que conforman la prueba y la inclusión de los estilos de comunicación:
-6. Ítems: Preguntas, enunciados o estímulos presentados al individuo para que responda.
-7. Rendimiento óptimo: Evaluar el desempeño de un individuo en relación con un nivel de rendimiento considerado ideal o deseable de acuerdo con estándares o criterios predefinidos que reflejan un nivel de competencia o habilidad deseado en la variable que se está evaluando.
-8. Escala Likert de frecuencia: Técnica utilizada en la investigación social y de opinión para medir el grado de acuerdo o desacuerdo de una persona con respecto a una afirmación o pregunta específica y centra en la frecuencia con la que ocurre un comportamiento o evento.
-Habilidades Intrapersonales/ Habilidades Interpersonales
-Modelo de Inteligencias Múltiples
-Howard Gardner
-Teoría de la Autorregulación Emocional
-Daniel Goleman
-Modelo de Competencias Emocionales
-Reuven Bar-On
-Modelo de Inteligencia Emocional
-Jhon D. Mayer, Peter Salovey
-Teoría del Modelo de Inteligencia Emocional Mixta
-K. V. Petrides
-Habilidades para la vida
-Modelo de Competencias Emocionales
-Reuven Bar-On
-Teoría de la Autorregulación Emocional
-Daniel Goleman
-Modelo de Liderazgo Transformacional
-Bernard Bass, Bruce J. Avolio
-Teoría del Modelo de Inteligencia Emocional Mixta
-K. V. Petrides
-Modelo de Toma de Decisiones
-Herbert A Simon
-Modelo de Manejo del Estrés
-Richard Lazarus, Susan Folkman
-Modelo de Administración del Tiempo
-Stephen R Covey
-Teoría del aprendizaje social
-Albert Bandura
-Estilos de comunicación
-Modelo de Espacios Personales
-Irwin Altman, Dalmas Taylor
-Teoría de la Agresión
-Albert Bandura
-Modelo de la Timidez
-Philip Zimbardo
-III. Subpruebas
-Subpruebas
-Cantidad de ítems
-Total por conjunto
-Autoestima
-46
-Manejo de la tensión
-25
-Bienestar físico
-20
-Habilidades Intrapersonales	91
-Asertividad
-18
-Conciencia de los demás
-12
-Empatía
-12
-Agresión
-18
-Timidez
-18
-Habilidades Interpersonales/	78
-Estilo de Comunicación
-Motivación
-24
-Compromiso
-12
-Administración del tiempo
-12
-Toma de decisiones
-10
-Liderazgo
-12
-Propensión al cambio
-14
-Habilidades para la vida/	84
-Propensión al cambio
-IV. Características psicométricas del instrumento
-1. Confiabilidad 9
-El coeficiente de consistencia interna es una medida comúnmente utilizada para evaluar la confiabilidad de una prueba psicométrica compuesta por múltiples ítems o preguntas.
-Para determinar la consistencia interna de cada una de las subpruebas se utilizó el Coeficiente Alpha de Cronbach 10.
-El coeficiente Alpha de Cronbach varía entre 0 y 1. Cuanto más cercano esté a 1, mayor será la consistencia interna de los ítems del cuestionario.
-Los coeficientes calculados para las subpruebas contenidas en la Prueba Habili- dades Emocionales son de magnitud alta a muy alta. El coeficiente promedio de todas las subpruebas es de 0.77, sugiriendo que:
-• Se está midiendo de manera coherente el mismo constructo ya que los ítems de la prueba están correlacionados entre sí de manera positiva y consistente.
-• Un nivel adecuado de fiabilidad de la prueba por lo que tiene una buena capacidad para producir resultados consistentes y estables a lo largo del tiempo y en diferentes situaciones, lo que aumenta la confianza en los re- sultados obtenidos.
-• Homogeneidad satisfactoria de los ítems de la prueba, lo que implica que los ítems están midiendo aspectos similares del constructo que se pretende evaluar, lo que aumenta la validez interna de la prueba.
-• Se cuentan con una adecuada consistencia, lo cual confirma su confiabi- lidad y proporciona una base sólida para su utilización en contextos de evaluación psicométrica y toma de decisiones informada.
-9. Confiabilidad: Capacidad de una prueba para proporcionar resultados consistentes y reproducibles en diferentes momentos o en diferentes muestras.
-10. Coeficiente Alpha de Cronbach: Medida que indica la confiabilidad y consistencia interna de un cuestionario, asegurando que las preguntas o ítems de un cuestionario están midiendo de manera coherente el mismo constructo y brindando infor- mación sobre la calidad del instrumento de medición.
-2. Validez 11
-Tomando en cuenta las características específicas de las subpruebas, se utilizó la validez relacionada con el criterio que se refiere a la capacidad de una medi- da para predecir o estar relacionada con un resultado o criterio establecido. Esta puede ser de dos tipos: concurrente o predictiva.
-Para este caso se utilizó la validez concurrente, que se basa en correlacionar los resultados obtenidos en cada subprueba con un criterio externo relevante. En este caso se utilizó el coeficiente de correlación “r” de Pearson.
-Para cada subprueba se correlacionaron los resultados de una muestra represen- tativa de evaluados obteniendo una correlación de entre 0.73 a 0.78, estos pun- tajes son indicativos de correlaciones altas y sugieren que las subpruebas:
-• Tienen la capacidad de predecir o explicar de manera significativa el desempeño en los criterios establecidos.
-• Tienen una base sólida para utilizar los resultados en la predicción de comportamientos, desempeño o resultados futuros relacionados con el constructo evaluado.
-• Ofrecen una perspectiva única y valiosa para comprender y evaluar el constructo en cuestión.
-En conclusión, los resultados del análisis indican correlaciones de un instrumento de medición válido.
-11. Validez: Determinación precisa de lo que se mide. Que la prueba mida lo que pretende medir.
-V Aplicación
-1. Formato de aplicación
-La aplicación de la Prueba Habilidades Emocionales se realiza en formato electró- nico, lo que brinda flexibilidad y accesibilidad, ofreciendo ventajas adicionales como:
-• Configuración personalizada. Es posible elegir entre dos opciones:
-a) El conjunto que desea evaluarse de entre los tres que conforman el total de la prueba: Habilidades Intrapersonales, Habilidades Interpersonales/ Estilo de comunicación, Habilidades para la vida/ Propensión al cambio.
-b) Un mínimo de tres habilidades de entre el total que forman la prueba.
-• Generación de diagnóstico: Un diagnóstico para cada conjunto seleccionado;
+  /* PARTE 2: texto + botones + respuesta (crece lo que necesite) */
+  #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; overflow:visible; }
+  .controls{ margin-bottom:12px; }
+  .controls .row{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; }
+
+  /* Minimal: sin bordes negros, limpio */
+  textarea{
+    width:min(1100px,98%); height:64px; padding:10px; font-size:15px;
+    border:1px solid #e6e6e6; border-radius:8px; background:#fff; outline:none;
+  }
+  button, select{
+    padding:10px 12px; font-size:14px; cursor:pointer;
+    border:none; outline:none; border-radius:8px; background:#f3f3f3; color:#111;
+  }
+  button:hover, select:hover{ background:#ececec; }
+  .mic{ font-size:18px; padding:12px 16px; }
+  .new{ background:#ffe082; }     /* botón amarillo */
+  .right{ margin-left:auto; }
+  .small{ font-size:12px; color:#666; }
+  h2{ margin:0 0 10px 0; font-size:18px; }
+  .muted{ opacity:.5; }
+
+  /* PARTE 3: lo que queda, con scroll propio */
+  #pane3{
+    flex:1 1 auto; min-height:140px; overflow:auto; padding:14px 16px;
+  }
+
+  /* Tablas y listas */
+  table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; }
+  th,td{ border:1px solid #e5e5e5; padding:6px 8px; text-align:left; vertical-align:top; }
+  th{ background:#fafafa; }
+  ol{ margin:10px 0 16px 22px; }
+  .list-card{ margin:10px 0; }
+</style>
+</head>
+<body>
+
+<!-- ===== PARTE 1 (FIJA): IMÁGENES + VIDEO ===== -->
+<header>
+  <div class="topbar">
+    <img src="/left.png" alt="left">
+    <div class="video-wrap">
+      <video id="vid" src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" muted playsinline></video>
+    </div>
+    <img src="/right.png" alt="right">
+  </div>
+</header>
+
+<!-- ===== PARTES 2 y 3 (debajo de la franja fija) ===== -->
+<main>
+  <div id="below">
+
+    <!-- PARTE 2: caja de texto + botones + RESPUESTA -->
+    <section id="pane2">
+      <div class="controls">
+        <div class="row">
+          <textarea id="q" placeholder="Escribe tu pregunta (o usa el micrófono)…"></textarea>
+        </div>
+        <div class="row">
+          <button id="send">Enviar</button>
+          <button id="mic" class="mic">🎤 Dictar</button>
+          <button id="mute">Silenciar voz</button>
+          <button id="clear">Limpiar</button>
+          <button id="new" class="new">Nueva sesión</button>
+          <select id="exportKind">
+            <option value="pdf">Exportar: PDF</option>
+            <option value="xls">Exportar: XLS</option>
+            <option value="doc">Exportar: DOC</option>
+          </select>
+          <button id="export">Exportar</button>
+          <a class="right small" href="/historial.html">Historial →</a>
+        </div>
+      </div>
+
+      <h2>Respuesta (texto e información general)</h2>
+      <div id="general"></div>
+    </section>
+
+    <!-- PARTE 3: LISTAS/TABLAS (con scroll propio) -->
+    <section id="pane3">
+      <h2>Listas numeradas y tablas</h2>
+      <div id="lists"></div>
+      <div id="tables"></div>
+    </section>
+
+  </div>
+</main>
+
+<script>
+/* ========= Voz femenina fija (ES-EC/ES-MX) ========= */
+const FEMALE_PRIORITY = [
+  // Microsoft
+  "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
+  "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
+  "Microsoft Helena Online (Natural) - Spanish (Spain)",
+  "Microsoft Camila Online (Natural) - Spanish (Colombia)",
+  "Microsoft Lorena Online (Natural) - Spanish (Mexico)",
+  // Google
+  "Google español de Estados Unidos",
+  "Google español",
+  // Otros nombres comunes
+  "Sabina", "Dalia", "Helena", "Camila", "Ana", "Lucia", "Isabel"
+];
+const VOICE_KEY = "voz-femenina-preferida";
+let voices = [];
+
+function pickFemaleSpanishLocked(){
+  const all = speechSynthesis.getVoices();
+  // 1) Si ya guardamos una voz por nombre y existe, úsala
+  const saved = localStorage.getItem(VOICE_KEY);
+  if (saved){
+    const vSaved = all.find(v=>v.name===saved);
+    if (vSaved) return vSaved;
+    localStorage.removeItem(VOICE_KEY);
+  }
+  // 2) Buscar por prioridad exacta
+  for (const name of FEMALE_PRIORITY){
+    const v = all.find(v=>v.name === name);
+    if (v) { localStorage.setItem(VOICE_KEY, v.name); return v; }
+  }
+  // 3) Femenina + español (heurística por nombre)
+  let v = all.find(v=>/es|span/i.test(v.lang) && /(female|mujer|woman)/i.test(v.name));
+  if (v) { localStorage.setItem(VOICE_KEY, v.name); return v; }
+  // 4) Cualquier voz en español
+  v = all.find(v=>/es/i.test(v.lang));
+  if (v) { localStorage.setItem(VOICE_KEY, v.name); return v; }
+  return null;
+}
+speechSynthesis.onvoiceschanged = ()=>{ voices = speechSynthesis.getVoices(); };
+voices = speechSynthesis.getVoices();
+
+let muted=false;
+const vid=document.getElementById("vid");
+
+function speak(text){
+  if(!text) return;
+  const u=new SpeechSynthesisUtterance(text);
+  const v=pickFemaleSpanishLocked();
+  u.lang = v?.lang || "es-MX";
+  if (v) u.voice=v;
+  u.volume = muted ? 0 : 1;
+  u.rate = 1; u.pitch = 1;
+  u.onstart = ()=>{ try{ vid.play().catch(()=>{});}catch{} };
+  u.onend   = ()=>{ try{ vid.pause(); }catch{} };
+  speechSynthesis.speak(u);
+}
+
+/* ========= Dictado (voz a texto) ========= */
+let rec,recOn=false;
+function toggleRec(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ alert("Reconocimiento de voz no soportado."); return; }
+  if(!rec){ rec=new SR(); rec.lang="es-MX"; rec.continuous=false; rec.interimResults=false; }
+  if(!recOn){
+    rec.start(); recOn=true; mic.classList.add("muted");
+    rec.onresult=e=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); };
+    rec.onend   =()=>{ recOn=false; mic.classList.remove("muted"); };
+  }else{ rec.stop(); recOn=false; mic.classList.remove("muted"); }
+}
+
+/* ========= Sesiones ========= */
+let sessionId="s-"+Date.now();
+let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
+const storeKey="sesiones-v1";
+function saveSession(){
+  const all=JSON.parse(localStorage.getItem(storeKey)||"[]");
+  const i=all.findIndex(s=>s.id===session.id);
+  if(i>=0) all[i]=session; else all.unshift(session);
+  localStorage.setItem(storeKey, JSON.stringify(all));
+}
+
+/* ========= UI ========= */
+const q=document.getElementById("q");
+const $gen=document.getElementById("general");
+const $lists=document.getElementById("lists");
+const $tables=document.getElementById("tables");
+const mic=document.getElementById("mic");
+
+document.getElementById("mute").onclick = ()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
+document.getElementById("clear").onclick= ()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; };
+document.getElementById("new").onclick  = ()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
+mic.onclick = toggleRec;
+
+/* ========= Render listas/tablas ========= */
+function renderLists(lists){
+  $lists.innerHTML="";
+  if(!lists||(Array.isArray(lists)&&lists.length===0)) return;
+  if(Array.isArray(lists) && typeof lists[0]==="string"){
+    const wrap=document.createElement("div"); wrap.className="list-card";
+    const ol=document.createElement("ol");
+    lists.forEach(item=>{ const li=document.createElement("li"); li.textContent=item; ol.appendChild(li); });
+    wrap.appendChild(ol); $lists.appendChild(wrap); return;
+  }
+  (lists||[]).forEach(L=>{
+    const wrap=document.createElement("div"); wrap.className="list-card";
+    if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
+    const ol=document.createElement("ol");
+    (L.items||[]).forEach(item=>{ const li=document.createElement("li"); li.textContent=item; ol.appendChild(li); });
+    wrap.appendChild(ol); $lists.appendChild(wrap);
+  });
+}
+function renderTables(tables){
+  $tables.innerHTML="";
+  (tables||[]).forEach(t=>{
+    const title=document.createElement("h3"); title.textContent=t.title||"Tabla";
+    const table=document.createElement("table");
+    const thead=document.createElement("thead");
+    const trh=document.createElement("tr");
+    (t.columns||[]).forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
+    thead.appendChild(trh);
+    const tbody=document.createElement("tbody");
+    (t.rows||[]).forEach(r=>{
+      const tr=document.createElement("tr");
+      r.forEach(v=>{ const td=document.createElement("td"); td.textContent=v; tr.appendChild(td); });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(thead); table.appendChild(tbody);
+    $tables.appendChild(title); $tables.appendChild(table);
+  });
+}
+
+/* ========= Enviar (usa /api/answer con CSV + texto_base) ========= */
+document.getElementById("send").onclick = async ()=>{
+  const prompt=(q.value||"").replaceAll("*","");
+  if(!prompt.trim()){ q.focus(); return; }
+
+  $gen.innerHTML="<em>Analizando…</em>";
+  $lists.innerHTML=""; $tables.innerHTML="";
+
+  const r=await fetch("/api/answer",{
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ question: prompt })
+  }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
+
+  if(!r.ok){ $gen.textContent="Hubo un problema al analizar: "+(r.error||"desconocido"); return; }
+
+  const ans=r.answer||{};
+  $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
+  renderLists(ans.lists||ans.lista||[]);
+  renderTables(ans.tables||[]);
+  speak(ans.general||"");
+
+  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans });
+  saveSession();
+};
+
+/* ========= Exportar ========= */
+document.getElementById("export").onclick=()=>{
+  const kind=document.getElementById("exportKind").value;
+  if(kind==="pdf"){ window.print(); }
+  else if(kind==="doc"){
+    const html=`<html><head><meta charset="UTF-8"></head><body>
+      <h1>Respuesta</h1>${$gen.innerHTML}
+      <h2>Listas</h2>${$lists.innerHTML}
+      <h2>Tablas</h2>${$tables.innerHTML}
+    </body></html>`;
+    const blob=new Blob([html],{type:"application/msword"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="respuesta.doc"; a.click();
+  }else if(kind==="xls"){
+    const t=$tables.querySelectorAll("table"); let csv="";
+    t.forEach((tb,i)=>{ tb.querySelectorAll("tr").forEach(tr=>{
+      const cells=[...tr.children].map(td=>`"${td.textContent.replace(/"/g,'""')}"`); csv += cells.join(",")+"\n"; });
+      if(i<t.length-1) csv+="\n"; });
+    const blob=new Blob([csv],{type:"application/vnd.ms-excel"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="tablas.xls"; a.click();
+  }
+};
+</script>
+</body>
+</html>
