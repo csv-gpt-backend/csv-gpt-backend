@@ -1,136 +1,118 @@
-// api/ask.js
+// /api/ask.js
+// Fallback robusto: responde aunque el modelo no devuelva JSON.
+// Lee CSV y TXT desde URL; soporta GPT-5 y GPT-4o/mini.
 
 import OpenAI from "openai";
 
-// ====== CONFIG ======
+// ⚠️ Ajusta si tu clave tiene otro nombre; este orden cubre casos comunes:
 const OPENAI_KEY =
+  process.env.OPENAI_API_KEY ||
   process.env.open_ai_key ||
-  process.env.OPENAI_API_KEY;
+  process.env["CLAVE API DE OPENAI"] ||
+  process.env.CLAVE_API_DE_OPENAI;
 
-const CSV_URL = "https://csv-gpt-backend.vercel.app/datos/decimo.csv";
-const TXT_URL = "https://csv-gpt-backend.vercel.app/emocionales.txt";
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-// Modelo objetivo principal y fallback:
-const PRIMARY_MODEL = process.env.OPENAI_MODEL || "gpt-5";
-const FALLBACK_MODEL = "gpt-4o-mini";
+// Rutas directas (sin variable) como pediste
+const CSV_URL  = "https://csv-gpt-backend.vercel.app/datos/decimo.csv";
+const TXT_URL  = "https://csv-gpt-backend.vercel.app/emocionales.txt";
 
-// Tamaños para recorte (evitar prompts gigantes)
-const MAX_CHARS_CSV = 180_000;
-const MAX_CHARS_TXT = 80_000;
-
-// Timeout de inferencia (ms)
-const PRIMARY_TIMEOUT_MS = 25_000;   // GPT-5 puede tardar más
-const FALLBACK_TIMEOUT_MS = 18_000;  // 4o-mini rápido
-
-// ====================
-
+// ------- utilidades -------
 const client = new OpenAI({ apiKey: OPENAI_KEY });
 
-function okJson(obj) {
-  return (
-    obj &&
-    typeof obj === "object" &&
-    typeof obj.texto === "string" &&
-    typeof obj.tablas_markdown === "string"
-  );
+function isGpt5(id = "") {
+  return /^gpt-5/i.test(id.trim());
 }
 
-function extractJsonLoose(s) {
-  if (!s || typeof s !== "string") return null;
-  // intenta extraer el primer {...} grande
-  const start = s.indexOf("{");
-  const end = s.lastIndexOf("}");
-  if (start !== -1 && end !== -1 && end > start) {
-    try {
-      return JSON.parse(s.slice(start, end + 1));
-    } catch (_) {
-      return null;
-    }
-  }
-  return null;
+function withTimeout(ms, promise) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("timeout")), ms);
+    promise.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
 }
 
-async function fetchText(url, label) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
+async function safeFetchText(url, label, ms = 6000) {
   try {
-    const r = await fetch(url, { signal: controller.signal, cache: "no-store" });
-    if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
+    const r = await withTimeout(ms, fetch(url, { cache: "no-store" }));
+    if (!r.ok) throw new Error(`${label} HTTP ${r.status}`);
     const t = await r.text();
-    console.log(`[ASK][FETCH] ${label}: ${t.length} chars`);
     return t;
-  } finally {
-    clearTimeout(timer);
+  } catch (e) {
+    console.warn(`[ASK][WARN] ${label} fallo:`, e?.message || e);
+    return "";
   }
 }
 
-function buildSystemPrompt(headerCsv) {
+function buildSystem() {
   return `Eres una analista educativa rigurosa. Responde SIEMPRE en español latino neutral.
-
-Reglas duras:
-- Si el usuario pide "todos los estudiantes", debes listar a TODOS sin omitir ninguno.
-- Usa EXACTAMENTE las columnas solicitadas. Si pide varias columnas, inclúyelas todas.
-- Presenta las listas/tablas en formato Markdown (| Col | ... |) con encabezados.
-- No pongas asteriscos para resaltar. Evita adornos.
-- El CSV puede estar separado por punto y coma (;). Interprétalo correctamente.
-
-Si se piden análisis estadísticos (promedios, correlaciones, varianzas, regresiones, etc.), explícalos y realiza los cálculos con los datos del CSV que se te proveen (dentro de lo posible). Si el cálculo supera lo disponible en el contexto, devuelve el método paso a paso y una estimación razonable, pero intenta calcular con los datos visibles.
-${headerCsv ? `\nColumnas detectadas/nota: ${headerCsv}\n` : ""}`;
+Reglas:
+- Si se piden listas/tablas, produce TABLA en Markdown (| Col | … |) sin asteriscos y sin explicaciones dentro de la tabla.
+- Si el usuario pide "todos", no OMITAS filas.
+- Usa exactamente las columnas solicitadas. Si no existen en el CSV, dilo y sugiere alternativas.
+- Si piden métricas (promedios, correlaciones, etc.), explica el método y entrega los resultados con claridad.`;
 }
 
-function buildUserPrompt(question, csvSlice, txtSlice) {
-  return `PREGUNTA: "${question}"
+function buildUser(question, csv, txt) {
+  const hasCsv = csv && csv.trim().length > 0;
+  const hasTxt = txt && txt.trim().length > 0;
 
-TROZO DEL CSV (representativo, puede estar separado por ";"):
-«««
-${csvSlice}
-»»»
+  const pieces = [`PREGUNTA: "${question}"`];
 
-TEXTO DE APOYO (emocionales):
-«««
-${txtSlice}
-»»»
-
-Instrucciones de salida (devuelve SOLO JSON):
-{
-  "texto": "<explicación clara en español, sin asteriscos. No escribas código salvo que se pida explícitamente>",
-  "tablas_markdown": "<si procede una lista/tabla, inclúyela en formato Markdown con todas las filas requeridas y columnas exactas; si no aplica, deja cadena vacía>"
-}`;
-}
-
-async function callOpenAI(model, messages, timeoutMs, forJson = false) {
-  const controller = new AbortController();
-  const to = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    // Nota: GPT-5 no soporta response_format json_object ni temperature ≠ 1.
-    //       gpt-4o-mini sí admite response_format json_object y temperature 0.2.
-    const opts = {
-      model,
-      messages,
-    };
-
-    if (model.startsWith("gpt-5")) {
-      // Ajustes compatibles con GPT-5 (según errores anteriores reportados).
-      opts.temperature = 1; // único valor aceptado
-      opts.max_completion_tokens = 1000;
-    } else {
-      // Modelos 4o/4o-mini
-      opts.temperature = 0.2;
-      if (forJson) {
-        opts.response_format = { type: "json_object" };
-      }
-    }
-
-    const resp = await client.chat.completions.create(opts, { signal: controller.signal });
-    const content = resp?.choices?.[0]?.message?.content || "";
-    console.log(`[ASK][RAW][${model}]`, content ? "ok" : "vacío");
-    return content;
-  } finally {
-    clearTimeout(to);
+  if (hasCsv) {
+    // enviamos CSV tal cual (recortado si es enorme, para no exceder tokens)
+    const preview = csv.length > 200_000 ? csv.slice(0, 200_000) : csv;
+    pieces.push(`\nDATOS_CSV (separador ; o , según aparezca, crudo):\n"""${preview}"""`);
+  } else {
+    pieces.push(`\nNo pude leer el CSV.`);
   }
+
+  if (hasTxt) {
+    const txtPrev = txt.length > 120_000 ? txt.slice(0, 120_000) : txt;
+    pieces.push(`\nAPOYO_TXT (emocionales):\n"""${txtPrev}"""`);
+  }
+
+  pieces.push(`\nFormato de salida OBLIGATORIO (JSON plano):
+{
+  "texto": "explicación clara en español (sin asteriscos).",
+  "tablas_markdown": "si aplica, UNA tabla en Markdown; si no aplica, deja cadena vacía"
+}`);
+
+  return pieces.join("\n");
 }
 
+function normalizeModelParams(modelId) {
+  // GPT-5 solo acepta temperature = 1 y usa max_completion_tokens
+  if (isGpt5(modelId)) {
+    return { temperature: 1, max_completion_tokens: 1000 };
+  }
+  // otros modelos (4o/mini) pueden usar temperature < 1
+  return { temperature: 0.2 };
+}
+
+function toSafeResponse(rawContent) {
+  // Si el modelo ignoró response_format y devolvió texto suelto,
+  // aseguramos un JSON con 'texto' y 'tablas_markdown'.
+  let texto = "";
+  let tablas = "";
+
+  // Intentar JSON
+  try {
+    const parsed = JSON.parse(rawContent);
+    texto  = String(parsed.texto || parsed.text || "").trim();
+    tablas = String(parsed.tablas_markdown || parsed.tables_markdown || "").trim();
+  } catch {
+    // No es JSON → usamos crudo como 'texto'
+    texto = String(rawContent || "").trim();
+    tablas = "";
+  }
+
+  // Limpieza mínima: quitar asteriscos
+  texto = texto.replace(/\*/g, "");
+
+  return { texto, tablas_markdown: tablas };
+}
+
+// ------- handler -------
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
@@ -138,8 +120,8 @@ export default async function handler(req, res) {
     }
     if (!OPENAI_KEY) {
       return res.status(200).json({
-        texto: "Falta la clave de OpenAI (open_ai_key). Configúrala en Vercel.",
-        tablas_markdown: "",
+        texto: "Falta la clave de OpenAI. Configura OPENAI_API_KEY en Vercel.",
+        tablas_markdown: ""
       });
     }
 
@@ -149,77 +131,57 @@ export default async function handler(req, res) {
     }
     const q = question.trim();
 
-    // 1) Traer fuentes
-    const [csvFull, txtFull] = await Promise.all([
-      fetchText(CSV_URL, "CSV"),
-      fetchText(TXT_URL, "TXT"),
+    // Traemos CSV y TXT en paralelo con timeout
+    const [csvText, txtText] = await Promise.all([
+      safeFetchText(CSV_URL, "CSV", 6000),
+      safeFetchText(TXT_URL, "TXT", 6000),
     ]);
 
-    const csvSlice = (csvFull || "").slice(0, MAX_CHARS_CSV);
-    const txtSlice = (txtFull || "").slice(0, MAX_CHARS_TXT);
+    const system = buildSystem();
+    const user   = buildUser(q, csvText, txtText);
 
-    // Intento rudimentario de extraer "encabezado visible"
-    const firstLine = (csvFull || "").split(/\r?\n/)[0] || "";
-    const headerCsv = firstLine.slice(0, 500);
+    // Parámetros según el modelo
+    const extra = normalizeModelParams(MODEL);
 
-    // 2) Prompts
-    const system = buildSystemPrompt(headerCsv);
-    const user = buildUserPrompt(q, csvSlice, txtSlice);
-
-    const messages = [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ];
-
-    // 3) Llamar primero a GPT-5
-    let content = "";
-    let parsed = null;
-
+    // 1) Intento con response_format JSON
+    let raw = "";
     try {
-      console.log(`[ASK][TRY] ${PRIMARY_MODEL}`);
-      content = await callOpenAI(PRIMARY_MODEL, messages, PRIMARY_TIMEOUT_MS, false);
-      parsed = extractJsonLoose(content);
-      if (!okJson(parsed)) {
-        console.warn("[ASK][WARN] GPT-5 no devolvió JSON usable. Intentando fallback…");
-        // Fallback automático a 4o-mini con response_format json_object
-        console.log(`[ASK][TRY] ${FALLBACK_MODEL}`);
-        content = await callOpenAI(FALLBACK_MODEL, messages, FALLBACK_TIMEOUT_MS, true);
-        try {
-          parsed = JSON.parse(content);
-        } catch {
-          parsed = extractJsonLoose(content);
-        }
-      }
-    } catch (err) {
-      console.warn("[ASK][ERR] GPT-5 falló, usando fallback:", err?.message || err);
-      content = await callOpenAI(FALLBACK_MODEL, messages, FALLBACK_TIMEOUT_MS, true);
-      try {
-        parsed = JSON.parse(content);
-      } catch {
-        parsed = extractJsonLoose(content);
-      }
+      const completion = await client.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user",   content: user }
+        ],
+        response_format: { type: "json_object" },
+        ...extra
+      });
+      raw = completion?.choices?.[0]?.message?.content || "";
+    } catch (e) {
+      console.warn("[ASK][WARN] JSON formatting falló, reintento como texto:", e?.message || e);
+      // 2) Reintento sin response_format
+      const completion2 = await client.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user",   content: user }
+        ],
+        ...extra
+      });
+      raw = completion2?.choices?.[0]?.message?.content || "";
     }
 
-    // 4) Validar resultado
-    if (!okJson(parsed)) {
-      console.warn("[ASK][WARN] No se pudo parsear JSON. Enviando texto crudo.");
-      const texto =
-        content?.trim() ||
-        "El modelo no devolvió contenido utilizable en este intento. Intenta con una pregunta más específica o vuelve a consultar en unos segundos.";
-      return res.status(200).json({ texto, tablas_markdown: "" });
-    }
-
-    // 5) Saneado por si acaso
-    const texto = String(parsed.texto || "").replace(/\*/g, "").trim();
-    const tablas_markdown = String(parsed.tablas_markdown || "").trim();
+    const { texto, tablas_markdown } = toSafeResponse(raw);
 
     res.setHeader("Content-Type", "application/json");
     return res.status(200).json({ texto, tablas_markdown });
   } catch (err) {
-    console.error("[ASK][FATAL]", err?.message || err);
+    console.error("[ASK][ERROR]", err);
     return res.status(200).json({
-      texto: `Ocurrió un problema procesando la consulta. Intenta nuevamente. Detalle: ${err?.message || "desconocido"}.`,
-      tablas_markdown: "",
+      texto: `Ocurrió un error al procesar la consulta: ${err?.message || "desconocido"}.`,
+      tablas_markdown: ""
     });
   }
 }
+
+// (opcional) también puedes exportar para Vercel edge/node si ya lo tenías
+// export const config = { runtime: 'nodejs20.x' };
