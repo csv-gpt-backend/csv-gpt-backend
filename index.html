@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LEXIUM ↔)</title>
+  <title>LEXIUM</title>
   <style>
     :root{
       --brand:#1f6fff; --bg:#fafafa; --card:#fff; --ink:#1b1e23; --muted:#6b7280; --ring:#e5e7eb;
@@ -38,7 +38,7 @@
     .muted{ color:var(--muted); }
     h3{ margin:0 0 10px 0 }
 
-    /* Secciones 2 y 3 con sus propios contenedores */
+    /* Sección 2 y 3 */
     .out{ min-height:64px; padding:12px 14px; border-radius:12px; border:1px dashed var(--ring); background:#fff }
     .tables{ min-height:96px; max-height:50vh; overflow:auto; padding:12px 14px; border-radius:12px; border:1px dashed var(--ring); background:#fff }
 
@@ -107,7 +107,7 @@
   </main>
 
   <script>
-    // ====== Referencias DOM ======
+    // ====== DOM ======
     const txt = document.getElementById('q');
     const btnSend = document.getElementById('send');
     const btnMic  = document.getElementById('micBtn');
@@ -122,33 +122,23 @@
     const exportBtn = document.getElementById('exportBtn');
     const exportType= document.getElementById('exportType');
 
-    // ====== Estado ======
-    let speaking = false; // control de locución para loop del video
-
     // ====== Voz femenina ES-MX / LATAM ======
     const synth = window.speechSynthesis;
     let currentUtter = null;
+    let speaking = false;
 
     function pickFemaleSpanishVoice() {
       const voices = synth.getVoices() || [];
-      // Preferencias por nombre común
-      const preferByName = [
-        'Microsoft Sabina', 'Microsoft Dalia', 'Paulina', 'Lucia', 'Conchita', 'Camila', 'Lupe'
-      ];
-      // 1) es-MX femenina
-      let v = voices.find(v => /es-?MX/i.test(v.lang) && /female|mujer|woman/i.test(v.name));
-      if (v) return v;
-      // 2) es-MX cualquiera
+      const preferNames = ['Microsoft Sabina','Microsoft Dalia','Paulina','Lucia','Conchita','Camila','Lupe'];
+      // es-MX femenina
+      let v = voices.find(v => /es-?MX/i.test(v.lang) && /female|mujer|woman/i.test(v.name)); if (v) return v;
+      // es-MX cualquiera
       v = voices.find(v => /es-?MX/i.test(v.lang)); if (v) return v;
-      // 3) es-419 / es (latino)
+      // es-419 femenina
       v = voices.find(v => /es-?419/i.test(v.lang) && /female|mujer|woman/i.test(v.name)); if (v) return v;
-      v = voices.find(v => /^es/i.test(v.lang) && /female|mujer|woman/i.test(v.name)); if (v) return v;
-      // 4) por nombre
-      for (const name of preferByName) {
-        const cand = voices.find(v => (v.name||'').toLowerCase().includes(name.toLowerCase()));
-        if (cand) return cand;
-      }
-      // 5) último recurso: cualquier español
+      // por nombre
+      for (const n of preferNames){ const c = voices.find(v => (v.name||'').toLowerCase().includes(n.toLowerCase())); if (c) return c; }
+      // cualquier español
       return voices.find(v => /^es/i.test(v.lang)) || voices[0] || null;
     }
 
@@ -164,34 +154,23 @@
       if (!text || !('speechSynthesis' in window)) return;
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1; u.pitch = 1; u.volume = 1; // volumen estable
-
-      const startSpeaking = () => {
+      const start = () => {
         const v = pickFemaleSpanishVoice();
-        if (v) { u.voice = v; u.lang = v.lang; }
-        else { u.lang = 'es-MX'; }
-        currentUtter = u;
-        speaking = true;
+        if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = 'es-MX'; }
+        currentUtter = u; speaking = true;
         try{ video.currentTime = 0; video.loop = true; video.play().catch(()=>{}); }catch(_){}
         synth.speak(u);
       };
-
-      if (synth.getVoices().length === 0) {
-        speechSynthesis.onvoiceschanged = () => startSpeaking();
-      } else {
-        startSpeaking();
-      }
-
+      if (synth.getVoices().length === 0) speechSynthesis.onvoiceschanged = start; else start();
       u.onend = () => { speaking=false; try{ video.loop = false; video.pause(); }catch(_){} };
       u.onerror = () => { speaking=false; try{ video.loop = false; video.pause(); }catch(_){} };
     }
 
-    // ====== Dictado (sin duplicaciones) ======
+    // ====== Dictado ======
     function toggleDictado(){
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRec) { alert('Tu navegador no soporta dictado.'); return; }
-      const rec = new SpeechRec();
-      rec.lang = 'es-MX';
-      rec.continuous = false; rec.interimResults = false;
+      const rec = new SpeechRec(); rec.lang = 'es-MX'; rec.continuous = false; rec.interimResults = false;
       statusEl.textContent='Escuchando…';
       rec.onresult = (e) => { const t = e.results?.[0]?.[0]?.transcript || ''; txt.value = (txt.value + ' ' + t).trim(); };
       rec.onend = ()=>{ statusEl.textContent='Listo'; };
@@ -206,8 +185,7 @@
       if (startIdx === -1) return null;
       let endIdx = startIdx + 1;
       while (endIdx < lines.length && /^\s*\|/.test(lines[endIdx])) endIdx++;
-      const tLines = lines.slice(startIdx, endIdx);
-      return tLines;
+      return lines.slice(startIdx, endIdx);
     }
     function parseMarkdownTable(md){
       const tLines = extractFirstMarkdownTable(md);
@@ -221,16 +199,13 @@
       const parsed = parseMarkdownTable(md);
       if (!parsed) return null;
       const { header, rows } = parsed;
-
       const table = document.createElement('table');
       const thead = document.createElement('thead');
       const trh = document.createElement('tr');
-
       const thNum = document.createElement('th'); thNum.textContent = '#';
       trh.appendChild(thNum);
       header.forEach(h => { const th=document.createElement('th'); th.textContent=h; trh.appendChild(th); });
       thead.appendChild(trh); table.appendChild(thead);
-
       const tbody = document.createElement('tbody');
       rows.forEach((r,idx) => {
         const tr = document.createElement('tr');
@@ -242,8 +217,6 @@
       table.appendChild(tbody);
       return { table, rows, header };
     }
-
-    // Locución también de tablas (primeros nombres)
     function narrateTable(rows, header){
       if (!rows || !rows.length) return '';
       let nameIdx = header.findIndex(h => /nombre/i.test(h));
@@ -254,7 +227,7 @@
       return ` Se muestran ${total} registros. ${maxToSpeak>=1 ? 'Los primeros son: ' + nombres : ''}`;
     }
 
-    // ====== Exportaciones (título = la pregunta) ======
+    // ====== Exportaciones (título = tu pregunta) ======
     function exportContent(type){
       const titulo = (txt.value || 'Reporte').trim() || 'Reporte';
       const texto = (out.textContent || '').trim();
@@ -304,7 +277,7 @@
       }
     }
 
-    // ====== Petición al backend ======
+    // ====== Consulta al backend ======
     async function send(){
       const question = (txt.value || '').trim();
       if (!question) { out.textContent = 'Por favor, escribe una pregunta.'; out.classList.remove('muted'); return; }
@@ -342,7 +315,6 @@
           tablesBox.textContent='—'; tablesBox.classList.add('muted');
         }
 
-        // Locución (voz femenina) + video looping durante la lectura
         const narr = (texto && !/^no obtuve respuesta/i.test(texto)) ? (texto + (extraNarr||'')) : texto;
         if (narr && narr.trim()) speak(narr);
 
