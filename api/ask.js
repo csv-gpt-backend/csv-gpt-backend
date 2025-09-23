@@ -31,16 +31,27 @@ function contexto(lines, i, k = 0) {
 
 export default function handler(req, res) {
   try {
+    // ✅ Aceptar GET y POST
+    const method = req.method.toUpperCase();
+    if (method !== 'GET' && method !== 'POST') {
+      return res.status(405).json({ error: 'Método no permitido. Usa GET o POST.' });
+    }
+
+    // Si es POST → parámetros en body
+    // Si es GET → parámetros en query
+    const params = method === 'POST' ? (req.body || {}) : (req.query || {});
+
     const {
       q = '',
       limit = '50',
-      source = 'embed', // 'embed' | 'file'
-      context = '0',
-    } = req.query;
+      source = 'embed',  // embed = texto_base.js | file = datos/emocionales.txt
+      context = '0'
+    } = params;
 
     const texto = obtenerTexto(String(source));
     const lineas = texto.split(/\r?\n/);
 
+    // Si no hay búsqueda → devolver texto completo
     if (!q.trim()) {
       return res.status(200).json({
         ok: true,
