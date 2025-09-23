@@ -29,4 +29,7 @@ Los grados escolares que están baremados incluyen:
 • Secundaria (tres grados)
 • Preparatoria (tres grados)
 • Adulto (aquellas personas que han terminado estudios a nivel de educación media y no tienen una educación formal a nivel superior)
-• Profesional (aquellas personas que cuentan con estudios......`;
+• Profesional (aquellas personas que cuentan con estudios......`
+  
+  
+  ;
