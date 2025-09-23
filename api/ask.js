@@ -2,11 +2,9 @@
 // (Si al activarlo te da problemas, puedes dejar comentado)
 // export const config = { runtime: 'nodejs20.x' };
 
-import fs from 'fs';
-import path from 'path';
 import OpenAI from 'openai';
 
-// === Config ===
+// =============== CONFIG ===============
 const OPENAI_KEY =
   process.env.open_ai_key ||
   process.env.OPENAI_API_KEY ||
@@ -14,32 +12,53 @@ const OPENAI_KEY =
   process.env.CLAVE_API_DE_OPENAI;
 
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const CSV_PATH = process.env.CSV_FILE || path.join(process.cwd(), 'datos', 'decimo.csv');
+
+// Fallbacks por si no hay variables; se sobreescriben usando el host del request
+const CSV_URL_FALLBACK = 'https://csv-gpt-backend.vercel.app/datos/decimo.csv';
+const TXT_URL_FALLBACK = 'https://csv-gpt-backend.vercel.app/emocionales.txt';
+
+// Recortes para no enviar prompts enormes (mejor latencia/fiabilidad)
+const CSV_PREVIEW_LIMIT = 30000;   // ~30k chars
+const TXT_PREVIEW_LIMIT = 20000;   // ~20k chars
 
 const client = new OpenAI({ apiKey: OPENAI_KEY });
 
-// === Utilidades ===
+// =============== HELPERS ===============
+function buildSelfURL(req, path) {
+  const proto =
+    req.headers['x-forwarded-proto']?.toString() ||
+    (req.headers.host?.startsWith('localhost') ? 'http' : 'https');
+  const host = req.headers.host || 'csv-gpt-backend.vercel.app';
+  const clean = path.startsWith('/') ? path : `/${path}`;
+  return `${proto}://${host}${clean}`;
+}
 
-// Lee el CSV y devuelve encabezados + un preview recortado para no gastar tokens
-function readCsvSnapshot() {
+async function fetchText(url, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const raw = fs.readFileSync(CSV_PATH, 'utf8');
-
-    // Detecta separador en la primera línea: ; o ,
-    const firstLine = raw.split(/\r?\n/)[0] || '';
-    const sep = firstLine.includes(';') ? ';' : ',';
-    const header = firstLine.split(sep).map((s) => s.trim());
-
-    // Preview razonable (recorta caracteres para no pasarse de tokens)
-    const preview = raw.slice(0, 200000); // ~200k chars
-    return { ok: true, header, preview, sep };
-  } catch (e) {
-    console.warn('[ASK][CSV_READ_ERROR]', e?.message || e);
-    return { ok: false, header: [], preview: '', sep: ',' };
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status} al descargar ${url}`);
+    const txt = await r.text();
+    return txt;
+  } finally {
+    clearTimeout(t);
   }
 }
 
-// === Handler principal ===
+function detectSeparator(firstLine = '') {
+  return firstLine.includes(';') ? ';' : ',';
+}
+
+function csvHeaderFromRaw(raw) {
+  const firstLine = (raw.split(/\r?\n/)[0] || '').trim();
+  if (!firstLine) return { sep: ',', header: [] };
+  const sep = detectSeparator(firstLine);
+  const header = firstLine.split(sep).map((s) => s.trim());
+  return { sep, header };
+}
+
+// =============== HANDLER ===============
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
@@ -64,53 +83,73 @@ export default async function handler(req, res) {
     }
     const q = question.trim();
 
-    const { ok, header, preview } = readCsvSnapshot();
+    // Construir URLs físicas basadas en el host actual
+    const csvUrl =
+      process.env.CSV_URL ||
+      buildSelfURL(req, '/datos/decimo.csv') ||
+      CSV_URL_FALLBACK;
+
+    const txtUrl =
+      process.env.TXT_URL ||
+      buildSelfURL(req, '/emocionales.txt') ||
+      TXT_URL_FALLBACK;
+
+    // Descargar fuentes (rápido, con timeout)
+    let csvRaw = '';
+    let txtRaw = '';
+    try {
+      csvRaw = await fetchText(csvUrl);
+    } catch (e) {
+      console.warn('[ASK][CSV_DOWNLOAD_WARN]', e?.message || e);
+    }
+    try {
+      txtRaw = await fetchText(txtUrl);
+    } catch (e) {
+      console.warn('[ASK][TXT_DOWNLOAD_WARN]', e?.message || e);
+    }
+
+    // Preparar previews
+    const csvPreview = (csvRaw || '').slice(0, CSV_PREVIEW_LIMIT);
+    const txtPreview = (txtRaw || '').slice(0, TXT_PREVIEW_LIMIT);
+
+    const { header } = csvHeaderFromRaw(csvRaw || '');
     const headerNote = header.length
       ? `Encabezados reales del CSV (${header.length} columnas): ${header.join(' | ')}`
-      : `No pude leer el CSV o no hay encabezados.`;
+      : `No se detectaron encabezados en el CSV (o no se pudo descargar).`;
 
-    // Mensaje de sistema (reglas duras)
-    const system = `Eres una analista educativa rigurosa. Responde SIEMPRE en español latino neutral.
+    // ===== Mensajes =====
+    const system = `Eres una analista educativa rigurosa. Responde SIEMPRE en español latino neutral (voz femenina).
 Reglas DURAS:
-- Si el usuario pide "todos los estudiantes", debes listar a TODOS sin omitir ninguno.
-- Usa EXACTAMENTE las columnas solicitadas por el usuario. Si pide varias columnas, inclúyelas todas.
-- Presenta las LISTAS/TABLAS en formato Markdown (| Col | ... |) cuando aplique.
+- Si el usuario pide "todos los estudiantes", listalos TODOS sin omitir ninguno.
+- Usa EXACTAMENTE las columnas solicitadas por el usuario.
+- Presenta LISTAS/TABLAS en formato Markdown (| Col | ... |).
 - Numera filas implícitamente (la UI agrega columna #).
 - Nada de "no puedo realizar". Si falta dato, explica brevemente y ofrece alternativas.
-- No uses asteriscos para resaltar (la UI los elimina).`;
+- NO uses asteriscos para resaltar.`;
 
-    // Mensaje de usuario, con snapshot del CSV si se pudo leer
-    const user = ok
-      ? `PREGUNTA: "${q}"
+    const user = `PREGUNTA: "${q}"
 
 ${headerNote}
 
-PARTE DEL CSV (representativo, no todo):
-"""${preview}"""
+FUENTE CSV (preview):
+"""${csvPreview}"""
+
+FUENTE TEXTO (emocionales.txt, preview):
+"""${txtPreview}"""
 
 Instrucciones de salida:
 1) "texto": explicación clara en español (sin asteriscos).
 2) "tablas_markdown": si el usuario pidió listas/tablas, entrega TABLA en Markdown con TODAS las filas solicitadas y las columnas exactas; si pidió "todos", no omitas ninguno. Si no aplica tabla, deja vacío.
 
-Devuelve SOLO un JSON con {"texto": "...", "tablas_markdown": "..."}.`
-      : `PREGUNTA: "${q}"
+Devuelve SOLO un JSON con {"texto": "...", "tablas_markdown": "..."}.`;
 
-${headerNote}
-
-No pude leer CSV. Explica o guía al usuario con lo que sepas, en texto claro.
-Si requiere tabla pero no hay datos, indícalo.
-Devuelve SOLO un JSON {"texto":"...","tablas_markdown":""}.`;
-
-    // Logs de contexto
     console.log('[ASK][MODEL]', MODEL);
-    console.log('[ASK][USER_LEN]', user?.length || 0);
-    try {
-      const prevLen = (user.match(/"""([\s\S]*?)"""/) || [,''])[1]?.length || 0;
-      console.log('[ASK][PREVIEW_LEN]', prevLen);
-    } catch (_) {}
+    console.log('[ASK][CSV_URL]', csvUrl);
+    console.log('[ASK][TXT_URL]', txtUrl);
+    console.log('[ASK][USER_LEN]', user.length);
 
-    // Helper para ejecutar una llamada con/sin response_format
-    async function askOnce({ system, user, useJsonFormat }) {
+    // Helper para llamada al modelo
+    async function askOnce({ useJsonFormat }) {
       const isGpt5 = /^gpt-5/i.test(MODEL);
       const params = {
         model: MODEL,
@@ -118,42 +157,33 @@ Devuelve SOLO un JSON {"texto":"...","tablas_markdown":""}.`;
           { role: 'system', content: system },
           { role: 'user', content: user },
         ],
-        // GPT-5 solo acepta temperature = 1
         temperature: isGpt5 ? 1 : 0.2,
-        max_completion_tokens: 1200,
+        max_completion_tokens: isGpt5 ? 1200 : 800,
       };
       if (useJsonFormat) {
         params.response_format = { type: 'json_object' };
       }
-
       const c = await client.chat.completions.create(params);
       console.log('[ASK][USAGE]', c?.usage);
       const raw = c?.choices?.[0]?.message?.content || '';
-      console.log('[ASK][RAW]', raw ? `${raw.slice(0, 200)}…` : '(vacío)');
+      console.log('[ASK][RAW]', raw ? raw.slice(0, 220) + '…' : '(vacío)');
       return raw;
     }
 
-    // 1) Primer intento: JSON estricto
-    let raw = await askOnce({ system, user, useJsonFormat: true });
+    // 1) Primer intento: SIN response_format
+    let raw = await askOnce({ useJsonFormat: false });
 
-    // 2) Si vino vacío, reintenta sin response_format, reforzando indicación
+    // 2) Si vino vacío, reintenta con JSON estricto
     if (!raw || !raw.trim()) {
-      console.warn(
-        '[ASK][RETRY] contenido vacío; reintentando sin response_format…'
-      );
-      const user2 = `${user}
-
-IMPORTANTE: Devuelve SOLO un JSON con esta forma exacta:
-{"texto":"...","tablas_markdown":"..."}
-No incluyas nada más antes ni después del JSON.`;
-      raw = await askOnce({ system, user: user2, useJsonFormat: false });
+      console.warn('[ASK][RETRY] vacío; reintentando con response_format json_object…');
+      raw = await askOnce({ useJsonFormat: true });
     }
 
-    // 3) Si sigue vacío, devolvemos un mensaje claro al frontend
+    // 3) Si sigue vacío, mensaje claro
     if (!raw || !raw.trim()) {
       return res.status(200).json({
         texto:
-          'El modelo no devolvió contenido utilizable en este intento. Intenta con una pregunta más específica o vuelve a consultar en unos segundos.',
+          'El modelo no devolvió contenido utilizable en este intento. Intenta con una pregunta más específica, o vuelve a consultar en unos segundos.',
         tablas_markdown: '',
       });
     }
@@ -163,18 +193,12 @@ No incluyas nada más antes ni después del JSON.`;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      // Si no es JSON, regresamos el texto tal cual (mejor eso que vacío)
       parsed = { texto: raw, tablas_markdown: '' };
     }
 
-    // 5) Saneamos y respondemos
-    const texto = String(parsed.texto || parsed.text || '')
-      .replace(/\*/g, '')
-      .trim();
-
-    const tablas_markdown = String(
-      parsed.tablas_markdown || parsed.tables_markdown || ''
-    ).trim();
+    // 5) Sanitizar y responder
+    const texto = String(parsed.texto || parsed.text || '').replace(/\*/g, '').trim();
+    const tablas_markdown = String(parsed.tablas_markdown || parsed.tables_markdown || '').trim();
 
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).json({ texto, tablas_markdown });
