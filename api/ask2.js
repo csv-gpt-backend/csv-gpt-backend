@@ -24,4 +24,37 @@ export default async function handler(req, res) {
     const lines = text.split(/\r?\n/);
 
     if (!q.trim()) {
-      return res.sta
+      return res.status(200).json({
+        ok: true, endpoint: "ask2", mode: "txt-full",
+        n_lineas: lines.length, texto: text
+      });
+    }
+
+    const qn = normaliza(q);
+    const maxRes = Math.max(1, Number(limit) || 50);
+    const ctx = Math.max(0, Number(context) || 0);
+
+    const resultados = [];
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      if (normaliza(ln).includes(qn)) {
+        const match = { linea: i + 1, texto: ln };
+        if (ctx) {
+          const ini = Math.max(0, i - ctx);
+          const fin = Math.min(lines.length, i + ctx + 1);
+          match.contexto = { desde: ini + 1, hasta: fin, fragmento: lines.slice(ini, fin) };
+        }
+        resultados.push(match);
+        if (resultados.length >= maxRes) break;
+      }
+    }
+
+    return res.status(200).json({
+      ok: true, endpoint: "ask2", mode: "txt-search",
+      query: q, total_encontrados: resultados.length,
+      n_lineas: lines.length, resultados
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, where: "ask2-search", error: String(err?.message || err) });
+  }
+}
