@@ -110,9 +110,15 @@ SALIDA JSON {"texto":"...","tablas_markdown":""}.`;
       max_tokens: 1200
     };
 
-    const completion = await client.chat.completions.create(
-      isGpt5 ? common : { ...common, temperature: 0.2 }
-    );
+ const completion = await client.chat.completions.create({
+  model: MODEL,
+  messages: [
+    { role: 'system', content: system },
+    { role: 'user',   content: user }
+  ],
+  temperature: 1,                // GPT-5 solo acepta 1
+  max_completion_tokens: 1000    // ✅ Parámetro correcto
+});
 
     const raw = completion?.choices?.[0]?.message?.content || '{}';
     let parsed;
