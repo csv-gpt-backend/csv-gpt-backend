@@ -1,369 +1,161 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CSV/PDF ↔ GPT (MX/EC)</title>
-  <style>
-    :root{
-      --brand:#1f6fff; --bg:#fafafa; --card:#fff; --ink:#1b1e23; --muted:#6b7280; --ring:#e5e7eb;
+// api/ask.js
+// Backend optimizado para GPT-5 y CSV+TXT
+import fs from 'fs';
+import path from 'path';
+import OpenAI from 'openai';
+
+const OPENAI_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY;
+
+// Modelo por defecto GPT-5, con fallback a GPT-4o-mini
+const MODEL = process.env.OPENAI_MODEL || 'gpt-5';
+const FALLBACK_MODEL = 'gpt-4o-mini';
+
+// Rutas absolutas
+const CSV_PATH = path.join(process.cwd(), 'datos', 'decimo.csv');
+const TXT_EMOCIONAL = path.join(process.cwd(), 'emocional.txt');
+
+const client = new OpenAI({ apiKey: OPENAI_KEY });
+
+// ==== Funciones auxiliares ====
+
+// Lee CSV con recorte para evitar tokens excesivos
+function readCsvSnapshot(maxChars = 30000) {
+  try {
+    const raw = fs.readFileSync(CSV_PATH, 'utf8');
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    const header = (lines[0] || '').split(/[,;]/).map(s => s.trim());
+    return {
+      ok: true,
+      header,
+      preview: raw.slice(0, maxChars)
+    };
+  } catch (e) {
+    console.error('Error leyendo CSV:', e.message);
+    return { ok: false, header: [], preview: '' };
+  }
+}
+
+// Lee archivo TXT (emocional.txt)
+function readTxtFile(filepath, maxChars = 50000) {
+  try {
+    if (fs.existsSync(filepath)) {
+      const raw = fs.readFileSync(filepath, 'utf8');
+      return raw.slice(0, maxChars);
     }
-    *{box-sizing:border-box} html,body{height:100%}
-    body{margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial; color:var(--ink); background:var(--bg)}
+  } catch (e) {
+    console.error('Error leyendo TXT:', e.message);
+  }
+  return '';
+}
 
-    /* ===== Header fijo (video + logos) ===== */
-    .hero{ position:sticky; top:0; z-index:9999; background:#fff; border-bottom:1px solid var(--ring); box-shadow:0 2px 10px rgba(0,0,0,.05) }
-    .hero-inner{ max-width:1200px; margin:0 auto; padding:12px 20px; display:grid;
-      grid-template-columns: 1fr minmax(420px,640px) 1fr; gap:12px; align-items:center }
-    .brand,.partner{display:flex; align-items:center; justify-content:center}
-    .brand img,.partner img{ max-height:90px; width:auto; object-fit:contain }
-    .video-shell{ border-radius:16px; overflow:hidden; border:1px solid var(--ring); background:#000; width:100%; aspect-ratio:16/9 }
-    .video-shell video{ width:100%; height:100%; object-fit:cover; display:block }
-
-    /* ===== Contenido ===== */
-    .container{ max-width:1200px; margin:20px auto 28px; padding:0 20px; display:grid; gap:16px }
-    .card{ background:var(--card); border:1px solid var(--ring); border-radius:14px; padding:16px }
-
-    /* textarea: 2 líneas exactas */
-    textarea{
-      width:100%; height:58px; max-height:58px; min-height:58px;
-      padding:10px 12px; border-radius:12px; border:1px solid var(--ring);
-      outline:none; font-size:16px; resize:none; background:#fff;
-    }
-
-    .controls{ display:flex; flex-wrap:wrap; gap:12px; justify-content:center; align-items:center; margin-top:10px }
-    .btn{ display:inline-flex; align-items:center; gap:8px; padding:10px 16px; border:1px solid var(--ring); border-radius:999px; background:#fff; cursor:pointer; font-weight:600 }
-    .btn.primary{ background:var(--brand); color:#fff; border-color:transparent }
-    .btn:active{ transform:translateY(1px) }
-    .muted{ color:var(--muted); }
-    h3{ margin:0 0 10px 0 }
-
-    /* Secciones 2 y 3 con sus propios contenedores */
-    .out{ min-height:64px; padding:12px 14px; border-radius:12px; border:1px dashed var(--ring); background:#fff }
-    .tables{ min-height:96px; max-height:50vh; overflow:auto; padding:12px 14px; border-radius:12px; border:1px dashed var(--ring); background:#fff }
-
-    .tables table{ width:100%; border-collapse:collapse; font-size:14px }
-    .tables th,.tables td{ border:1px solid var(--ring); padding:8px 10px; text-align:left }
-    .tables th{ background:#f8fafc }
-
-    select{ padding:10px 14px; border:1px solid var(--ring); border-radius:10px; background:#fff; font-weight:600 }
-
-    @media (max-width: 860px){
-      .hero-inner{ grid-template-columns: 1fr }
-      .brand img,.partner img{ max-height:48px }
-    }
-  </style>
-</head>
-<body>
-  <!-- ===== PRIMERA PARTE (fija) ===== -->
-  <header class="hero">
-    <div class="hero-inner">
-      <div class="brand"><img src="/left.png" alt="Logo Izq" onerror="this.style.opacity=0.2"></div>
-      <div class="video-shell">
-        <!-- Siempre mute; el audio lo hace el TTS -->
-        <video id="coachVideo" playsinline muted preload="auto" poster="/right.png" crossorigin="anonymous">
-          <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
-        </video>
-      </div>
-      <div class="partner"><img src="/right.png" alt="Logo Der" onerror="this.style.opacity=0.2"></div>
-    </div>
-  </header>
-
-  <!-- ===== SEGUNDA Y TERCERA PARTE ===== -->
-  <main class="container">
-    <!-- Entrada + controles -->
-    <section class="card">
-      <textarea id="q" placeholder="Escribe tu pregunta o usa dictado…"></textarea>
-
-      <div class="controls">
-        <button class="btn primary" id="send">Enviar</button>
-        <button class="btn" id="micBtn">🎙️ Dictado</button>
-        <button class="btn" id="muteBtn">🔇 Silenciar voz</button>
-        <button class="btn" id="clearBtn">🧹 Limpiar</button>
-        <button class="btn" id="newBtn">🆕 Nueva sesión</button>
-
-        <select id="exportType" title="Tipo de exportación">
-          <option value="pdf">PDF</option>
-          <option value="doc">Word (.doc)</option>
-          <option value="csv">CSV</option>
-        </select>
-        <button class="btn" id="exportBtn">⬇️ Exportar</button>
-
-        <span class="muted" id="status">Listo</span>
-      </div>
-    </section>
-
-    <!-- Sección 2: Respuesta -->
-    <section class="card">
-      <h3>Respuesta</h3>
-      <div id="answer" class="out muted">—</div>
-    </section>
-
-    <!-- Sección 3: Tablas/Listas -->
-    <section class="card">
-      <h3>Tablas y Listas</h3>
-      <div id="tables" class="tables muted">—</div>
-    </section>
-  </main>
-
-  <script>
-    // ====== Referencias DOM ======
-    const txt = document.getElementById('q');
-    const btnSend = document.getElementById('send');
-    const btnMic  = document.getElementById('micBtn');
-    const btnMute = document.getElementById('muteBtn');
-    const btnClear= document.getElementById('clearBtn');
-    const btnNew  = document.getElementById('newBtn');
-    const statusEl= document.getElementById('status');
-    const out     = document.getElementById('answer');
-    const tablesBox  = document.getElementById('tables');
-    const video   = document.getElementById('coachVideo');
-
-    const exportBtn = document.getElementById('exportBtn');
-    const exportType= document.getElementById('exportType');
-
-    // ====== Estado ======
-    let speaking = false; // control de locución para loop del video
-
-    // ====== Voz femenina ES-MX / LATAM ======
-    const synth = window.speechSynthesis;
-    let currentUtter = null;
-
-    function pickFemaleSpanishVoice() {
-      const voices = synth.getVoices() || [];
-      // Preferencias por nombre común
-      const preferByName = [
-        'Microsoft Sabina', 'Microsoft Dalia', 'Paulina', 'Lucia', 'Conchita', 'Camila', 'Lupe'
-      ];
-      // 1) es-MX femenina
-      let v = voices.find(v => /es-?MX/i.test(v.lang) && /female|mujer|woman/i.test(v.name));
-      if (v) return v;
-      // 2) es-MX cualquiera
-      v = voices.find(v => /es-?MX/i.test(v.lang)); if (v) return v;
-      // 3) es-419 / es (latino)
-      v = voices.find(v => /es-?419/i.test(v.lang) && /female|mujer|woman/i.test(v.name)); if (v) return v;
-      v = voices.find(v => /^es/i.test(v.lang) && /female|mujer|woman/i.test(v.name)); if (v) return v;
-      // 4) por nombre
-      for (const name of preferByName) {
-        const cand = voices.find(v => (v.name||'').toLowerCase().includes(name.toLowerCase()));
-        if (cand) return cand;
-      }
-      // 5) último recurso: cualquier español
-      return voices.find(v => /^es/i.test(v.lang)) || voices[0] || null;
+// ==== Handler principal ====
+export default async function handler(req, res) {
+  try {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Método no permitido. Usa POST con JSON.' });
     }
 
-    function stopSpeaking() {
-      speaking = false;
-      try{ video.pause(); video.loop = false; }catch(_){}
-      if (synth && synth.speaking) { try{ synth.cancel(); }catch(_){ } }
-      currentUtter = null;
-    }
-
-    function speak(text){
-      stopSpeaking();
-      if (!text || !('speechSynthesis' in window)) return;
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1; u.pitch = 1; u.volume = 1; // volumen estable
-
-      const startSpeaking = () => {
-        const v = pickFemaleSpanishVoice();
-        if (v) { u.voice = v; u.lang = v.lang; }
-        else { u.lang = 'es-MX'; }
-        currentUtter = u;
-        speaking = true;
-        try{ video.currentTime = 0; video.loop = true; video.play().catch(()=>{}); }catch(_){}
-        synth.speak(u);
-      };
-
-      if (synth.getVoices().length === 0) {
-        speechSynthesis.onvoiceschanged = () => startSpeaking();
-      } else {
-        startSpeaking();
-      }
-
-      u.onend = () => { speaking=false; try{ video.loop = false; video.pause(); }catch(_){} };
-      u.onerror = () => { speaking=false; try{ video.loop = false; video.pause(); }catch(_){} };
-    }
-
-    // ====== Dictado (sin duplicaciones) ======
-    function toggleDictado(){
-      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRec) { alert('Tu navegador no soporta dictado.'); return; }
-      const rec = new SpeechRec();
-      rec.lang = 'es-MX';
-      rec.continuous = false; rec.interimResults = false;
-      statusEl.textContent='Escuchando…';
-      rec.onresult = (e) => { const t = e.results?.[0]?.[0]?.transcript || ''; txt.value = (txt.value + ' ' + t).trim(); };
-      rec.onend = ()=>{ statusEl.textContent='Listo'; };
-      rec.onerror= ()=>{ statusEl.textContent='Listo'; };
-      try{ rec.start(); }catch(_){}
-    }
-
-    // ====== Markdown → Tabla (Sección 3) ======
-    function extractFirstMarkdownTable(md){
-      const lines = md.split(/\r?\n/);
-      const startIdx = lines.findIndex(l => /^\s*\|/.test(l));
-      if (startIdx === -1) return null;
-      let endIdx = startIdx + 1;
-      while (endIdx < lines.length && /^\s*\|/.test(lines[endIdx])) endIdx++;
-      const tLines = lines.slice(startIdx, endIdx);
-      return tLines;
-    }
-    function parseMarkdownTable(md){
-      const tLines = extractFirstMarkdownTable(md);
-      if (!tLines || tLines.length < 2) return null;
-      const toCells = (line)=> line.trim().split('|').slice(1,-1).map(c=>c.trim());
-      const header = toCells(tLines[0]);
-      const rows = tLines.slice(2).map(toCells).filter(r => r.length > 0);
-      return { header, rows };
-    }
-    function renderTableFromMarkdown(md){
-      const parsed = parseMarkdownTable(md);
-      if (!parsed) return null;
-      const { header, rows } = parsed;
-
-      const table = document.createElement('table');
-      const thead = document.createElement('thead');
-      const trh = document.createElement('tr');
-
-      const thNum = document.createElement('th'); thNum.textContent = '#';
-      trh.appendChild(thNum);
-      header.forEach(h => { const th=document.createElement('th'); th.textContent=h; trh.appendChild(th); });
-      thead.appendChild(trh); table.appendChild(thead);
-
-      const tbody = document.createElement('tbody');
-      rows.forEach((r,idx) => {
-        const tr = document.createElement('tr');
-        const tdNum = document.createElement('td'); tdNum.textContent = String(idx+1);
-        tr.appendChild(tdNum);
-        r.forEach(cell => { const td=document.createElement('td'); td.textContent=cell; tr.appendChild(td); });
-        tbody.appendChild(tr);
+    if (!OPENAI_KEY) {
+      return res.status(200).json({
+        texto: 'Falta la clave de OpenAI (open_ai_key). Configúrala en Vercel.',
+        tablas_markdown: ''
       });
-      table.appendChild(tbody);
-      return { table, rows, header };
     }
 
-    // Locución también de tablas (primeros nombres)
-    function narrateTable(rows, header){
-      if (!rows || !rows.length) return '';
-      let nameIdx = header.findIndex(h => /nombre/i.test(h));
-      if (nameIdx < 0) nameIdx = 0;
-      const total = rows.length;
-      const maxToSpeak = Math.min(12, total);
-      const nombres = rows.slice(0,maxToSpeak).map((r,i)=> `${i+1}. ${r[nameIdx]}`).join('; ');
-      return ` Se muestran ${total} registros. ${maxToSpeak>=1 ? 'Los primeros son: ' + nombres : ''}`;
+    const { question } = req.body || {};
+    if (!question || typeof question !== 'string' || !question.trim()) {
+      return res.status(200).json({
+        texto: 'Por favor, escribe una pregunta.',
+        tablas_markdown: ''
+      });
     }
 
-    // ====== Exportaciones (título = la pregunta) ======
-    function exportContent(type){
-      const titulo = (txt.value || 'Reporte').trim() || 'Reporte';
-      const texto = (out.textContent || '').trim();
-      let tableHTML = '';
-      let csvData = '';
+    const q = question.trim();
 
-      if (!tablesBox.classList.contains('muted') && tablesBox.querySelector('table')){
-        const table = tablesBox.querySelector('table').cloneNode(true);
-        tableHTML = table.outerHTML;
+    // === Cargar datos ===
+    const { ok, header, preview } = readCsvSnapshot();
+    const txtEmocional = readTxtFile(TXT_EMOCIONAL);
 
-        const ths = Array.from(table.querySelectorAll('thead th')).map(th=>th.textContent);
-        const trs = Array.from(table.querySelectorAll('tbody tr')).map(tr => Array.from(tr.children).map(td => td.textContent));
-        const csvRows = [ths, ...trs];
-        csvData = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-      }
+    const headerNote = ok
+      ? `Encabezados del CSV (${header.length} columnas): ${header.join(' | ')}`
+      : `No se pudo leer el CSV.`;
 
-      if (type === 'pdf'){
-        const w = window.open('', '_blank');
-        const styles = `<style>body{font-family:Arial,sans-serif;padding:20px;}h1{margin:0 0 8px}h2{margin:14px 0 8px}
-          table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f1f5f9}</style>`;
-        w.document.write(`<html><head><meta charset="utf-8">${styles}<title>${titulo}</title></head><body>`);
-        w.document.write(`<h1>${titulo}</h1><h2>Respuesta</h2><p>${texto || '—'}</p>`);
-        if (tableHTML) w.document.write(`<h2>Tablas</h2>${tableHTML}`);
-        w.document.write('</body></html>');
-        w.document.close(); w.focus(); w.print();
-        return;
-      }
-      if (type === 'doc'){
-        const styles = `<style>table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f1f5f9}</style>`;
-        const html = `
-          <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-          <head><meta charset="utf-8"><title>${titulo}</title>${styles}</head>
-          <body><h1>${titulo}</h1><h2>Respuesta</h2><p>${(texto || '—')}</p>${tableHTML ? `<h2>Tablas</h2>${tableHTML}`:''}</body></html>`;
-        const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `${titulo.replace(/[^\w\-]+/g,'_')}.doc`; a.click();
-        URL.revokeObjectURL(url);
-        return;
-      }
-      if (type === 'csv'){
-        if (!csvData){ alert('No hay tabla disponible para exportar a CSV.'); return; }
-        const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `${titulo.replace(/[^\w\-]+/g,'_')}.csv`; a.click();
-        URL.revokeObjectURL(url);
-        return;
-      }
+    // === Prompt del sistema ===
+    const system = `Eres una analista educativa rigurosa.
+Responde SIEMPRE en español latino neutral.
+Reglas:
+- Si el usuario pide "todos los estudiantes", debes listar a TODOS sin omitir ninguno.
+- Usa EXACTAMENTE las columnas solicitadas por el usuario. Si pide varias columnas, inclúyelas todas.
+- Presenta las LISTAS/TABLAS en formato Markdown (| Col | ... |) cuando aplique.
+- Numera filas implícitamente (la UI agregará columna #).
+- Nada de "no puedo realizar". Si falta dato, explica brevemente y ofrece alternativas.
+- No uses asteriscos (*).
+- Si se menciona PDF o texto emocional, analiza también el contenido proporcionado.`;
+
+    // === Prompt del usuario ===
+    let userContent = `PREGUNTA: "${q}"\n\n${headerNote}\n\n`;
+
+    if (ok) {
+      userContent += `Fragmento del CSV:\n"""${preview}"""\n\n`;
     }
 
-    // ====== Petición al backend ======
-    async function send(){
-      const question = (txt.value || '').trim();
-      if (!question) { out.textContent = 'Por favor, escribe una pregunta.'; out.classList.remove('muted'); return; }
-
-      stopSpeaking();
-      statusEl.textContent='Consultando…';
-      out.textContent = 'Procesando…'; out.classList.add('muted');
-      tablesBox.textContent = '—'; tablesBox.classList.add('muted');
-
-      try{
-        const r = await fetch('/api/ask', {
-          method:'POST',
-          headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ question })
-        });
-        const data = await r.json();
-
-        const texto = data?.texto || 'No obtuve respuesta.';
-        out.textContent = texto; out.classList.remove('muted');
-
-        const md = data?.tablas_markdown || '';
-        let extraNarr = '';
-        if (md) {
-          const rendered = renderTableFromMarkdown(md);
-          tablesBox.innerHTML = '';
-          if (rendered){
-            tablesBox.appendChild(rendered.table);
-            tablesBox.classList.remove('muted');
-            extraNarr = narrateTable(rendered.rows, rendered.header); // leer también tablas
-          } else {
-            tablesBox.innerHTML = '<pre>'+md+'</pre>';
-            tablesBox.classList.remove('muted');
-          }
-        } else {
-          tablesBox.textContent='—'; tablesBox.classList.add('muted');
-        }
-
-        // Locución (voz femenina) + video looping durante la lectura
-        const narr = (texto && !/^no obtuve respuesta/i.test(texto)) ? (texto + (extraNarr||'')) : texto;
-        if (narr && narr.trim()) speak(narr);
-
-        statusEl.textContent='Listo';
-      }catch(err){
-        console.error(err);
-        statusEl.textContent='Error';
-        out.textContent='Ocurrió un problema procesando la consulta. Intenta nuevamente.';
-      }
+    if (txtEmocional && /emocional/i.test(q)) {
+      userContent += `Contenido emocional relevante:\n"""${txtEmocional}"""\n\n`;
     }
 
-    // ====== Botones ======
-    btnSend.onclick = send;
-    btnMic.onclick  = toggleDictado;
-    btnMute.onclick = stopSpeaking;
-    btnClear.onclick= ()=>{ txt.value=''; out.textContent='—'; out.classList.add('muted'); tablesBox.textContent='—'; tablesBox.classList.add('muted'); stopSpeaking(); };
-    btnNew.onclick  = ()=>{ txt.value=''; stopSpeaking(); out.textContent='—'; out.classList.add('muted'); tablesBox.textContent='—'; tablesBox.classList.add('muted'); statusEl.textContent='Listo'; };
-    exportBtn.onclick = ()=> exportContent(exportType.value);
+    userContent += `Instrucciones de salida:
+1) "texto": explicación clara en español (sin asteriscos).
+2) "tablas_markdown": si el usuario pidió listas/tablas, entrega TABLA en Markdown con TODAS las filas y columnas solicitadas.
+3) Devuelve SOLO un JSON válido con {"texto": "...", "tablas_markdown": "..."}.`;
 
-    // “Despierta” autoplay sin sonido
-    document.addEventListener('DOMContentLoaded', ()=>{ try{ video.play().then(()=>video.pause()).catch(()=>{}); }catch(_){ } });
-  </script>
-</body>
-</html>
+    // === Llamada a GPT ===
+    const isGpt5 = /^gpt-5/i.test(MODEL);
+    const base = {
+      model: MODEL,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: userContent }
+      ]
+    };
+
+    const opts = isGpt5
+      ? { ...base, temperature: 1, max_completion_tokens: 600 }
+      : { ...base, temperature: 0.2, max_tokens: 600 };
+
+    let completion;
+
+    try {
+      completion = await client.chat.completions.create(opts);
+    } catch (err) {
+      console.warn('Fallo con GPT-5, usando fallback:', err.message);
+      completion = await client.chat.completions.create({
+        ...base,
+        model: FALLBACK_MODEL,
+        temperature: 0.2,
+        max_tokens: 600
+      });
+    }
+
+    // === Parseo de respuesta ===
+    const raw = completion?.choices?.[0]?.message?.content || '{}';
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      parsed = { texto: raw, tablas_markdown: '' };
+    }
+
+    const texto = String(parsed.texto || parsed.text || '').replace(/\*/g, '').trim();
+    const tablas_markdown = String(parsed.tablas_markdown || '').trim();
+
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json({ texto, tablas_markdown });
+
+  } catch (err) {
+    console.error('ASK ERROR:', err);
+    return res.status(200).json({
+      texto: `Error: ${err?.message || 'Desconocido'}.`,
+      tablas_markdown: ''
+    });
+  }
+}
