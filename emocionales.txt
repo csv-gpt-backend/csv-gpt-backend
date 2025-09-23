@@ -16,11 +16,8 @@ Algunas características importantes de esta prueba son las siguientes:
 • Sin límite de tiempo: Se responde de manera reflexiva.
 • Formato electrónico: La prueba se presenta en un formato digital, lo que fa- cilita su administración y permite un procesamiento más eficiente de los resultados.
 
-
 1. Baremación: los criterios de baremación son una herramienta que permite entender y comparar los resultados de una prueba con relación a un grupo de referencia adecuado. Los baremos ayudan a tener una evaluación más precisa y equitativa, teniendo en cuenta las características individuales y el contexto en el que se encuentra cada persona evaluada.
-
 2. Subprueba: Componente específico de una prueba de evaluación psicométrica diseñada para evaluar una habilidad específica. Se administra de manera independiente.
-
 
 Estas subpruebas cuentan con normas referenciales que comparan el desempeño del individuo con los resultados obtenidos por personas de su mismo nivel escolar.
 La posición relativa del evaluado dentro del grupo de referencia 3 se indica utilizan- do percentiles 4.
