@@ -120,6 +120,7 @@ function findParallelColumn(headers){
   return headers.find(h=>/paralelo|secci[oó]n|curso/i.test(h)) || null;
 }
 function findCourseColumn(headers){
+  // curso/grado/nivel/año
   return headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h)) || null;
 }
 function filterByParallel(rows, parCol, q){
@@ -156,7 +157,7 @@ function fastAnswer(question, csv){
   const parCol = findParallelColumn(csv.headers);
   const curCol = findCourseColumn(csv.headers);
 
-  // 0) Conteo estudiantes
+  // 0) Conteo estudiantes (global / A / B)
   if (looksCount(q)){
     const filtered = filterByParallel(csv.rows, parCol, q);
     return {
@@ -166,7 +167,7 @@ function fastAnswer(question, csv){
     };
   }
 
-  // 1) Lista de estudiantes (#, Nombre, Curso, Paralelo)
+  // 1) Lista de estudiantes (global o por A/B) -> #, Nombre, Curso, Paralelo
   if (looksListStudents(q) && namesCols.length) {
     const filtered = filterByParallel(csv.rows, parCol, q);
     const rows = filtered.map(r=>{
@@ -174,16 +175,88 @@ function fastAnswer(question, csv){
       const curso = curCol ? (r[curCol] ?? "") : "";
       const paralelo = parCol ? (r[parCol] ?? "") : "";
       return [nombre, String(curso), String(paralelo)];
-    }).filter(r=>r[0]);
+    }).filter(r=>r[0]); // requiere nombre
+    // ordenar por nombre
     rows.sort((a,b)=>a[0].localeCompare(b[0], 'es'));
     return {
       general: `Se listan ${rows.length} estudiantes${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B")+ ")" : ""}.`,
       lists: [],
       tables: [{
         title: "Listado de estudiantes",
-        columns: ["Nombre","Curso","Paralelo"],  // el front añade #
+        columns: ["Nombre","Curso","Paralelo"],  // (el front añade #)
         rows
       }]
+    };
+  }
+
+  // 2) Promedio / Mediana / Desv.Est. de <col> (global o por A/B)
+  const col = findNumericColumn(csv.headers, q);
+  if (col) {
+    const filtered = filterByParallel(csv.rows, parCol, q).filter(r=>isNum(r[col]));
+    if (filtered.length){
+      const vals = filtered.map(r=>r[col]);
+      const n = vals.length;
+      const sum = vals.reduce((a,b)=>a+b,0);
+      const mean = sum/n;
+      const sorted = [...vals].sort((a,b)=>a-b);
+      const median = n%2 ? sorted[(n-1)/2] : (sorted[n/2-1]+sorted[n/2])/2;
+      const varSample = vals.reduce((a,b)=>a+(b-mean)**2,0)/(n-1||1);
+      const stdev = Math.sqrt(varSample);
+      if (looksAverage(q) || looksMedian(q) || looksStd(q)) {
+        const rows2 = [
+          ["n", String(n)],
+          ["Promedio", mean.toFixed(4)],
+          ["Mediana", median.toFixed(4)],
+          ["Desviación estándar", stdev.toFixed(4)]
+        ];
+        return {
+          general: `Estadísticos para ${col}${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B")+ ")" : ""}.`,
+          lists:[],
+          tables:[{ title:`Estadísticos de ${col}`, columns:["Métrica","Valor"], rows: rows2 }]
+        };
+      }
+    }
+  }
+
+  // 3) Top N / Mejores N de <col>
+  if (looksTop(q) && col && namesCols.length) {
+    const N = extractN(q, 10);
+    const filtered = filterByParallel(csv.rows, parCol, q)
+      .filter(r=>isNum(r[col]));
+    filtered.sort((a,b)=>b[col]-a[col]);
+    const top = filtered.slice(0, N).map((r)=>{
+      const nombre = fullNameFrom(r, namesCols);
+      return [ nombre, r[col] ];
+    });
+    return {
+      general: `Top ${Math.min(N, top.length)} en ${col}.`,
+      tables:[{
+        title:`Top ${N} en ${col}`,
+        columns:["Estudiante", col],
+        rows: top.map(([n,v])=>[n, String(v)])
+      }],
+      lists:[]
+    };
+  }
+
+  // 4) Peores N de <col>
+  if (looksBottom(q) && col && namesCols.length) {
+    const N = extractN(q, 10);
+    const filtered = filterByParallel(csv.rows, parCol, q)
+      .filter(r=>isNum(r[col]));
+    filtered.sort((a,b)=>a[col]-b[col]);
+    const bot = filtered.slice(0, N).map((r)=>{
+      const nombre = fullNameFrom(r, namesCols);
+      return [ nombre, r[col] ];
+    });
+    return {
+      general: `Peores ${Math.min(N, bot.length)} en ${col}.`,
+      tables:[{
+        title:`Peores ${N} en ${col}`,
+        columns:["Estudiante", col],
+        rows: bot.map(([n,v])=>[n, String(v)])
+      }],
+      lists:[]
     };
   }
 
@@ -209,7 +282,7 @@ Devuelve EXCLUSIVAMENTE JSON válido:
 `.trim();
 
   const { headers, rows } = cache.csv;
-  const sample = rows.slice(0, 15); 
+  const sample = rows.slice(0, 15); // muestra pequeña (más rápido)
   const csvStats = cache.csvStats;
   const textoBase = cache.textoBase;
 
@@ -227,7 +300,7 @@ ${clip(textoBase, 15000)}
 `.trim();
 
   const resp = await client.chat.completions.create({
-    model: model || process.env.OPENAI_MODEL || "gpt-5-mini",
+    model: model || process.env.OPENAI_MODEL || "gpt-4o-mini",
     messages: [
       { role: "system", content: system },
       { role: "user", content: user }
@@ -240,36 +313,13 @@ ${clip(textoBase, 15000)}
   catch { return { general: content, tables: [], lists: [] }; }
 }
 
-/* ===== Palabras que disparan GPT-5 ===== */
-function shouldUseGPT5(q){
-  const lower = q.toLowerCase();
-
-  // 1. Teórico / conceptual
-  const theory = /(explica|explicación|interpretación|justifica|fundamento|validez|confiabilidad|teoría|teórico|conceptual|sesgo|significancia|hipótesis|gauss|distribución normal)/i.test(lower);
-
-  // 2. Comparaciones complejas
-  const compare = /(compara|comparación|diferencia|diferencias|segmenta|contrasta)/i.test(lower) &&
-                  /(promedio|mediana|distribución|paralelo|curso)/i.test(lower);
-
-  // 3. Reportes y conclusiones
-  const report = /(reporte|informe|diagnóstico|conclusiones|recomendaciones|resumen ejecutivo)/i.test(lower);
-
-  // 4. Estadística avanzada
-  const stats = /(correlación|regresión|percentil|percentiles|tendencia|desviación estándar|curva normal|varianza)/i.test(lower);
-
-  // 5. Preguntas largas
-  const long = lower.length > 500;
-
-  return theory || compare || report || stats || long;
-}
-
 /* ===== Handler ===== */
 export default async function handler(req, res){
   if(req.method==="OPTIONS") return res.status(200).end();
   try{
     const body = req.method==="POST" ? (req.body||{}) : (req.query||{});
     const question = String(body.question || body.q || "");
-    const modelParam = String(body.model || "");
+    const model = String(body.model || "");
     const apiKey = process.env.open_ai_key || process.env.OPENAI_API_KEY;
     const flush = body.flush || req.query.flush;
 
@@ -277,6 +327,7 @@ export default async function handler(req, res){
 
     if(!apiKey) return res.status(500).json({ ok:false, error:"Falta open_ai_key/OPENAI_API_KEY" });
 
+    // warmup
     if (question === "__warmup") {
       await loadCache();
       return res.status(200).json({ ok:true, warmup:true });
@@ -285,19 +336,19 @@ export default async function handler(req, res){
 
     const cache = await loadCache();
 
-    // Primero fast paths
+    // FAST PATHS (sin GPT) primero
     const quick = fastAnswer(question, cache.csv);
     if (quick) {
-      return res.status(200).json({ ok:true, source:{ fast:true }, answer: quick });
+      return res.status(200).json({
+        ok:true,
+        source:{ fast:true },
+        answer: quick
+      });
     }
 
-    // Selección automática de modelo
-    const autoModel = shouldUseGPT5(question) ? "gpt-5" : (process.env.OPENAI_MODEL || "gpt-5-mini");
-    const modelToUse = modelParam || autoModel;
-
-    // GPT con contexto
-    const answer = await callOpenAI({ question, cache, model: modelToUse, apiKey });
-    return res.status(200).json({ ok:true, source:{ fast:false, model: modelToUse }, answer });
+    // Si no es una consulta estándar, usa GPT con contexto mínimo
+    const answer = await callOpenAI({ question, cache, model, apiKey });
+    return res.status(200).json({ ok:true, source:{ fast:false }, answer });
   }catch(err){
     console.error("answer.js error:", err);
     return res.status(200).json({ ok:false, error:String(err?.message||err) });
