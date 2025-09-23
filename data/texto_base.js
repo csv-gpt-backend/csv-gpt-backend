@@ -149,4 +149,4 @@ La aplicación de la Prueba Habilidades Emocionales se realiza en formato electr
 • Configuración personalizada. Es posible elegir entre dos opciones:
 a) El conjunto que desea evaluarse de entre los tres que conforman el total de la prueba: Habilidades Intrapersonales, Habilidades Interpersonales/ Estilo de comunicación, Habilidades para la vida/ Propensión al cambio.
 b) Un mínimo de tres habilidades de entre el total que forman la prueba.
-• Generación de diagnóstico: Un diagnóstico para cada conjunto seleccio- nado ;
+• Generación de diagnóstico: Un diagnóstico para cada conjunto seleccionado;
