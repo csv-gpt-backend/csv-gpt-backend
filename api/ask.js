@@ -1,160 +1,117 @@
 // api/ask.js
-// Backend optimizado para GPT-5 y CSV+TXT
+// SOLO GPT-5, sin PDFs. Lee datos/decimo.csv (auto ; o ,). Respuesta JSON: {texto, tablas_markdown}
+
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
 const OPENAI_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY;
+const MODEL = 'gpt-5'; // Solo GPT-5 como pediste
 
-// Modelo por defecto GPT-5, con fallback a GPT-4o-mini
-const MODEL = process.env.OPENAI_MODEL || 'gpt-5';
-const FALLBACK_MODEL = 'gpt-4o-mini';
-
-// Rutas absolutas
+// Ruta fija del CSV (no depende de variables de Vercel)
 const CSV_PATH = path.join(process.cwd(), 'datos', 'decimo.csv');
-const TXT_EMOCIONAL = path.join(process.cwd(), 'emocional.txt');
 
 const client = new OpenAI({ apiKey: OPENAI_KEY });
 
-// ==== Funciones auxiliares ====
-
-// Lee CSV con recorte para evitar tokens excesivos
-function readCsvSnapshot(maxChars = 30000) {
+// Lee CSV (recorta para velocidad) y detecta delimitador ; o ,
+function readCsvSnapshot(maxChars = 60000) {
   try {
     const raw = fs.readFileSync(CSV_PATH, 'utf8');
-    const lines = raw.split(/\r?\n/).filter(Boolean);
-    const header = (lines[0] || '').split(/[,;]/).map(s => s.trim());
+    const firstLine = raw.split(/\r?\n/)[0] || '';
+    // Detectar separador predominante
+    const semi = (firstLine.match(/;/g) || []).length;
+    const comma = (firstLine.match(/,/g) || []).length;
+    const sep = semi >= comma ? ';' : ',';
+
+    const header = firstLine.split(sep).map(s => s.trim());
     return {
       ok: true,
       header,
+      sep,
       preview: raw.slice(0, maxChars)
     };
   } catch (e) {
-    console.error('Error leyendo CSV:', e.message);
-    return { ok: false, header: [], preview: '' };
+    console.error('CSV READ ERROR:', e.message);
+    return { ok: false, header: [], sep: ';', preview: '' };
   }
 }
 
-// Lee archivo TXT (emocional.txt)
-function readTxtFile(filepath, maxChars = 50000) {
-  try {
-    if (fs.existsSync(filepath)) {
-      const raw = fs.readFileSync(filepath, 'utf8');
-      return raw.slice(0, maxChars);
-    }
-  } catch (e) {
-    console.error('Error leyendo TXT:', e.message);
-  }
-  return '';
-}
-
-// ==== Handler principal ====
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Método no permitido. Usa POST con JSON.' });
     }
-
     if (!OPENAI_KEY) {
       return res.status(200).json({
-        texto: 'Falta la clave de OpenAI (open_ai_key). Configúrala en Vercel.',
+        texto: 'Falta la clave de OpenAI (open_ai_key) en Vercel.',
         tablas_markdown: ''
       });
     }
 
     const { question } = req.body || {};
     if (!question || typeof question !== 'string' || !question.trim()) {
-      return res.status(200).json({
-        texto: 'Por favor, escribe una pregunta.',
-        tablas_markdown: ''
-      });
+      return res.status(200).json({ texto: 'Por favor, escribe una pregunta.', tablas_markdown: '' });
     }
-
     const q = question.trim();
 
-    // === Cargar datos ===
-    const { ok, header, preview } = readCsvSnapshot();
-    const txtEmocional = readTxtFile(TXT_EMOCIONAL);
-
+    const { ok, header, sep, preview } = readCsvSnapshot();
     const headerNote = ok
-      ? `Encabezados del CSV (${header.length} columnas): ${header.join(' | ')}`
-      : `No se pudo leer el CSV.`;
+      ? `Encabezados reales (${header.length} columnas, sep="${sep}"): ${header.join(' | ')}`
+      : `No pude leer el CSV en datos/decimo.csv.`;
 
-    // === Prompt del sistema ===
-    const system = `Eres una analista educativa rigurosa.
-Responde SIEMPRE en español latino neutral.
+    // Prompt sistema (reglas firmes)
+    const system = `Eres una analista educativa rigurosa (voz femenina, español latino MX/EC).
 Reglas:
-- Si el usuario pide "todos los estudiantes", debes listar a TODOS sin omitir ninguno.
-- Usa EXACTAMENTE las columnas solicitadas por el usuario. Si pide varias columnas, inclúyelas todas.
-- Presenta las LISTAS/TABLAS en formato Markdown (| Col | ... |) cuando aplique.
-- Numera filas implícitamente (la UI agregará columna #).
-- Nada de "no puedo realizar". Si falta dato, explica brevemente y ofrece alternativas.
-- No uses asteriscos (*).
-- Si se menciona PDF o texto emocional, analiza también el contenido proporcionado.`;
+- Responde SIEMPRE en español latino. Sin asteriscos.
+- Si piden "todos los estudiantes", incluye a TODOS sin omitir ninguno.
+- Usa EXACTAMENTE las columnas solicitadas (si piden varias, inclúyelas todas).
+- Cuando se pidan listas/ordenamientos/tablas, entrega TABLAS en Markdown (| Col1 | Col2 | ... |) con cabecera y filas completas.
+- La UI agregará numeración; no generes una primera columna "#" (solo las columnas pedidas).
+- Realiza cálculos estadísticos (promedios, varianzas, correlaciones, regresiones simples) usando los datos disponibles.
+- Si falta información, explica brevemente y sugiere cómo proceder.
+- Devuelve SOLO un JSON válido con las claves: {"texto": "...", "tablas_markdown": "..."}.`;
 
-    // === Prompt del usuario ===
-    let userContent = `PREGUNTA: "${q}"\n\n${headerNote}\n\n`;
+    // Prompt usuario con snapshot del CSV
+    let user = `PREGUNTA: "${q}"
 
-    if (ok) {
-      userContent += `Fragmento del CSV:\n"""${preview}"""\n\n`;
-    }
+${headerNote}
 
-    if (txtEmocional && /emocional/i.test(q)) {
-      userContent += `Contenido emocional relevante:\n"""${txtEmocional}"""\n\n`;
-    }
+Fragmento representativo del CSV (solo para contexto; puede estar recortado):
+"""${preview}"""
 
-    userContent += `Instrucciones de salida:
-1) "texto": explicación clara en español (sin asteriscos).
-2) "tablas_markdown": si el usuario pidió listas/tablas, entrega TABLA en Markdown con TODAS las filas y columnas solicitadas.
-3) Devuelve SOLO un JSON válido con {"texto": "...", "tablas_markdown": "..."}.`;
+Indicaciones de salida:
+- "texto": Explicación clara en español (sin asteriscos).
+- "tablas_markdown": Si el usuario solicitó listas/tablas, devuelve una tabla Markdown con las columnas EXACTAS que pidió y todas las filas solicitadas (sin columna de numeración). Si no aplica tabla, deja cadena vacía.
+- SOLO devuelve el JSON pedido (sin texto adicional).`;
 
-    // === Llamada a GPT ===
-    const isGpt5 = /^gpt-5/i.test(MODEL);
-    const base = {
+    // Llamada a GPT-5 (parámetros compatibles)
+    const completion = await client.chat.completions.create({
       model: MODEL,
       messages: [
         { role: 'system', content: system },
-        { role: 'user', content: userContent }
-      ]
-    };
+        { role: 'user', content: user }
+      ],
+      // Para GPT-5: temperatura fija en 1, y usar max_completion_tokens (no max_tokens)
+      temperature: 1,
+      max_completion_tokens: 1000,
+      response_format: { type: 'json_object' }
+    });
 
-    const opts = isGpt5
-      ? { ...base, temperature: 1, max_completion_tokens: 600 }
-      : { ...base, temperature: 0.2, max_tokens: 600 };
-
-    let completion;
-
-    try {
-      completion = await client.chat.completions.create(opts);
-    } catch (err) {
-      console.warn('Fallo con GPT-5, usando fallback:', err.message);
-      completion = await client.chat.completions.create({
-        ...base,
-        model: FALLBACK_MODEL,
-        temperature: 0.2,
-        max_tokens: 600
-      });
-    }
-
-    // === Parseo de respuesta ===
     const raw = completion?.choices?.[0]?.message?.content || '{}';
     let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      parsed = { texto: raw, tablas_markdown: '' };
-    }
+    try { parsed = JSON.parse(raw); }
+    catch { parsed = { texto: raw, tablas_markdown: '' }; }
 
     const texto = String(parsed.texto || parsed.text || '').replace(/\*/g, '').trim();
     const tablas_markdown = String(parsed.tablas_markdown || '').trim();
 
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).json({ texto, tablas_markdown });
-
   } catch (err) {
-    console.error('ASK ERROR:', err);
+    console.error('ASK ERROR:', err?.message || err);
+    // Devolvemos 200 para que el front no caiga en catch y muestre el mensaje de error de forma amable
     return res.status(200).json({
-      texto: `Error: ${err?.message || 'Desconocido'}.`,
+      texto: `Error del servidor: ${err?.message || 'desconocido'}.`,
       tablas_markdown: ''
     });
   }
