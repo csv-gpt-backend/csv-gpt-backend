@@ -1,95 +1,220 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Buscador TXT · Vercel</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, Arial, sans-serif; margin: 24px; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
-    input, button { padding: 8px; font-size: 14px; }
-    button { cursor: pointer; }
-    .small { color: #666; font-size: 12px; }
-    pre { white-space: pre-wrap; background:#fafafa; border:1px solid #eee; padding:12px; border-radius:8px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
-    th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
-    th { background: #f6f6f6; }
-    mark { background: #ffe062; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Asistente · CSV + TXT + PDF</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, Arial, sans-serif; background: #fff; color: #111; }
+  header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #eee; }
+  .topbar { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 12px; align-items: center; padding: 8px 12px; }
+  .topbar img { max-height: 60px; width: auto; }
+  .video-wrap { width: 100%; aspect-ratio: 16/9; }
+  .video-wrap video { width: 100%; height: 100%; object-fit: cover; border: 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 8px 12px 12px; }
+  textarea { width: min(1100px, 98vw); height: 64px; padding: 10px; font-size: 15px; }
+  button, select { padding: 10px 12px; font-size: 14px; cursor: pointer; }
+  .mic { font-size: 18px; padding: 12px 16px; }
+  .new { background: #ffd54f; border: 1px solid #f0b400; }
+  main { display: grid; grid-template-rows: 1fr 1fr; height: calc(100vh - 210px); }
+  .pane { overflow: auto; padding: 14px 16px; border-bottom: 1px solid #f2f2f2; }
+  #pane2 { border-bottom: none; }
+  h2 { margin: 0 0 8px 0; font-size: 18px; }
+  .muted { opacity: .5 }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  th { background: #f7f7f7; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+  .right { margin-left: auto; }
+  .small { font-size: 12px; color: #666; }
+</style>
 </head>
 <body>
-  <h1>Buscador de Texto (Vercel)</h1>
 
-  <div class="row">
-    <input id="q" type="text" placeholder="Buscar (vacío = ver todo)" size="34"/>
-    <label>context</label><input id="context" type="number" value="0" min="0" style="width:80px"/>
-    <label>limit</label><input id="limit" type="number" value="50" min="1" style="width:80px"/>
-    <button id="btnBuscar">Buscar</button>
-    <button id="btnVerTodo">Ver todo</button>
+<header>
+  <div class="topbar">
+    <img src="/left.png" alt="left"/>
+    <div class="video-wrap">
+      <video id="vid" src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" muted playsinline></video>
+    </div>
+    <img src="/right.png" alt="right"/>
   </div>
 
-  <p class="small">
-    API: <code>/api/ask</code> (misma origin, sin CORS) · Parámetros:
-    <code>q</code> · <code>context</code> · <code>limit</code>
-  </p>
+  <div class="controls">
+    <textarea id="q" placeholder="Escribe tu pregunta (o usa el micrófono)…"></textarea>
+    <div class="row" style="width:100%; justify-content:center;">
+      <button id="send">Enviar</button>
+      <button id="mic" class="mic">🎤 Dictar</button>
+      <button id="mute">Silenciar voz</button>
+      <button id="clear">Limpiar</button>
+      <button id="new" class="new">Nueva sesión</button>
 
-  <div id="salida"></div>
+      <select id="exportKind">
+        <option value="pdf">Exportar: PDF</option>
+        <option value="xls">Exportar: XLS</option>
+        <option value="doc">Exportar: DOC</option>
+      </select>
+      <button id="export">Exportar</button>
 
-  <script>
-    const API = "/api/ask"; // misma origin
+      <a class="right small" href="/historial.html">Historial de sesiones →</a>
+    </div>
+  </div>
+</header>
 
-    function esc(s){return String(s).replace(/[&<>]/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;" }[m]))}
-    function resaltar(texto, q){
-      if(!q) return esc(texto);
-      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'ig');
-      return esc(texto).replace(re, m=>`<mark>${esc(m)}</mark>`);
-    }
+<main>
+  <section id="pane1" class="pane">
+    <h2>Respuesta (texto e información general)</h2>
+    <div id="general"></div>
+  </section>
 
-    async function callAPI(params = {}) {
-      const url = new URL(API, location.origin);
-      Object.entries(params).forEach(([k,v])=>{ if(v!==undefined && v!==null && String(v).length) url.searchParams.set(k,v); });
-      const r = await fetch(url.toString());
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    }
+  <section id="pane2" class="pane">
+    <h2>Tablas y listados</h2>
+    <div id="tables"></div>
+  </section>
+</main>
 
-    function renderFull(data){
-      const cont = document.getElementById('salida');
-      cont.innerHTML = `
-        <h3>Texto completo</h3>
-        <p class="small">Líneas: ${data.n_lineas}</p>
-        <pre>${esc(data.texto)}</pre>
-      `;
-    }
+<script>
+/* ======= Utilidad de voz (TTS) ======= */
+let voices = [];
+function loadVoices(){
+  voices = speechSynthesis.getVoices();
+}
+speechSynthesis.onvoiceschanged = loadVoices; loadVoices();
 
-    function renderSearch(data, q){
-      const cont = document.getElementById('salida');
-      const rows = (data.resultados||[]).map(r=>{
-        const ctx = r.contexto ? `
-          <div><strong>Contexto (${r.contexto.desde}-${r.contexto.hasta}):</strong>
-          <pre>${r.contexto.fragmento.map(l=>resaltar(l,q)).join('\n')}</pre></div>` : '';
-        return `<tr><td style="width:80px">${r.linea}</td><td>${resaltar(r.texto,q)}${ctx}</td></tr>`;
-      }).join('');
-      cont.innerHTML = `
-        <h3>Resultados: ${data.total_encontrados}</h3>
-        <table><thead><tr><th>#Línea</th><th>Texto</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="2">Sin coincidencias.</td></tr>'}</tbody></table>
-      `;
-    }
+function speak(text){
+  if (!text) return;
+  const u = new SpeechSynthesisUtterance(text);
+  // español MX/EC femenino si existe:
+  u.lang = "es-MX";
+  const v = voices.find(v=>/es|span/i.test(v.lang) && /female|mujer|Google|Microsoft/i.test(v.name)) || voices.find(v=>/es/i.test(v.lang));
+  if (v) u.voice = v;
+  u.rate = 1; u.pitch = 1; u.volume = muted ? 0 : 1;
 
-    document.getElementById('btnBuscar').addEventListener('click', async ()=>{
-      const q = document.getElementById('q').value.trim();
-      const context = document.getElementById('context').value;
-      const limit = document.getElementById('limit').value;
-      const data = await callAPI({ q, context, limit });
-      if (data.mode === 'txt-full') renderFull(data); else renderSearch(data, q);
+  u.onstart = () => { try { vid.play().catch(()=>{}); } catch{} };
+  u.onend   = () => { try { vid.pause(); } catch{} };
+  speechSynthesis.speak(u);
+}
+
+/* ======= Dictado (STT) ======= */
+let rec, recOn = false;
+function toggleRec(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { alert("Reconocimiento de voz no soportado en este navegador."); return; }
+  if (!rec) { rec = new SR(); rec.lang = "es-MX"; rec.continuous = false; rec.interimResults = false; }
+  if (!recOn){
+    rec.start(); recOn = true; document.getElementById("mic").classList.add("muted");
+    rec.onresult = (e)=>{ const t = e.results[0][0].transcript || ""; q.value = (q.value + " " + t).trim(); recOn=false; document.getElementById("mic").classList.remove("muted"); };
+    rec.onend = ()=>{ recOn=false; document.getElementById("mic").classList.remove("muted"); };
+  } else {
+    rec.stop(); recOn=false; document.getElementById("mic").classList.remove("muted");
+  }
+}
+
+/* ======= Estado / Sesión ======= */
+let muted = false;
+let sessionId = "s-"+Date.now();
+let session = { id: sessionId, startedAt: new Date().toISOString(), items: [] };
+
+function saveSession(){
+  const key = "sesiones-v1";
+  const all = JSON.parse(localStorage.getItem(key)||"[]");
+  const idx = all.findIndex(s=>s.id===session.id);
+  if (idx>=0) all[idx]=session; else all.unshift(session);
+  localStorage.setItem(key, JSON.stringify(all));
+}
+
+/* ======= UI ======= */
+const q = document.getElementById("q");
+const vid = document.getElementById("vid");
+const $gen = document.getElementById("general");
+const $tables = document.getElementById("tables");
+
+document.getElementById("mic").onclick   = toggleRec;
+document.getElementById("mute").onclick  = ()=>{ muted = !muted; alert(muted ? "Voz silenciada" : "Voz activada"); };
+document.getElementById("clear").onclick = ()=>{ $gen.innerHTML=""; $tables.innerHTML=""; q.value=""; };
+document.getElementById("new").onclick   = ()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
+
+document.getElementById("send").onclick  = async ()=>{
+  const prompt = (q.value || "").replaceAll("*",""); // ignorar asteriscos
+  if (!prompt.trim()) { q.focus(); return; }
+
+  $gen.innerHTML = "<em>Analizando…</em>";
+  $tables.innerHTML = "";
+
+  const r = await fetch("/api/answer", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ question: prompt })
+  }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
+
+  if (!r.ok) {
+    $gen.textContent = "Hubo un problema al analizar: " + (r.error || "desconocido");
+    return;
+  }
+
+  const ans = r.answer || {};
+  // Parte 2: texto general
+  $gen.innerHTML = (ans.general || "").replace(/\n/g,"<br>");
+
+  // Parte 3: tablas
+  $tables.innerHTML = "";
+  (ans.tables || []).forEach(t=>{
+    const title = document.createElement("h3"); title.textContent = t.title || "Tabla";
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const trh = document.createElement("tr");
+    (t.columns||[]).forEach(c=>{ const th=document.createElement("th"); th.textContent = c; trh.appendChild(th); });
+    thead.appendChild(trh);
+    const tbody = document.createElement("tbody");
+    (t.rows||[]).forEach(r=>{
+      const tr = document.createElement("tr");
+      r.forEach(v=>{ const td=document.createElement("td"); td.textContent = v; tr.appendChild(td); });
+      tbody.appendChild(tr);
     });
+    table.appendChild(thead); table.appendChild(tbody);
+    $tables.appendChild(title); $tables.appendChild(table);
+  });
 
-    document.getElementById('btnVerTodo').addEventListener('click', async ()=>{
-      const data = await callAPI({});
-      renderFull(data);
+  // Voz + video
+  speak(ans.general || "");
+
+  // Guardar en sesión
+  session.items.push({ at: new Date().toISOString(), q: prompt, a: ans });
+  saveSession();
+};
+
+/* ======= Exportar ======= */
+document.getElementById("export").onclick = ()=>{
+  const kind = document.getElementById("exportKind").value;
+  if (kind === "pdf") {
+    // Imprimir todo el cuerpo (desde la primera línea)
+    window.print();
+  } else if (kind === "doc") {
+    const html = `
+      <html><head><meta charset="UTF-8"></head><body>
+        <h1>Respuesta</h1>${$gen.innerHTML}
+        <h2>Tablas</h2>${$tables.innerHTML}
+      </body></html>`;
+    const blob = new Blob([html], {type:"application/msword"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "respuesta.doc"; a.click();
+  } else if (kind === "xls") {
+    // Convertimos todas las tablas a CSV y lo descargamos como .xls
+    const tables = $tables.querySelectorAll("table");
+    let csv = "";
+    tables.forEach((tb, i)=>{
+      const rows = tb.querySelectorAll("tr");
+      rows.forEach(tr=>{
+        const cells=[...tr.children].map(td=>`"${td.textContent.replace(/"/g,'""')}"`);
+        csv += cells.join(",") + "\n";
+      });
+      if (i < tables.length-1) csv += "\n";
     });
-  </script>
+    const blob = new Blob([csv], {type:"application/vnd.ms-excel"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "tablas.xls"; a.click();
+  }
+};
+</script>
 </body>
 </html>
