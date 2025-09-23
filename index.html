@@ -64,4 +64,26 @@
       const rows = (data.resultados||[]).map(r=>{
         const ctx = r.contexto ? `
           <div><strong>Contexto (${r.contexto.desde}-${r.contexto.hasta}):</strong>
-          <pre>$
+          <pre>${r.contexto.fragmento.map(l=>resaltar(l,q)).join('\n')}</pre></div>` : '';
+        return `<tr><td style="width:80px">${r.linea}</td><td>${resaltar(r.texto,q)}${ctx}</td></tr>`;
+      }).join('');
+      cont.innerHTML = `
+        <h3>Resultados: ${data.total_encontrados}</h3>
+        <table><thead><tr><th>#Línea</th><th>Texto</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="2">Sin coincidencias.</td></tr>'}</tbody></table>
+      `;
+    }
+    document.getElementById('btnBuscar').addEventListener('click', async ()=>{
+      const q = document.getElementById('q').value.trim();
+      const context = document.getElementById('context').value;
+      const limit = document.getElementById('limit').value;
+      const data = await callAPI({ q, context, limit });
+      if (data.mode === 'txt-full') renderFull(data); else renderSearch(data, q);
+    });
+    document.getElementById('btnVerTodo').addEventListener('click', async ()=>{
+      const data = await callAPI({});
+      renderFull(data);
+    });
+  </script>
+</body>
+</html>
