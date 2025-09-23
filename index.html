@@ -3,36 +3,43 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>aaaasistente · CSV + TXT + PDF</title>
+<title>ddAsistente · CSV + TXT + PDF</title>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, Arial, sans-serif; background: #fff; color: #111; }
-  header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #eee; }
-  .topbar { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 12px; align-items: center; padding: 8px 12px; }
-  .topbar img { max-height: 60px; width: auto; }
-  .video-wrap { width: 100%; aspect-ratio: 16/9; }
-  .video-wrap video { width: 100%; height: 100%; object-fit: cover; border: 0; }
-  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 8px 12px 12px; }
-  textarea { width: min(1100px, 98vw); height: 64px; padding: 10px; font-size: 15px; }
-  button, select { padding: 10px 12px; font-size: 14px; cursor: pointer; }
-  .mic { font-size: 18px; padding: 12px 16px; }
-  .new { background: #ffd54f; border: 1px solid #f0b400; }
-  main { display: grid; grid-template-rows: 1fr 1fr; height: calc(100vh - 210px); }
-  .pane { overflow: auto; padding: 14px 16px; border-bottom: 1px solid #f2f2f2; }
-  #pane2 { border-bottom: none; }
-  h2 { margin: 0 0 8px 0; font-size: 18px; }
-  .muted { opacity: .5 }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-  th { background: #f7f7f7; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
-  .right { margin-left: auto; }
-  .small { font-size: 12px; color: #666; }
+  body { margin: 0; font-family: system-ui, Arial, sans-serif; background:#fff; color:#111; }
+  /* === Área 1: top fijo (imágenes + video + controles) === */
+  header { position: sticky; top: 0; z-index: 10; background:#fff; border-bottom:1px solid #eee; }
+  .topbar { display:grid; grid-template-columns:1fr 2fr 1fr; gap:12px; align-items:center; padding:8px 12px; }
+  .topbar img { max-height:60px; width:auto; }
+  .video-wrap { width:100%; aspect-ratio:16/9; }
+  .video-wrap video { width:100%; height:100%; object-fit:cover; border:0; }
+  .controls { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; padding:8px 12px 12px; }
+  textarea { width:min(1100px,98vw); height:64px; padding:10px; font-size:15px; }
+  button, select { padding:10px 12px; font-size:14px; cursor:pointer; }
+  .mic { font-size:18px; padding:12px 16px; }
+  .new { background:#ffd54f; border:1px solid #f0b400; }
+  .right { margin-left:auto; }
+  .small { font-size:12px; color:#666; }
+
+  /* === Áreas 2 y 3: cada una con su propio scroll === */
+  main { display:grid; grid-template-rows: 1fr 1fr; height: calc(100vh - 210px); }
+  .pane { overflow:auto; padding:14px 16px; border-bottom:1px solid #f2f2f2; }
+  #pane3 { border-bottom:none; }
+  h2 { margin:0 0 8px 0; font-size:18px; }
+
+  /* Tablas y listas (área 3) */
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; }
+  th, td { border:1px solid #ddd; padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:#f7f7f7; }
+  ol { margin:12px 0 16px 22px; }
+  .list-card { margin:10px 0; }
+  .muted { opacity:.5 }
 </style>
 </head>
 <body>
 
+<!-- ====== ÁREA 1: IMÁGENES + VIDEO + CONTROLES (fijo arriba) ====== -->
 <header>
   <div class="topbar">
     <img src="/left.png" alt="left"/>
@@ -44,175 +51,198 @@
 
   <div class="controls">
     <textarea id="q" placeholder="Escribe tu pregunta (o usa el micrófono)…"></textarea>
-    <div class="row" style="width:100%; justify-content:center;">
+    <div style="width:100%; display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center;">
       <button id="send">Enviar</button>
       <button id="mic" class="mic">🎤 Dictar</button>
       <button id="mute">Silenciar voz</button>
       <button id="clear">Limpiar</button>
       <button id="new" class="new">Nueva sesión</button>
-
       <select id="exportKind">
         <option value="pdf">Exportar: PDF</option>
         <option value="xls">Exportar: XLS</option>
         <option value="doc">Exportar: DOC</option>
       </select>
       <button id="export">Exportar</button>
-
-      <a class="right small" href="/historial.html">Historial de sesiones →</a>
+      <a class="right small" href="/historial.html">Historial →</a>
     </div>
   </div>
 </header>
 
+<!-- ====== ÁREA 2 (scroll 1): RESPUESTA GENERAL ====== -->
 <main>
-  <section id="pane1" class="pane">
+  <section id="pane2" class="pane">
     <h2>Respuesta (texto e información general)</h2>
     <div id="general"></div>
   </section>
 
-  <section id="pane2" class="pane">
-    <h2>Tablas y listados</h2>
+  <!-- ====== ÁREA 3 (scroll 2): LISTAS NUMERADAS y TABLAS ====== -->
+  <section id="pane3" class="pane">
+    <h2>Listas numeradas y tablas</h2>
+    <div id="lists"></div>
     <div id="tables"></div>
   </section>
 </main>
 
 <script>
-/* ======= Utilidad de voz (TTS) ======= */
-let voices = [];
-function loadVoices(){
-  voices = speechSynthesis.getVoices();
-}
-speechSynthesis.onvoiceschanged = loadVoices; loadVoices();
+/* ================== Voz (TTS) y Dictado (STT) ================== */
+let voices = []; speechSynthesis.onvoiceschanged = ()=>voices = speechSynthesis.getVoices(); voices = speechSynthesis.getVoices();
+let muted = false; const vid = document.getElementById("vid");
 
 function speak(text){
-  if (!text) return;
+  if(!text) return;
   const u = new SpeechSynthesisUtterance(text);
-  // español MX/EC femenino si existe:
   u.lang = "es-MX";
   const v = voices.find(v=>/es|span/i.test(v.lang) && /female|mujer|Google|Microsoft/i.test(v.name)) || voices.find(v=>/es/i.test(v.lang));
   if (v) u.voice = v;
-  u.rate = 1; u.pitch = 1; u.volume = muted ? 0 : 1;
-
-  u.onstart = () => { try { vid.play().catch(()=>{}); } catch{} };
-  u.onend   = () => { try { vid.pause(); } catch{} };
+  u.volume = muted ? 0 : 1;
+  u.onstart = ()=>{ try { vid.play().catch(()=>{}); } catch{} };
+  u.onend   = ()=>{ try { vid.pause(); } catch{} };
   speechSynthesis.speak(u);
 }
 
-/* ======= Dictado (STT) ======= */
-let rec, recOn = false;
+let rec, recOn=false;
 function toggleRec(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { alert("Reconocimiento de voz no soportado en este navegador."); return; }
-  if (!rec) { rec = new SR(); rec.lang = "es-MX"; rec.continuous = false; rec.interimResults = false; }
-  if (!recOn){
-    rec.start(); recOn = true; document.getElementById("mic").classList.add("muted");
-    rec.onresult = (e)=>{ const t = e.results[0][0].transcript || ""; q.value = (q.value + " " + t).trim(); recOn=false; document.getElementById("mic").classList.remove("muted"); };
-    rec.onend = ()=>{ recOn=false; document.getElementById("mic").classList.remove("muted"); };
-  } else {
-    rec.stop(); recOn=false; document.getElementById("mic").classList.remove("muted");
-  }
+  if(!SR){ alert("Reconocimiento de voz no soportado en este navegador."); return; }
+  if(!rec){ rec = new SR(); rec.lang="es-MX"; rec.continuous=false; rec.interimResults=false; }
+  if(!recOn){
+    rec.start(); recOn=true; mic.classList.add("muted");
+    rec.onresult=(e)=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); };
+    rec.onend=()=>{ recOn=false; mic.classList.remove("muted"); };
+  } else { rec.stop(); recOn=false; mic.classList.remove("muted"); }
 }
 
-/* ======= Estado / Sesión ======= */
-let muted = false;
-let sessionId = "s-"+Date.now();
-let session = { id: sessionId, startedAt: new Date().toISOString(), items: [] };
-
+/* ================== Estado de sesión ================== */
+let sessionId="s-"+Date.now();
+let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
+const storeKey="sesiones-v1";
 function saveSession(){
-  const key = "sesiones-v1";
-  const all = JSON.parse(localStorage.getItem(key)||"[]");
-  const idx = all.findIndex(s=>s.id===session.id);
-  if (idx>=0) all[idx]=session; else all.unshift(session);
-  localStorage.setItem(key, JSON.stringify(all));
+  const all=JSON.parse(localStorage.getItem(storeKey)||"[]");
+  const i=all.findIndex(s=>s.id===session.id);
+  if(i>=0) all[i]=session; else all.unshift(session);
+  localStorage.setItem(storeKey, JSON.stringify(all));
 }
 
-/* ======= UI ======= */
-const q = document.getElementById("q");
-const vid = document.getElementById("vid");
-const $gen = document.getElementById("general");
-const $tables = document.getElementById("tables");
+/* ================== UI/DOM ================== */
+const q=document.getElementById("q");
+const $gen=document.getElementById("general");
+const $lists=document.getElementById("lists");
+const $tables=document.getElementById("tables");
+const mic=document.getElementById("mic");
 
-document.getElementById("mic").onclick   = toggleRec;
-document.getElementById("mute").onclick  = ()=>{ muted = !muted; alert(muted ? "Voz silenciada" : "Voz activada"); };
-document.getElementById("clear").onclick = ()=>{ $gen.innerHTML=""; $tables.innerHTML=""; q.value=""; };
-document.getElementById("new").onclick   = ()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
+document.getElementById("mute").onclick = ()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
+document.getElementById("clear").onclick= ()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; };
+document.getElementById("new").onclick  = ()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
+mic.onclick = toggleRec;
 
-document.getElementById("send").onclick  = async ()=>{
-  const prompt = (q.value || "").replaceAll("*",""); // ignorar asteriscos
-  if (!prompt.trim()) { q.focus(); return; }
+/* ================== Render de listas y tablas ================== */
+// Admite dos formatos de "lists" desde el backend:
+// 1) [{title:"", items:["A","B","C"]}, ...]
+// 2) ["A","B","C"]  (se muestra como una sola lista sin título)
+function renderLists(lists){
+  $lists.innerHTML="";
+  if(!lists || (Array.isArray(lists)&&lists.length===0)) return;
 
-  $gen.innerHTML = "<em>Analizando…</em>";
-  $tables.innerHTML = "";
-
-  const r = await fetch("/api/answer", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ question: prompt })
-  }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
-
-  if (!r.ok) {
-    $gen.textContent = "Hubo un problema al analizar: " + (r.error || "desconocido");
+  if(Array.isArray(lists) && typeof lists[0]==="string"){
+    const wrap=document.createElement("div"); wrap.className="list-card";
+    const ol=document.createElement("ol");
+    lists.forEach(item=>{ const li=document.createElement("li"); li.textContent=item; ol.appendChild(li); });
+    wrap.appendChild(ol); $lists.appendChild(wrap);
     return;
   }
 
-  const ans = r.answer || {};
-  // Parte 2: texto general
-  $gen.innerHTML = (ans.general || "").replace(/\n/g,"<br>");
+  (lists||[]).forEach(L=>{
+    const wrap=document.createElement("div"); wrap.className="list-card";
+    if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
+    const ol=document.createElement("ol");
+    (L.items||[]).forEach(item=>{
+      const li=document.createElement("li"); li.textContent=item; ol.appendChild(li);
+    });
+    wrap.appendChild(ol); $lists.appendChild(wrap);
+  });
+}
 
-  // Parte 3: tablas
-  $tables.innerHTML = "";
-  (ans.tables || []).forEach(t=>{
-    const title = document.createElement("h3"); title.textContent = t.title || "Tabla";
-    const table = document.createElement("table");
-    const thead = document.createElement("thead");
-    const trh = document.createElement("tr");
-    (t.columns||[]).forEach(c=>{ const th=document.createElement("th"); th.textContent = c; trh.appendChild(th); });
+function renderTables(tables){
+  $tables.innerHTML="";
+  (tables||[]).forEach(t=>{
+    const title=document.createElement("h3"); title.textContent=t.title||"Tabla";
+    const table=document.createElement("table");
+    const thead=document.createElement("thead");
+    const trh=document.createElement("tr");
+    (t.columns||[]).forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
     thead.appendChild(trh);
-    const tbody = document.createElement("tbody");
+    const tbody=document.createElement("tbody");
     (t.rows||[]).forEach(r=>{
-      const tr = document.createElement("tr");
-      r.forEach(v=>{ const td=document.createElement("td"); td.textContent = v; tr.appendChild(td); });
+      const tr=document.createElement("tr");
+      r.forEach(v=>{ const td=document.createElement("td"); td.textContent=v; tr.appendChild(td); });
       tbody.appendChild(tr);
     });
     table.appendChild(thead); table.appendChild(tbody);
     $tables.appendChild(title); $tables.appendChild(table);
   });
+}
+
+/* ================== Enviar pregunta ================== */
+document.getElementById("send").onclick = async ()=>{
+  const prompt=(q.value||"").replaceAll("*","");
+  if(!prompt.trim()){ q.focus(); return; }
+
+  $gen.innerHTML="<em>Analizando…</em>";
+  $lists.innerHTML=""; $tables.innerHTML="";
+
+  const r = await fetch("/api/answer", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ question: prompt })
+  }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
+
+  if(!r.ok){
+    $gen.textContent = "Hubo un problema al analizar: " + (r.error || "desconocido");
+    return;
+  }
+
+  const ans=r.answer||{};
+  // Área 2: texto general
+  $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
+  // Área 3: listas numeradas + tablas
+  renderLists(ans.lists || ans.lista || []);   // admite 'lists' o 'lista' según el modelo
+  renderTables(ans.tables || []);
 
   // Voz + video
-  speak(ans.general || "");
+  speak(ans.general||"");
 
-  // Guardar en sesión
-  session.items.push({ at: new Date().toISOString(), q: prompt, a: ans });
+  // Guardar sesión
+  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans });
   saveSession();
 };
 
-/* ======= Exportar ======= */
+/* ================== Exportar ================== */
 document.getElementById("export").onclick = ()=>{
-  const kind = document.getElementById("exportKind").value;
-  if (kind === "pdf") {
-    // Imprimir todo el cuerpo (desde la primera línea)
-    window.print();
-  } else if (kind === "doc") {
-    const html = `
-      <html><head><meta charset="UTF-8"></head><body>
-        <h1>Respuesta</h1>${$gen.innerHTML}
-        <h2>Tablas</h2>${$tables.innerHTML}
-      </body></html>`;
-    const blob = new Blob([html], {type:"application/msword"});
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "respuesta.doc"; a.click();
-  } else if (kind === "xls") {
-    // Convertimos todas las tablas a CSV y lo descargamos como .xls
-    const tables = $tables.querySelectorAll("table");
-    let csv = "";
-    tables.forEach((tb, i)=>{
-      const rows = tb.querySelectorAll("tr");
+  const kind=document.getElementById("exportKind").value;
+  if(kind==="pdf"){
+    window.print(); // imprime todo (desde la primera línea)
+  } else if(kind==="doc"){
+    const html=`<html><head><meta charset="UTF-8"></head><body>
+      <h1>Respuesta</h1>${$gen.innerHTML}
+      <h2>Listas</h2>${$lists.innerHTML}
+      <h2>Tablas</h2>${$tables.innerHTML}
+    </body></html>`;
+    const blob=new Blob([html],{type:"application/msword"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="respuesta.doc"; a.click();
+  } else if(kind==="xls"){
+    // Exportamos solo las tablas como CSV
+    const tables=$tables.querySelectorAll("table");
+    let csv="";
+    tables.forEach((tb,i)=>{
+      const rows=tb.querySelectorAll("tr");
       rows.forEach(tr=>{
         const cells=[...tr.children].map(td=>`"${td.textContent.replace(/"/g,'""')}"`);
         csv += cells.join(",") + "\n";
       });
-      if (i < tables.length-1) csv += "\n";
+      if(i<tables.length-1) csv += "\n";
     });
-    const blob = new Blob([csv], {type:"application/vnd.ms-excel"});
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "tablas.xls"; a.click();
+    const blob=new Blob([csv],{type:"application/vnd.ms-excel"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="tablas.xls"; a.click();
   }
 };
 </script>
