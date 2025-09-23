@@ -3,15 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>jAsistente · CSV</title>
+<title>Asistente · CSV</title>
 <style>
   :root{
-    --headerH: 45vh;       /* PARTE 1 fija = 45% de alto */
+    --headerH: 45vh;       /* Parte fija arriba = 45% de la pantalla */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
-  html,body{ height:100%; }
-  body{ margin:0; font-family:Arial, system-ui, sans-serif; background:#fff; color:#111; }
+  html,body{ height:100%; margin:0; font-family:Arial, system-ui, sans-serif; background:#fff; color:#111; }
 
   /* ===== PARTE 1: FIJA (no se mueve) ===== */
   header{
@@ -38,7 +37,7 @@
   #below{ height: calc(100vh - var(--headerH)); display:flex; flex-direction:column; min-height: 320px; }
 
   /* PARTE 2 */
-  #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; overflow:visible; }
+  #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; }
   .controls{ margin-bottom:10px; }
   .controls .row{
     display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; width:100%;
@@ -56,7 +55,6 @@
   .muted{ opacity:.5; }
   .status{ margin:6px 0 0; text-align:center; font-size:12px; color:#666; }
   .badge{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
-  .fast{ background:#e6f7ff; color:#036; }
   .gpt{ background:#f0e6ff; color:#402060; }
 
   /* PARTE 3 */
@@ -125,7 +123,7 @@
 /* ============ Warmup + flush cache al cargar ============ */
 window.addEventListener("load", ()=>{ fetch("/api/answer?flush=1&q=__warmup").catch(()=>{}); });
 
-/* ============ Voz femenina (bloqueada) + video loop mientras habla ============ */
+/* ============ Voz femenina ============ */
 const FEMALE_PRIORITY = [
   "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
   "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
@@ -134,78 +132,39 @@ const FEMALE_PRIORITY = [
   "Microsoft Lorena Online (Natural) - Spanish (Mexico)",
   "Google español de Estados Unidos","Google español","Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
 ];
-const VOICE_KEY="voz-femenina-preferida";
-let voices = [];
-speechSynthesis.onvoiceschanged = ()=>{ voices = speechSynthesis.getVoices(); };
-voices = speechSynthesis.getVoices();
-
-function pickFemaleSpanishLocked(){
+function pickFemaleVoice(){
   const all = speechSynthesis.getVoices();
-  const saved = localStorage.getItem(VOICE_KEY);
-  if(saved){ const v=all.find(x=>x.name===saved); if(v) return v; localStorage.removeItem(VOICE_KEY); }
-  for(const name of FEMALE_PRIORITY){ const v=all.find(x=>x.name===name); if(v){ localStorage.setItem(VOICE_KEY,v.name); return v; } }
-  let v = all.find(x=>/es/i.test(x.lang) && /(female|mujer|Sabina|Dalia|Helena|Camila|Ana|Lucia|Isabel)/i.test(x.name));
-  if(v){ localStorage.setItem(VOICE_KEY,v.name); return v; }
-  v = all.find(x=>/es/i.test(x.lang)); if(v){ localStorage.setItem(VOICE_KEY,v.name); return v; }
-  return null;
+  for(const name of FEMALE_PRIORITY){
+    const v=all.find(x=>x.name===name);
+    if(v) return v;
+  }
+  return all.find(x=>/es/i.test(x.lang));
 }
-
 let muted=false, speaking=false;
 const vid = document.getElementById("vid");
 
 function speak(text){
   if(!text) return;
   const u=new SpeechSynthesisUtterance(text);
-  const v=pickFemaleSpanishLocked();
+  const v=pickFemaleVoice();
   u.lang = v?.lang || "es-MX"; if(v) u.voice=v;
-  u.volume = muted ? 0 : 1; u.rate=1; u.pitch=1;
-  u.onstart=()=>{ speaking=true; try{ vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{});}catch{} };
-  u.onend=()=>{ speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
+  u.volume = muted ? 0 : 1;
+  u.rate=1; u.pitch=1;
+  u.onstart=()=>{ speaking=true; vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{}); };
+  u.onend=()=>{ speaking=false; vid.loop=false; vid.pause(); };
   speechSynthesis.speak(u);
 }
-
-/* detener / silenciar */
-document.getElementById("stop").onclick=()=>{ try{ speechSynthesis.cancel(); }catch{} speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
+document.getElementById("stop").onclick=()=>{ speechSynthesis.cancel(); speaking=false; vid.loop=false; vid.pause(); };
 document.getElementById("mute").onclick=()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
-
-/* ============ Dictado (voz a texto) ============ */
-let rec,recOn=false;
-const mic=document.getElementById("mic");
-function toggleRec(){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){ alert("Reconocimiento de voz no soportado."); return; }
-  if(!rec){ rec=new SR(); rec.lang="es-MX"; rec.continuous=false; rec.interimResults=false; }
-  if(!recOn){
-    rec.start(); recOn=true; mic.classList.add("muted");
-    rec.onresult=e=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); };
-    rec.onend   =()=>{ recOn=false; mic.classList.remove("muted"); };
-  }else{ rec.stop(); recOn=false; mic.classList.remove("muted"); }
-}
-mic.onclick=toggleRec;
-
-/* ============ Sesión local ============ */
-let sessionId="s-"+Date.now();
-let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
-const storeKey="sesiones-v1";
-function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
-function saveSession(){ const all=loadAllSessions(); const i=all.findIndex(s=>s.id===session.id); if(i>=0) all[i]=session; else all.unshift(session); localStorage.setItem(storeKey, JSON.stringify(all)); }
 
 /* ============ UI helpers ============ */
 const q=document.getElementById("q"), $gen=document.getElementById("general"), $lists=document.getElementById("lists"), $tables=document.getElementById("tables"), $status=document.getElementById("status");
-function setBusy(b){
-  document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=b; el.style.opacity=b?.7:1; });
-}
+function setBusy(b){ document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=b; el.style.opacity=b?.7:1; }); }
 
 /* render listas / tablas */
 function renderLists(lists){
   $lists.innerHTML="";
-  if(!lists || (Array.isArray(lists)&&!lists.length)) return;
-  if(Array.isArray(lists) && typeof lists[0]==="string"){
-    const wrap=document.createElement("div"); wrap.className="list-card";
-    const ol=document.createElement("ol");
-    lists.forEach(item=>{ const li=document.createElement("li"); li.textContent=item; ol.appendChild(li); });
-    wrap.appendChild(ol); $lists.appendChild(wrap); return;
-  }
+  if(!lists || !lists.length) return;
   (lists||[]).forEach(L=>{
     const wrap=document.createElement("div"); wrap.className="list-card";
     if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
@@ -236,7 +195,7 @@ function renderTables(tables){
   });
 }
 
-/* ============ Enviar con timeout (45s) y MINI forzado ============ */
+/* ============ Enviar pregunta ============ */
 document.getElementById("send").onclick = async ()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
@@ -245,117 +204,39 @@ document.getElementById("send").onclick = async ()=>{
   const t0=performance.now();
   $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML=""; $status.textContent="";
 
-  const ctrl=new AbortController(); const tm=setTimeout(()=>ctrl.abort(), 45000);
-  let r;
-  try{
-    r = await fetch("/api/answer",{
+  try {
+    const r = await fetch("/api/answer",{
       method:"POST",
       headers:{ "Content-Type":"application/json" },
-      // 🔽 Forzamos mini temporalmente para máxima estabilidad/velocidad
-      body: JSON.stringify({ question: prompt, model: "gpt-5-mini" }),
-      signal: ctrl.signal
+      body: JSON.stringify({ question: prompt })
     }).then(x=>x.json());
-  }catch(e){
-    r = { ok:false, error: "Tiempo de espera agotado o red no disponible." };
-  } finally {
-    clearTimeout(tm);
+
+    const t1=performance.now();
+    const ms=Math.max(1, Math.round(t1-t0));
+
+    if(!r.ok){
+      $gen.textContent = "Hubo un problema al analizar: " + (r.error||"desconocido");
+      $status.textContent = "";
+      setBusy(false);
+      return;
+    }
+
+    const ans=r.answer||{};
+    $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
+    renderLists(ans.lists||[]);
+    renderTables(ans.tables||[]);
+
+    $status.innerHTML = `Listo en ${ms/1000}s <span class="badge gpt">🧠 GPT-5</span>`;
+    speak(ans.general||"");
+  } catch(e){
+    $gen.textContent = "Error: " + e.message;
   }
-  const t1=performance.now(); const ms=Math.max(1, Math.round(t1-t0));
-
-  if(!r || !r.ok){
-    $gen.textContent = "Hubo un problema al analizar: " + (r?.error || "desconocido");
-    $status.textContent = "";
-    setBusy(false);
-    return;
-  }
-
-  const ans=r.answer||{};
-  $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
-  renderLists(ans.lists||ans.lista||[]);
-  renderTables(ans.tables||[]);
-
-  const fast = r.source?.fast;
-  const model = r.source?.model || (fast ? "fast" : "");
-  const badge = fast ? `<span class="badge fast">⚡ Rápido</span>` : `<span class="badge gpt">🧠 ${model||"GPT"}</span>`;
-  $status.innerHTML = `Listo en ${ms/1000}s ${badge}`;
-
-  speak(ans.general||"");
-
-  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans, meta:r.source||{} });
-  saveSession();
   setBusy(false);
 };
 
-/* limpiar / nueva sesión */
+/* limpiar */
 document.getElementById("clear").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; };
-document.getElementById("new").onclick=()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
-
-/* ============ Exportar toda la sesión ============ */
-const vidEl=document.getElementById("vid");
-function sessionToHTML(sess){
-  const headerThumbs = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-      <img src="/left.png" alt="left" style="height:50px"/>
-      <video src="${vidEl.currentSrc||vidEl.src}" width="120" muted></video>
-      <img src="/right.png" alt="right" style="height:50px"/>
-    </div>`;
-  let html = `<h1>Sesión ${sess.id}</h1><p>Iniciada: ${new Date(sess.startedAt).toLocaleString()}</p>${headerThumbs}`;
-  for(const it of (sess.items||[]).slice().reverse()){
-    html += `<hr><h2 style="font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
-    const a = it.a||{};
-    html += `<h2 style="font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
-    if (a.lists && a.lists.length){
-      html += `<h3 style="font-weight:normal;">Listas</h3>`;
-      a.lists.forEach(L=>{
-        html += `<h4>${L.title||""}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`;
-      });
-    }
-    if (a.tables && a.tables.length){
-      html += `<h3 style="font-weight:normal;">Tablas</h3>`;
-      a.tables.forEach(t=>{
-        const cols = ["#", ...(t.columns||[])];
-        html += `<h4>${t.title||"Tabla"}</h4><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%"><thead><tr>`;
-        cols.forEach(c=> html += `<th>${c}</th>` ); html += `</tr></thead><tbody>`;
-        (t.rows||[]).forEach((row,idx)=>{
-          const arr = Array.isArray(row)?row:[row];
-          html += `<tr><td>${idx+1}</td>` + arr.map(v=>`<td>${v}</td>`).join("") + `</tr>`;
-        });
-        html += `</tbody></table>`;
-      });
-    }
-  }
-  return html;
-}
-document.getElementById("export").onclick=()=>{
-  const kind=document.getElementById("exportKind").value;
-  const html = sessionToHTML(session);
-  if(kind==="pdf"){
-    const w = window.open("", "_blank");
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Exportación Sesión</title><style>body{font-family:Arial, sans-serif;}</style></head><body>${html}</body></html>`);
-    w.document.close(); w.focus(); w.print();
-  } else if(kind==="doc"){
-    const blob=new Blob([`<html><head><meta charset="UTF-8"></head><body>${html}</body></html>`],{type:"application/msword"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.doc`; a.click();
-  } else if(kind==="xls"){
-    let csv="";
-    (session.items||[]).forEach(it=>{
-      const a=it.a||{};
-      (a.tables||[]).forEach(t=>{
-        csv += (t.title||"Tabla") + "\n";
-        const header = ["#", ...(t.columns||[])];
-        csv += header.map(h=>`"${String(h).replace(/"/g,'""')}"`).join(",") + "\n";
-        (t.rows||[]).forEach((row,idx)=>{
-          const arr = Array.isArray(row)?row:[row];
-          const line = [String(idx+1), ...arr.map(v=>String(v))];
-          csv += line.map(x=>`"${x.replace(/"/g,'""')}"`).join(",") + "\n";
-        });
-        csv += "\n";
-      });
-    });
-    const blob=new Blob([csv],{type:"application/vnd.ms-excel"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.xls`; a.click();
-  }
-};
+document.getElementById("new").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
 </script>
 </body>
 </html>
