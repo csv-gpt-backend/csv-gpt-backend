@@ -42,7 +42,6 @@ Los grados escolares que están baremados incluyen:
 o inferior al de un individuo en particular.
 5. Curva de distribución de frecuencias de Gauss: Modelo matemático utilizado para describir la variación de los datos en una distribución normal, con una forma de campana simétrica alrededor de un valor medio.
 
-
 Estos criterios de baremación, permiten comparar el desempeño del evaluado con individuos de un mismo grado académico facilitando la interpretación de los resultados con relación a su grupo de referencia correspondiente.
 Además, cada subprueba de la Prueba Habilidades Emocionales tiene las siguien- tes características:
 
@@ -53,12 +52,10 @@ Además, cada subprueba de la Prueba Habilidades Emocionales tiene las siguien- 
 La construcción del conjunto global conocido como Prueba Habilidades Emocio- nales se basa en el análisis de diferentes teorías y modelos en concordancia con el conjunto al que pertenece y a las subpruebas que lo integran, se mencionan a continuación las principales referencias.
 Para sustentar los 3 conjuntos de habilidades que conforman la prueba y la inclusión de los estilos de comunicación:
 
-
 6. Ítems: Preguntas, enunciados o estímulos presentados al individuo para que responda.
 
 7. Rendimiento óptimo: Evaluar el desempeño de un individuo en relación con un nivel de rendimiento considerado ideal o deseable de acuerdo con estándares o criterios predefinidos que reflejan un nivel de competencia o habilidad deseado en la variable que se está evaluando.
 8. Escala Likert de frecuencia: Técnica utilizada en la investigación social y de opinión para medir el grado de acuerdo o desacuerdo de una persona con respecto a una afirmación o pregunta específica y centra en la frecuencia con la que ocurre un comportamiento o evento.
-
 
 Habilidades Intrapersonales/ Habilidades Interpersonales
 
@@ -118,13 +115,7 @@ Para cada una de las subpruebas:
 *Las teorías/modelos mencionados son influenciados por diferentes autores y contribuciones a través del tiempo, se menciona la aportación más importante para el interés de esta prueba.
 Es importante mencionar que, a través de los años, cada subprueba se ha some- tido a un proceso de rediseño que toma en cuenta tanto los resultados de múlti- ples análisis e investigaciones, así como el testeo en campo sobre el instrumento.
 
-
-
-
-
 III. Subpruebas
-
-
 Subpruebas
 Cantidad de ítems
 Total por conjunto
@@ -192,7 +183,6 @@ Los coeficientes calculados para las subpruebas contenidas en la Prueba Habili- 
 9. Confiabilidad: Capacidad de una prueba para proporcionar resultados consistentes y reproducibles en diferentes momentos o en diferentes muestras.
 10. Coeficiente Alpha de Cronbach: Medida que indica la confiabilidad y consistencia interna de un cuestionario, asegurando que las preguntas o ítems de un cuestionario están midiendo de manera coherente el mismo constructo y brindando infor- mación sobre la calidad del instrumento de medición.
 
-
 2. Validez 11
 Tomando en cuenta las características específicas de las subpruebas, se utilizó la validez relacionada con el criterio que se refiere a la capacidad de una medi- da para predecir o estar relacionada con un resultado o criterio establecido. Esta puede ser de dos tipos: concurrente o predictiva.
 Para este caso se utilizó la validez concurrente, que se basa en correlacionar los resultados obtenidos en cada subprueba con un criterio externo relevante. En este caso se utilizó el coeficiente de correlación “r” de Pearson.
@@ -206,9 +196,7 @@ En conclusión, los resultados del análisis indican correlaciones de un instrum
 
 11. Validez: Determinación precisa de lo que se mide. Que la prueba mida lo que pretende medir.
 
-
 V. Aplicación
-
 1. Formato de aplicación
 La aplicación de la Prueba Habilidades Emocionales se realiza en formato electró- nico, lo que brinda flexibilidad y accesibilidad, ofreciendo ventajas adicionales como:
 • Configuración personalizada. Es posible elegir entre dos opciones:
@@ -232,7 +220,6 @@ La Prueba Habilidades Emocionales tiene una amplia gama de campos de apli- caci�
 • Capacitación: Identificando las áreas de mejora, guiando el diseño de pro- gramas y optimizando el aprendizaje y las propuestas para utilizar mejor las habilidades emocionales de los evaluados.
 • Desarrollo organizacional: Utilizando los resultados de la prueba para identi- ficar áreas de mejora y establecer metas realistas, diseñar intervenciones y programas de desarrollo.
 • Selección y promoción: Identificando las habilidades de los evaluados y, posteriormente, determinando roles o posiciones idóneas para cada uno.
-
 
 VI. Interpretación
 El diagnóstico se genera inmediatamente finalizada la aplicación del conjunto de subpruebas seleccionado, el diagnóstico incluye:
