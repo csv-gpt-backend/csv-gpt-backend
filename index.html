@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>YYAsistente · CSV</title>
+<title>jAsistente · CSV</title>
 <style>
   :root{
     --headerH: 45vh;       /* PARTE 1 fija = 45% de alto */
@@ -54,9 +54,7 @@
   .new{ background:#ffe082; } .stop{ background:#ffcdd2; } .mic{ font-size:18px; padding:12px 16px; }
   h2{ margin:0 0 10px 0; font-size:18px; font-weight:normal; }
   .muted{ opacity:.5; }
-  .status{
-    margin:6px 0 0; text-align:center; font-size:12px; color:#666;
-  }
+  .status{ margin:6px 0 0; text-align:center; font-size:12px; color:#666; }
   .badge{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
   .fast{ background:#e6f7ff; color:#036; }
   .gpt{ background:#f0e6ff; color:#402060; }
@@ -223,11 +221,9 @@ function renderTables(tables){
     const table=document.createElement("table");
     const thead=document.createElement("thead");
     const trh=document.createElement("tr");
-
     const cols = t.columns && t.columns.length ? ["#", ...t.columns] : ["#"];
     cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
     thead.appendChild(trh);
-
     const tbody=document.createElement("tbody");
     (t.rows||[]).forEach((r,idx)=>{
       const tr=document.createElement("tr");
@@ -240,7 +236,7 @@ function renderTables(tables){
   });
 }
 
-/* ============ Enviar con timeout (25s) ============ */
+/* ============ Enviar con timeout (45s) y MINI forzado ============ */
 document.getElementById("send").onclick = async ()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
@@ -249,10 +245,16 @@ document.getElementById("send").onclick = async ()=>{
   const t0=performance.now();
   $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML=""; $status.textContent="";
 
-  const ctrl=new AbortController(); const tm=setTimeout(()=>ctrl.abort(), 25000);
+  const ctrl=new AbortController(); const tm=setTimeout(()=>ctrl.abort(), 45000);
   let r;
   try{
-    r = await fetch("/api/answer",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ question: prompt }), signal: ctrl.signal }).then(x=>x.json());
+    r = await fetch("/api/answer",{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      // 🔽 Forzamos mini temporalmente para máxima estabilidad/velocidad
+      body: JSON.stringify({ question: prompt, model: "gpt-5-mini" }),
+      signal: ctrl.signal
+    }).then(x=>x.json());
   }catch(e){
     r = { ok:false, error: "Tiempo de espera agotado o red no disponible." };
   } finally {
@@ -272,7 +274,6 @@ document.getElementById("send").onclick = async ()=>{
   renderLists(ans.lists||ans.lista||[]);
   renderTables(ans.tables||[]);
 
-  // status / badge
   const fast = r.source?.fast;
   const model = r.source?.model || (fast ? "fast" : "");
   const badge = fast ? `<span class="badge fast">⚡ Rápido</span>` : `<span class="badge gpt">🧠 ${model||"GPT"}</span>`;
