@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PAsistente · CSV</title>
+<title>KAsistente · CSV</title>
 <style>
   :root{
     color-scheme: light dark;
@@ -19,7 +19,17 @@
     position: fixed; top:0; left:0; right:0; height:var(--headerH);
     background:#fff; border-bottom:1px solid #eee; z-index:20;
   }
+  /* Link de historial en esquina superior derecha, sutil */
+  #histLink{
+    position:absolute; top:6px; right:10px;
+    font-size:12px; color:#666; text-decoration:none;
+    opacity:.55; text-shadow:0 1px 1px rgba(0,0,0,.06);
+    transition: opacity .15s ease;
+  }
+  #histLink:hover{ opacity:.8; text-decoration:underline; }
+
   .topbar{
+    position:relative;
     height:100%;
     display:grid;
     grid-template-columns:1fr 2fr 1fr;   /* 25% - 50% - 25% */
@@ -36,7 +46,7 @@
   /* 8% más pequeño que antes: reduce la caja interior del video */
   .video-box{
     width: 100%;
-    height: 75%;  /* antes ~83%, ahora ~75% → 8% menos */
+    height: 75%;  /* ~8% menos que el ajuste previo */
     display:flex; align-items:center; justify-content:center;
   }
   .video-box video{
@@ -71,7 +81,6 @@
   .mic{ font-size:18px; padding:12px 16px; }
   .new{ background:#ffe082; }  /* botón amarillo */
   .stop{ background:#ffcdd2; } /* botón detener voz */
-  .right{ margin-left:auto; }
   .small{ font-size:12px; color:#666; }
   h2{
     margin:0 0 10px 0; font-size:18px;
@@ -97,6 +106,7 @@
 <!-- ===== PARTE 1 (FIJA 45%): IMÁGENES + VIDEO ===== -->
 <header>
   <div class="topbar">
+    <a id="histLink" href="/historial.html">Historial</a>
     <img src="/left.png" alt="left">
     <div class="video-wrap">
       <div class="video-box">
@@ -130,7 +140,6 @@
             <option value="doc">Exportar: DOC</option>
           </select>
           <button id="export">Exportar</button>
-          <a class="right small" href="/historial.html">Historial →</a>
         </div>
       </div>
 
@@ -321,7 +330,7 @@ document.getElementById("send").onclick = async ()=>{
     body: JSON.stringify({ question: prompt })
   }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
 
-  if(!r.ok){ $gen.textContent="Hubo un problema al analizar: "+(r.error||"desconocido"); return; }
+  if(!r.ok){ $gen.textContent="Hubo un problema al analizar."; return; }
 
   const ans=r.answer||{};
   $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
