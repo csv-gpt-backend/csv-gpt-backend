@@ -1,141 +1,109 @@
 // api/ask.js
-// Si da problemas con runtime, puedes descomentar esta línea
-// export const config = { runtime: 'nodejs20.x' };
-
+// Backend principal para procesar preguntas usando GPT-5
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
+// Configuración de claves y archivos
 const OPENAI_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY;
-
-// Aquí forzamos GPT-5 como modelo principal
-const MODEL = process.env.OPENAI_MODEL || 'gpt-5';
-
-// Rutas físicas a CSV y TXT (sin variables en Vercel, directo en la raíz del proyecto)
-const CSV_PATH = path.join(process.cwd(), 'datos', 'decimo.csv');
-const TXT_PATH = path.join(process.cwd(), 'emocionales.txt');
+const MODEL = process.env.OPENAI_MODEL || "gpt-5";
+const CSV_URL = "https://csv-gpt-backend.vercel.app/datos/decimo.csv";
+const TXT_URL = "https://csv-gpt-backend.vercel.app/emocionales.txt";
 
 const client = new OpenAI({ apiKey: OPENAI_KEY });
 
-// --- Utilidad: leer CSV
-function readCsvSnapshot() {
+// Utilidad: leer CSV remoto
+async function fetchFile(url) {
   try {
-    const raw = fs.readFileSync(CSV_PATH, 'utf8');
-    const lines = raw.split(/\r?\n/).filter(Boolean);
-    const header = (lines[0] || '').split(';').map(s => s.trim()); // CSV usa punto y coma (;)
-    return { ok: true, header, preview: raw };
-  } catch (e) {
-    return { ok: false, header: [], preview: '' };
-  }
-}
-
-// --- Utilidad: leer TXT
-function readTxtFile() {
-  try {
-    const raw = fs.readFileSync(TXT_PATH, 'utf8');
-    return { ok: true, content: raw };
-  } catch (e) {
-    return { ok: false, content: '' };
+    const res = await fetch(url);
+    return await res.text();
+  } catch (err) {
+    console.error("Error al leer archivo remoto:", err.message);
+    return "";
   }
 }
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Método no permitido. Usa POST con JSON.' });
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Método no permitido. Usa POST con JSON." });
     }
 
     if (!OPENAI_KEY) {
-      return res.status(200).json({
-        texto: 'Falta la clave de OpenAI (open_ai_key). Configúrala en Vercel.',
-        tablas_markdown: ''
-      });
+      return res.status(500).json({ error: "Falta la clave de OpenAI. Configúrala en Vercel." });
     }
 
     const { question } = req.body || {};
-    if (!question || typeof question !== 'string' || !question.trim()) {
-      return res.status(200).json({
-        texto: 'Por favor, escribe una pregunta.',
-        tablas_markdown: ''
-      });
+    if (!question || typeof question !== "string") {
+      return res.status(400).json({ error: "Pregunta no válida." });
     }
 
-    const q = question.trim();
-
     // Leer CSV y TXT
-    const csvData = readCsvSnapshot();
-    const txtData = readTxtFile();
+    const csvData = await fetchFile(CSV_URL);
+    const txtData = await fetchFile(TXT_URL);
 
-    // Información sobre CSV
-    const headerNote = csvData.ok
-      ? `Encabezados CSV (${csvData.header.length} columnas): ${csvData.header.join(' | ')}`
-      : 'No se pudo leer el CSV.';
+    // Armar prompt
+    const systemPrompt = `
+Eres una analista educativa rigurosa. Responde SIEMPRE en español neutro.
 
-    // Instrucciones al modelo
-    const system = `
-Eres una analista educativa rigurosa. 
-Responde SIEMPRE en español latino neutral.
-
-Reglas estrictas:
-- Usa datos del CSV y del archivo TXT para responder.
-- Si el usuario pide "todos los estudiantes", lista absolutamente TODOS.
-- Incluye exactamente las columnas que se soliciten.
-- Presenta listas/tablas en Markdown con | para columnas.
-- No uses asteriscos (*), negritas ni decoraciones.
-- Si no puedes procesar algo complejo, explica el procedimiento en detalle.
-
-Devuelve la respuesta en este JSON:
-{
-  "texto": "Explicación clara y coherente",
-  "tablas_markdown": "Tabla en formato Markdown si aplica, si no, vacío"
-}
+Reglas:
+- Usa la información provista en el CSV y TXT para responder.
+- Si el usuario pide tablas, responde en Markdown con columnas separadas por |.
+- Nunca inventes datos.
+- Si falta información, indícalo claramente.
+- Devuelve SIEMPRE un JSON con:
+  {
+    "texto": "respuesta clara en español",
+    "tablas_markdown": "si hay tabla, aquí; si no, vacío"
+  }
 `;
 
-    // Contexto de usuario con datos reales
-    const user = `
-Pregunta del usuario: "${q}"
+    const userPrompt = `
+PREGUNTA: ${question}
 
-${headerNote}
+DATOS CSV (fragmento inicial):
+"""${csvData.slice(0, 10000)}"""
 
-Contenido TXT:
-"""${txtData.content.slice(0, 8000)}"""
+DATOS TXT (fragmento inicial):
+"""${txtData.slice(0, 5000)}"""
 
-Contenido CSV (solo las primeras líneas para contexto):
-"""${csvData.preview.slice(0, 20000)}"""
+Devuelve SOLO un JSON válido.
 `;
 
-    // --- Llamada a GPT-5
+    console.log("[ASK][PROMPT]", question);
+
+    // Llamar a GPT-5
     const completion = await client.chat.completions.create({
       model: MODEL,
       messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
       ],
-      temperature: 1, // GPT-5 requiere temperatura fija
-      max_completion_tokens: 2000
+      temperature: 1,
+      max_completion_tokens: 1000
     });
 
-    const raw = completion?.choices?.[0]?.message?.content || '';
+    const raw = completion?.choices?.[0]?.message?.content || "";
+    console.log("[ASK][RAW]", raw);
 
     let parsed;
     try {
-      parsed = JSON.parse(raw); // Intentar parsear como JSON
-    } catch (err) {
-      // Si no es JSON válido, enviamos el texto crudo
-      parsed = { texto: raw, tablas_markdown: '' };
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      console.warn("[ASK][WARN] No se pudo parsear JSON. Enviando texto crudo.");
+      parsed = { texto: raw, tablas_markdown: "" };
     }
 
-    // Limpiar texto y tablas
-    const texto = String(parsed.texto || '').replace(/\*/g, '').trim();
-    const tablas_markdown = String(parsed.tablas_markdown || '').trim();
-
-    res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json({ texto, tablas_markdown });
-  } catch (err) {
-    console.error('ASK ERROR:', err);
     return res.status(200).json({
-      texto: `Error inesperado: ${err.message || 'Desconocido'}.`,
-      tablas_markdown: ''
+      texto: parsed.texto || "",
+      tablas_markdown: parsed.tablas_markdown || ""
+    });
+
+  } catch (err) {
+    console.error("[ASK][ERROR]", err.message);
+    return res.status(500).json({
+      texto: `Error en el servidor: ${err.message}`,
+      tablas_markdown: ""
     });
   }
 }
