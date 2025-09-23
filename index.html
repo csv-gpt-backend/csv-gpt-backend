@@ -3,18 +3,18 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GAsistente · CSV + TXT + PDF</title>
+<title>Asistente · CSV + TXT + PDF</title>
 <style>
   :root{
     color-scheme: light dark;
-    --headerH: 50vh;   /* PARTE 1 = 50% de la pantalla */
+    --headerH: 40vh;          /* PARTE 1 = 40% de pantalla (ajústalo si quieres) */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
   html,body{ height:100%; }
   body{ margin:0; font-family:system-ui,Arial,sans-serif; background:#fff; color:#111; }
 
-  /* ===== PARTE 1: FIJA (50% de pantalla) ===== */
+  /* ===== PARTE 1: FIJA (no se mueve) ===== */
   header{
     position: fixed; top:0; left:0; right:0; height:var(--headerH);
     background:#fff; border-bottom:1px solid #eee; z-index:20;
@@ -22,58 +22,67 @@
   .topbar{
     height:100%;
     display:grid;
-    grid-template-columns:1fr 2fr 1fr;  /* 25% - 50% - 25% */
+    grid-template-columns:1fr 2fr 1fr;   /* 25% - 50% - 25% */
     gap:12px; align-items:center; padding:0 var(--pad);
   }
-  .topbar img{ max-height: calc(var(--headerH) - 40px); width:auto; }
+  .topbar img{
+    max-height: calc(var(--headerH) - 60px);
+    width: auto;
+    object-fit: contain;
+  }
   .video-wrap{ width:100%; height:100%; }
-  .video-wrap video{ width:100%; height:100%; object-fit:cover; border:0; }
+  .video-wrap video{
+    width:100%; height:100%;
+    object-fit: contain;        /* ya no se recorta ni invade la parte 2 */
+    border:0; background:#fff;
+  }
 
-  /* ===== BLOQUE INFERIOR: ocupa el 50% restante ===== */
-  main{ padding-top: var(--headerH); }               /* deja sitio a la parte fija */
+  /* ===== BLOQUE INFERIOR (debajo de la parte fija) ===== */
+  main{ padding-top: var(--headerH); }
   #below{
-    height: calc(100vh - var(--headerH));           /* 50% restante de pantalla */
-    display: flex; flex-direction: column;
-    min-height: 300px;                               /* por seguridad en pantallas bajas */
+    height: calc(100vh - var(--headerH));
+    display:flex; flex-direction:column;
+    min-height: 320px;
   }
 
-  /* PARTE 2: auto (hasta donde ocupe) */
-  #pane2{
-    padding:14px 16px; border-bottom:1px solid #f2f2f2;
-    overflow: visible;                               /* sin scroll propio */
-  }
+  /* PARTE 2: texto + botones + respuesta (crece lo que necesite) */
+  #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; overflow:visible; }
   .controls{ margin-bottom:12px; }
-  .controls .row{
-    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center;
+  .controls .row{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; }
+
+  /* Minimal: sin bordes negros, limpio */
+  textarea{
+    width:min(1100px,98%); height:64px; padding:10px; font-size:15px;
+    border:1px solid #e6e6e6; border-radius:8px; background:#fff; outline:none;
   }
-  textarea{ width:min(1100px,98%); height:64px; padding:10px; font-size:15px; }
-  button, select{ padding:10px 12px; font-size:14px; cursor:pointer; }
+  button, select{
+    padding:10px 12px; font-size:14px; cursor:pointer;
+    border:none; outline:none; border-radius:8px; background:#f3f3f3; color:#111;
+  }
+  button:hover, select:hover{ background:#ececec; }
   .mic{ font-size:18px; padding:12px 16px; }
-  .new{ background:#ffd54f; border:1px solid #f0b400; }
+  .new{ background:#ffe082; }     /* botón amarillo */
   .right{ margin-left:auto; }
   .small{ font-size:12px; color:#666; }
   h2{ margin:0 0 10px 0; font-size:18px; }
+  .muted{ opacity:.5; }
 
-  /* PARTE 3: toma lo que sobra del bloque inferior; con scroll propio */
+  /* PARTE 3: lo que queda, con scroll propio */
   #pane3{
-    flex: 1 1 auto;                 /* ocupa el resto del #below */
-    min-height: 140px;              /* siempre visible */
-    overflow: auto;
-    padding:14px 16px;
+    flex:1 1 auto; min-height:140px; overflow:auto; padding:14px 16px;
   }
 
   /* Tablas y listas */
   table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; }
-  th,td{ border:1px solid #ddd; padding:6px 8px; text-align:left; vertical-align:top; }
-  th{ background:#f7f7f7; }
+  th,td{ border:1px solid #e5e5e5; padding:6px 8px; text-align:left; vertical-align:top; }
+  th{ background:#fafafa; }
   ol{ margin:10px 0 16px 22px; }
   .list-card{ margin:10px 0; }
-  .muted{ opacity:.5; }
 </style>
 </head>
 <body>
 
-<!-- ===== PARTE 1 (FIJA 50%): IMÁGENES + VIDEO ===== -->
+<!-- ===== PARTE 1 (FIJA 40%): IMÁGENES + VIDEO ===== -->
 <header>
   <div class="topbar">
     <img src="/left.png" alt="left">
@@ -84,7 +93,7 @@
   </div>
 </header>
 
-<!-- ===== BLOQUE INFERIOR (50% restante): PARTE 2 + PARTE 3 ===== -->
+<!-- ===== PARTES 2 y 3 (debajo de la franja fija) ===== -->
 <main>
   <div id="below">
 
@@ -114,7 +123,7 @@
       <div id="general"></div>
     </section>
 
-    <!-- PARTE 3: lo que sobra (listas numeradas / tablas) con scroll -->
+    <!-- PARTE 3: LISTAS/TABLAS (con scroll propio) -->
     <section id="pane3">
       <h2>Listas numeradas y tablas</h2>
       <div id="lists"></div>
@@ -125,20 +134,40 @@
 </main>
 
 <script>
-/* ========= TTS (voz) y STT (dictado) ========= */
-let voices=[]; speechSynthesis.onvoiceschanged=()=>voices=speechSynthesis.getVoices(); voices=speechSynthesis.getVoices();
-let muted=false; const vid=document.getElementById("vid");
+/* ========= Voz femenina ES-EC / ES-MX ========= */
+let voices=[];
+function pickFemaleSpanish(){
+  // prioriza voces que parezcan femeninas en es-EC/es-MX/es-ES
+  const all = speechSynthesis.getVoices();
+  // 1) Femenina + español
+  let v = all.find(v=>/^(es|es-EC|es-MX|es-ES)/i.test(v.lang) && /(female|mujer|woman)/i.test(v.name));
+  // 2) Google/Microsoft femeninas en español
+  if(!v) v = all.find(v=>/es/i.test(v.lang) && /(Google|Microsoft)/i.test(v.name) && /(female|mujer|woman)/i.test(v.name));
+  // 3) Cualquier voz en español
+  if(!v) v = all.find(v=>/es/i.test(v.lang));
+  return v || null;
+}
+speechSynthesis.onvoiceschanged = ()=>{ voices = speechSynthesis.getVoices(); };
+voices = speechSynthesis.getVoices();
+
+let muted=false;
+const vid=document.getElementById("vid");
+
 function speak(text){
   if(!text) return;
   const u=new SpeechSynthesisUtterance(text);
-  u.lang="es-MX";
-  const v=voices.find(v=>/es|span/i.test(v.lang)&&/female|mujer|Google|Microsoft/i.test(v.name))||voices.find(v=>/es/i.test(v.lang));
+  const v=pickFemaleSpanish();
+  // intenta MX y EC explícito si existe
+  u.lang = v?.lang || "es-MX";
   if(v) u.voice=v;
-  u.volume=muted?0:1;
+  u.volume= muted ? 0 : 1;
+  u.rate=1; u.pitch=1;
   u.onstart=()=>{ try{ vid.play().catch(()=>{});}catch{} };
   u.onend  =()=>{ try{ vid.pause(); }catch{} };
   speechSynthesis.speak(u);
 }
+
+/* ========= Dictado (voz a texto) ========= */
 let rec,recOn=false;
 function toggleRec(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -153,7 +182,7 @@ function toggleRec(){
 
 /* ========= Sesiones ========= */
 let sessionId="s-"+Date.now();
-let session={id:sessionId, startedAt:new Date().toISOString(), items:[]};
+let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
 const storeKey="sesiones-v1";
 function saveSession(){
   const all=JSON.parse(localStorage.getItem(storeKey)||"[]");
@@ -168,6 +197,7 @@ const $gen=document.getElementById("general");
 const $lists=document.getElementById("lists");
 const $tables=document.getElementById("tables");
 const mic=document.getElementById("mic");
+
 document.getElementById("mute").onclick = ()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
 document.getElementById("clear").onclick= ()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; };
 document.getElementById("new").onclick  = ()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
@@ -211,20 +241,31 @@ function renderTables(tables){
   });
 }
 
-/* ========= Enviar ========= */
+/* ========= Enviar =========
+   /api/answer ya incluye /datos/decimo.csv en el análisis con GPT-5
+*/
 document.getElementById("send").onclick = async ()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
-  $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
-  const r=await fetch("/api/answer",{ method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ question: prompt }) })
-    .then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
+
+  $gen.innerHTML="<em>Analizando…</em>";
+  $lists.innerHTML=""; $tables.innerHTML="";
+
+  const r=await fetch("/api/answer",{
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ question: prompt })
+  }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
+
   if(!r.ok){ $gen.textContent="Hubo un problema al analizar: "+(r.error||"desconocido"); return; }
+
   const ans=r.answer||{};
   $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
   renderLists(ans.lists||ans.lista||[]);
   renderTables(ans.tables||[]);
   speak(ans.general||"");
-  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans }); saveSession();
+
+  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans });
+  saveSession();
 };
 
 /* ========= Exportar ========= */
