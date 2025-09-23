@@ -3,101 +3,65 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Consulta TXT | Marcelo</title>
+  <title>Consulta TXT | Backend</title>
   <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 20px; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 24px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     input, select, button { padding: 8px; font-size: 14px; }
     button { cursor: pointer; }
-    .small { font-size: 12px; color: #666; }
-    pre { white-space: pre-wrap; word-wrap: break-word; background:#fafafa; border:1px solid #eee; padding:12px; border-radius:8px;}
+    .small { color: #666; font-size: 12px; }
+    pre { white-space: pre-wrap; background:#fafafa; border:1px solid #eee; padding:12px; border-radius:8px; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
     th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
     th { background: #f6f6f6; }
     .badge { display: inline-block; padding: 2px 6px; background: #eef; border: 1px solid #ccd; border-radius: 6px; font-size: 12px; }
+    mark { background: #ffeb3b; }
   </style>
 </head>
 <body>
   <h1>Consulta de TXT (Vercel)</h1>
 
   <div class="row">
-    <label>Fuente:</label>
-    <select id="source">
-      <option value="embed" selected>embed (/data/texto_base.js)</option>
-      <option value="file">file (/datos/emocionales.txt)</option>
-    </select>
-
-    <input id="q" type="text" placeholder="Buscar (vacío = ver todo)" size="32"/>
-    <label>limit</label><input id="limit" type="number" value="50" min="1" style="width:80px"/>
+    <input id="q" type="text" placeholder="Buscar (vacío = ver todo)" size="34"/>
     <label>context</label><input id="context" type="number" value="0" min="0" style="width:80px"/>
+    <label>limit</label><input id="limit" type="number" value="50" min="1" style="width:80px"/>
     <button id="btnBuscar">Buscar</button>
     <button id="btnVerTodo">Ver todo</button>
   </div>
 
   <p class="small">
     Endpoint: <code>/api/ask</code> · Parámetros:
-    <span class="badge">q</span> <span class="badge">limit</span> <span class="badge">source</span> <span class="badge">context</span>
+    <span class="badge">q</span> <span class="badge">context</span> <span class="badge">limit</span>
   </p>
 
   <div id="salida"></div>
 
   <script>
+    const API = location.origin + "/api/ask";
+    function esc(s){return String(s).replace(/[&<>]/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;" }[m]))}
+    function resaltar(texto, q){
+      if(!q) return esc(texto);
+      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'ig');
+      return esc(texto).replace(re, m=>`<mark>${esc(m)}</mark>`);
+    }
     async function callAPI(params = {}) {
-      const url = new URL(location.origin + '/api/ask');
-      Object.entries(params).forEach(([k, v]) => {
-        if (v !== undefined && v !== null && String(v).length) url.searchParams.set(k, v);
-      });
+      const url = new URL(API);
+      Object.entries(params).forEach(([k,v])=>{ if(v!==undefined && v!==null && String(v).length) url.searchParams.set(k,v); });
       const r = await fetch(url.toString());
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }
-
-    function renderFull(data) {
+    function renderFull(data){
       const cont = document.getElementById('salida');
       cont.innerHTML = `
         <h3>Texto completo</h3>
-        <p class="small">Líneas: ${data.n_lineas} · source=${data.source}</p>
-        <pre>${data.texto.replace(/[&<>]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]))}</pre>
+        <p class="small">Líneas: ${data.n_lineas}</p>
+        <pre>${esc(data.texto)}</pre>
       `;
     }
-
-    function renderSearch(data) {
+    function renderSearch(data, q){
       const cont = document.getElementById('salida');
-      const rows = data.resultados.map(r => {
+      const rows = (data.resultados||[]).map(r=>{
         const ctx = r.contexto ? `
           <div><strong>Contexto (${r.contexto.desde}-${r.contexto.hasta}):</strong>
-          <pre>${r.contexto.fragmento.map(l => String(l)).join('\n')
-            .replace(/[&<>]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]))}</pre></div>` : '';
-        return `
-          <tr>
-            <td style="width:80px">${r.linea}</td>
-            <td><div>${String(r.texto).replace(/[&<>]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]))}</div>${ctx}</td>
-          </tr>`;
-      }).join('');
-      cont.innerHTML = `
-        <h3>Resultados: ${data.total_encontrados}</h3>
-        <p class="small">source=${data.source} · líneas totales=${data.n_lineas}</p>
-        <table>
-          <thead><tr><th>#Línea</th><th>Texto</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="2">Sin coincidencias.</td></tr>'}</tbody>
-        </table>
-      `;
-    }
-
-    document.getElementById('btnBuscar').addEventListener('click', async () => {
-      const q = document.getElementById('q').value;
-      const limit = document.getElementById('limit').value;
-      const source = document.getElementById('source').value;
-      const context = document.getElementById('context').value;
-      const data = await callAPI({ q, limit, source, context });
-      renderSearch(data);
-    });
-
-    document.getElementById('btnVerTodo').addEventListener('click', async () => {
-      const source = document.getElementById('source').value;
-      const data = await callAPI({ source });
-      renderFull(data);
-    });
-  </script>
-</body>
-</html>
+          <pre>$
