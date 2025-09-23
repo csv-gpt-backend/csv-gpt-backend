@@ -3,94 +3,77 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FAsistente · CSV + TXT + PDF</title>
+<title>GAsistente · CSV + TXT + PDF</title>
 <style>
-  :root {
+  :root{
     color-scheme: light dark;
-    --headerH: 220px;       /* ← altura fija de la franja superior (video + logos) */
+    --headerH: 50vh;   /* PARTE 1 = 50% de la pantalla */
     --pad: 12px;
   }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body { margin: 0; font-family: system-ui, Arial, sans-serif; background:#fff; color:#111; }
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{ margin:0; font-family:system-ui,Arial,sans-serif; background:#fff; color:#111; }
 
-  /* ===== PARTE 1: IMÁGENES + VIDEO (FIJO) ===== */
-  header {
-    position: fixed;        /* ← NO se mueve con el scroll */
-    top: 0; left: 0; right: 0;
-    height: var(--headerH);
-    background: #fff;
-    z-index: 20;
-    border-bottom: 1px solid #eee;
+  /* ===== PARTE 1: FIJA (50% de pantalla) ===== */
+  header{
+    position: fixed; top:0; left:0; right:0; height:var(--headerH);
+    background:#fff; border-bottom:1px solid #eee; z-index:20;
   }
-  .topbar {
-    height: 100%;
-    display: grid;
-    grid-template-columns: 1fr 2fr 1fr;   /* 25% - 50% - 25% */
-    gap: 12px;
-    align-items: center;
-    padding: 0 var(--pad);
+  .topbar{
+    height:100%;
+    display:grid;
+    grid-template-columns:1fr 2fr 1fr;  /* 25% - 50% - 25% */
+    gap:12px; align-items:center; padding:0 var(--pad);
   }
-  .topbar img { max-height: calc(var(--headerH) - 40px); width: auto; }
-  .video-wrap { width: 100%; height: 100%; }
-  .video-wrap video {
-    width: 100%; height: 100%;
-    object-fit: cover;      /* llena el alto fijo sin deformarse */
-    border: 0;
+  .topbar img{ max-height: calc(var(--headerH) - 40px); width:auto; }
+  .video-wrap{ width:100%; height:100%; }
+  .video-wrap video{ width:100%; height:100%; object-fit:cover; border:0; }
+
+  /* ===== BLOQUE INFERIOR: ocupa el 50% restante ===== */
+  main{ padding-top: var(--headerH); }               /* deja sitio a la parte fija */
+  #below{
+    height: calc(100vh - var(--headerH));           /* 50% restante de pantalla */
+    display: flex; flex-direction: column;
+    min-height: 300px;                               /* por seguridad en pantallas bajas */
   }
 
-  /* El resto de la página empieza debajo de la franja fija */
-  main {
-    position: relative;
-    padding-top: var(--headerH); /* deja espacio bajo el header fijo */
-    height: 100vh;
+  /* PARTE 2: auto (hasta donde ocupe) */
+  #pane2{
+    padding:14px 16px; border-bottom:1px solid #f2f2f2;
+    overflow: visible;                               /* sin scroll propio */
+  }
+  .controls{ margin-bottom:12px; }
+  .controls .row{
+    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center;
+  }
+  textarea{ width:min(1100px,98%); height:64px; padding:10px; font-size:15px; }
+  button, select{ padding:10px 12px; font-size:14px; cursor:pointer; }
+  .mic{ font-size:18px; padding:12px 16px; }
+  .new{ background:#ffd54f; border:1px solid #f0b400; }
+  .right{ margin-left:auto; }
+  .small{ font-size:12px; color:#666; }
+  h2{ margin:0 0 10px 0; font-size:18px; }
+
+  /* PARTE 3: toma lo que sobra del bloque inferior; con scroll propio */
+  #pane3{
+    flex: 1 1 auto;                 /* ocupa el resto del #below */
+    min-height: 140px;              /* siempre visible */
+    overflow: auto;
+    padding:14px 16px;
   }
 
-  /* Contenedor con dos paneles apilados, cada uno con su propio scroll */
-  .panes {
-    height: calc(100vh - var(--headerH));
-    display: grid;
-    grid-template-rows: 1fr 1fr;  /* Parte 2 y Parte 3 ocupan mitad y mitad */
-  }
-  .pane {
-    overflow: auto;          /* cada parte se desplaza por separado */
-    padding: 14px 16px;
-    border-bottom: 1px solid #f2f2f2;
-  }
-  .pane:last-child { border-bottom: none; }
-  h2 { margin: 0 0 10px 0; font-size: 18px; }
-
-  /* Barra de controles (está en Parte 2) con sticky para que no “escape” al leer respuestas largas */
-  .controls {
-    position: sticky; top: 0;
-    z-index: 5;
-    background: #fff;
-    padding: 8px 0 10px;
-    border-bottom: 1px solid #eee;
-    margin-bottom: 12px;
-  }
-  .controls .row {
-    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center;
-  }
-  textarea { width: min(1100px, 98%); height: 64px; padding: 10px; font-size: 15px; }
-  button, select { padding: 10px 12px; font-size: 14px; cursor: pointer; }
-  .mic { font-size: 18px; padding: 12px 16px; }
-  .new { background: #ffd54f; border: 1px solid #f0b400; }
-  .right { margin-left: auto; }
-  .small { font-size: 12px; color: #666; }
-  .muted { opacity: .5 }
-
-  /* Tablas/listas (Parte 3) */
-  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
-  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
-  th { background: #f7f7f7; }
-  ol { margin: 10px 0 16px 22px; }
-  .list-card { margin: 10px 0; }
+  /* Tablas y listas */
+  table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; }
+  th,td{ border:1px solid #ddd; padding:6px 8px; text-align:left; vertical-align:top; }
+  th{ background:#f7f7f7; }
+  ol{ margin:10px 0 16px 22px; }
+  .list-card{ margin:10px 0; }
+  .muted{ opacity:.5; }
 </style>
 </head>
 <body>
 
-<!-- ====== PARTE 1 (FIJA): IMÁGENES + VIDEO ====== -->
+<!-- ===== PARTE 1 (FIJA 50%): IMÁGENES + VIDEO ===== -->
 <header>
   <div class="topbar">
     <img src="/left.png" alt="left">
@@ -101,12 +84,12 @@
   </div>
 </header>
 
-<!-- ====== PARTES 2 y 3, cada una con su propio scroll ====== -->
+<!-- ===== BLOQUE INFERIOR (50% restante): PARTE 2 + PARTE 3 ===== -->
 <main>
-  <div class="panes">
+  <div id="below">
 
-    <!-- ===== PARTE 2: PREGUNTA + BOTONES + RESPUESTA ===== -->
-    <section id="pane2" class="pane">
+    <!-- PARTE 2: caja de texto + botones + RESPUESTA -->
+    <section id="pane2">
       <div class="controls">
         <div class="row">
           <textarea id="q" placeholder="Escribe tu pregunta (o usa el micrófono)…"></textarea>
@@ -131,8 +114,8 @@
       <div id="general"></div>
     </section>
 
-    <!-- ===== PARTE 3: LISTAS NUMERADAS y TABLAS ===== -->
-    <section id="pane3" class="pane">
+    <!-- PARTE 3: lo que sobra (listas numeradas / tablas) con scroll -->
+    <section id="pane3">
       <h2>Listas numeradas y tablas</h2>
       <div id="lists"></div>
       <div id="tables"></div>
@@ -143,36 +126,34 @@
 
 <script>
 /* ========= TTS (voz) y STT (dictado) ========= */
-let voices = []; speechSynthesis.onvoiceschanged = ()=>voices = speechSynthesis.getVoices(); voices = speechSynthesis.getVoices();
-let muted = false; const vid = document.getElementById("vid");
-
+let voices=[]; speechSynthesis.onvoiceschanged=()=>voices=speechSynthesis.getVoices(); voices=speechSynthesis.getVoices();
+let muted=false; const vid=document.getElementById("vid");
 function speak(text){
   if(!text) return;
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = "es-MX";
-  const v = voices.find(v=>/es|span/i.test(v.lang) && /female|mujer|Google|Microsoft/i.test(v.name)) || voices.find(v=>/es/i.test(v.lang));
-  if (v) u.voice = v;
-  u.volume = muted ? 0 : 1;
-  u.onstart = ()=>{ try{ vid.play().catch(()=>{});}catch{} };
-  u.onend   = ()=>{ try{ vid.pause(); }catch{} };
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang="es-MX";
+  const v=voices.find(v=>/es|span/i.test(v.lang)&&/female|mujer|Google|Microsoft/i.test(v.name))||voices.find(v=>/es/i.test(v.lang));
+  if(v) u.voice=v;
+  u.volume=muted?0:1;
+  u.onstart=()=>{ try{ vid.play().catch(()=>{});}catch{} };
+  u.onend  =()=>{ try{ vid.pause(); }catch{} };
   speechSynthesis.speak(u);
 }
-
-let rec, recOn=false;
+let rec,recOn=false;
 function toggleRec(){
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!SR){ alert("Reconocimiento de voz no soportado en este navegador."); return; }
-  if(!rec){ rec = new SR(); rec.lang="es-MX"; rec.continuous=false; rec.interimResults=false; }
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ alert("Reconocimiento de voz no soportado."); return; }
+  if(!rec){ rec=new SR(); rec.lang="es-MX"; rec.continuous=false; rec.interimResults=false; }
   if(!recOn){
     rec.start(); recOn=true; mic.classList.add("muted");
-    rec.onresult=(e)=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); };
-    rec.onend=   ()=>{ recOn=false; mic.classList.remove("muted"); };
-  } else { rec.stop(); recOn=false; mic.classList.remove("muted"); }
+    rec.onresult=e=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); };
+    rec.onend   =()=>{ recOn=false; mic.classList.remove("muted"); };
+  }else{ rec.stop(); recOn=false; mic.classList.remove("muted"); }
 }
 
 /* ========= Sesiones ========= */
 let sessionId="s-"+Date.now();
-let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
+let session={id:sessionId, startedAt:new Date().toISOString(), items:[]};
 const storeKey="sesiones-v1";
 function saveSession(){
   const all=JSON.parse(localStorage.getItem(storeKey)||"[]");
@@ -187,7 +168,6 @@ const $gen=document.getElementById("general");
 const $lists=document.getElementById("lists");
 const $tables=document.getElementById("tables");
 const mic=document.getElementById("mic");
-
 document.getElementById("mute").onclick = ()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
 document.getElementById("clear").onclick= ()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; };
 document.getElementById("new").onclick  = ()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
@@ -196,14 +176,12 @@ mic.onclick = toggleRec;
 /* ========= Render listas/tablas ========= */
 function renderLists(lists){
   $lists.innerHTML="";
-  if(!lists || (Array.isArray(lists)&&lists.length===0)) return;
-
+  if(!lists||(Array.isArray(lists)&&lists.length===0)) return;
   if(Array.isArray(lists) && typeof lists[0]==="string"){
     const wrap=document.createElement("div"); wrap.className="list-card";
     const ol=document.createElement("ol");
     lists.forEach(item=>{ const li=document.createElement("li"); li.textContent=item; ol.appendChild(li); });
-    wrap.appendChild(ol); $lists.appendChild(wrap);
-    return;
+    wrap.appendChild(ol); $lists.appendChild(wrap); return;
   }
   (lists||[]).forEach(L=>{
     const wrap=document.createElement("div"); wrap.className="list-card";
@@ -237,37 +215,23 @@ function renderTables(tables){
 document.getElementById("send").onclick = async ()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
-
-  $gen.innerHTML="<em>Analizando…</em>";
-  $lists.innerHTML=""; $tables.innerHTML="";
-
-  const r = await fetch("/api/answer", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ question: prompt })
-  }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
-
-  if(!r.ok){
-    $gen.textContent = "Hubo un problema al analizar: " + (r.error || "desconocido");
-    return;
-  }
-
+  $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
+  const r=await fetch("/api/answer",{ method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ question: prompt }) })
+    .then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
+  if(!r.ok){ $gen.textContent="Hubo un problema al analizar: "+(r.error||"desconocido"); return; }
   const ans=r.answer||{};
   $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
-  renderLists(ans.lists || ans.lista || []);
-  renderTables(ans.tables || []);
+  renderLists(ans.lists||ans.lista||[]);
+  renderTables(ans.tables||[]);
   speak(ans.general||"");
-
-  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans });
-  saveSession();
+  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans }); saveSession();
 };
 
 /* ========= Exportar ========= */
-document.getElementById("export").onclick = ()=>{
+document.getElementById("export").onclick=()=>{
   const kind=document.getElementById("exportKind").value;
-  if(kind==="pdf"){
-    window.print();
-  } else if(kind==="doc"){
+  if(kind==="pdf"){ window.print(); }
+  else if(kind==="doc"){
     const html=`<html><head><meta charset="UTF-8"></head><body>
       <h1>Respuesta</h1>${$gen.innerHTML}
       <h2>Listas</h2>${$lists.innerHTML}
@@ -275,17 +239,11 @@ document.getElementById("export").onclick = ()=>{
     </body></html>`;
     const blob=new Blob([html],{type:"application/msword"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="respuesta.doc"; a.click();
-  } else if(kind==="xls"){
-    const tables=$tables.querySelectorAll("table");
-    let csv="";
-    tables.forEach((tb,i)=>{
-      const rows=tb.querySelectorAll("tr");
-      rows.forEach(tr=>{
-        const cells=[...tr.children].map(td=>`"${td.textContent.replace(/"/g,'""')}"`);
-        csv += cells.join(",") + "\n";
-      });
-      if(i<tables.length-1) csv += "\n";
-    });
+  }else if(kind==="xls"){
+    const t=$tables.querySelectorAll("table"); let csv="";
+    t.forEach((tb,i)=>{ tb.querySelectorAll("tr").forEach(tr=>{
+      const cells=[...tr.children].map(td=>`"${td.textContent.replace(/"/g,'""')}"`); csv += cells.join(",")+"\n"; });
+      if(i<t.length-1) csv+="\n"; });
     const blob=new Blob([csv],{type:"application/vnd.ms-excel"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="tablas.xls"; a.click();
   }
