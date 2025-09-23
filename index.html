@@ -3,16 +3,22 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LEXIUM2</title>
+  <title>LEX IUM</title>
   <style>
     :root{
-      --brand:#1f6fff; --bg:#fafafa; --card:#fff; --ink:#1b1e23; --muted:#6b7280; --ring:#e5e7eb;
+      --brand:#1f6fff;
+      --bg:#fafafa; --card:#fff; --ink:#1b1e23; --muted:#6b7280; --ring:#e5e7eb;
     }
-    *{box-sizing:border-box} html,body{height:100%}
+    *{box-sizing:border-box}
+    html,body{height:100%}
     body{margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial; color:var(--ink); background:var(--bg)}
 
-    /* ===== Header fijo (video + logos) ===== */
-    .hero{ position:sticky; top:0; z-index:9999; background:#fff; border-bottom:1px solid var(--ring); box-shadow:0 2px 10px rgba(0,0,0,.05) }
+    /* Header sticky con video y logos (siempre visible) */
+    .hero{
+      position:sticky; top:0; z-index:9999;
+      background:#fff; border-bottom:1px solid var(--ring);
+      box-shadow:0 2px 10px rgba(0,0,0,.05);
+    }
     .hero-inner{ max-width:1200px; margin:0 auto; padding:12px 20px; display:grid;
       grid-template-columns: 1fr minmax(420px,640px) 1fr; gap:12px; align-items:center }
     .brand,.partner{display:flex; align-items:center; justify-content:center}
@@ -20,13 +26,15 @@
     .video-shell{ border-radius:16px; overflow:hidden; border:1px solid var(--ring); background:#000; width:100%; aspect-ratio:16/9 }
     .video-shell video{ width:100%; height:100%; object-fit:cover; display:block }
 
-    /* ===== Contenido ===== */
-    .container{ max-width:1200px; margin:20px auto 28px; padding:0 20px; display:grid; gap:16px }
+    .container{ max-width:1200px; margin:20px auto 28px; padding:0 20px }
     .card{ background:var(--card); border:1px solid var(--ring); border-radius:14px; padding:16px }
 
-    /* textarea: 2 líneas exactas */
+    /* ✅ textarea: exactamente "dos líneas" */
     textarea{
-      width:100%; height:58px; max-height:58px; min-height:58px;
+      width:100%;
+      height:58px;            /* ~2 líneas */
+      max-height:58px;
+      min-height:58px;
       padding:10px 12px; border-radius:12px; border:1px solid var(--ring);
       outline:none; font-size:16px; resize:none; background:#fff;
     }
@@ -35,16 +43,13 @@
     .btn{ display:inline-flex; align-items:center; gap:8px; padding:10px 16px; border:1px solid var(--ring); border-radius:999px; background:#fff; cursor:pointer; font-weight:600 }
     .btn.primary{ background:var(--brand); color:#fff; border-color:transparent }
     .btn:active{ transform:translateY(1px) }
-    .muted{ color:var(--muted); }
+    .muted{ color:var(--muted); font-size:14px }
     h3{ margin:0 0 10px 0 }
-
-    /* Sección 2 y 3 */
-    .out{ min-height:64px; padding:12px 14px; border-radius:12px; border:1px dashed var(--ring); background:#fff }
-    .tables{ min-height:96px; max-height:50vh; overflow:auto; padding:12px 14px; border-radius:12px; border:1px dashed var(--ring); background:#fff }
+    .out,.tables{ min-height:64px; padding:12px 14px; border-radius:12px; border:1px dashed var(--ring); background:#fff }
 
     .tables table{ width:100%; border-collapse:collapse; font-size:14px }
-    .tables th,.tables td{ border:1px solid var(--ring); padding:8px 10px; text-align:left }
-    .tables th{ background:#f8fafc }
+    .tables th,.tables td{ border:1px solid var(--ring); padding:8px 10px; text-align:left; vertical-align:top }
+    .tables th{ background:#f8fafc; position:sticky; top:0 }
 
     select{ padding:10px 14px; border:1px solid var(--ring); border-radius:10px; background:#fff; font-weight:600 }
 
@@ -55,26 +60,24 @@
   </style>
 </head>
 <body>
-  <!-- ===== PRIMERA PARTE (fija) ===== -->
   <header class="hero">
     <div class="hero-inner">
       <div class="brand"><img src="/left.png" alt="Logo Izq" onerror="this.style.opacity=0.2"></div>
       <div class="video-shell">
-        <!-- Siempre mute; el audio lo hace el TTS -->
-        <video id="coachVideo" playsinline muted preload="auto" poster="/right.png" crossorigin="anonymous">
+        <!-- Video SIEMPRE en mute; el audio sale de la voz TTS -->
+        <video id="coachVideo" playsinline muted preload="auto" poster="/right.png" crossorigin="anonymous" loop>
           <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
         </video>
       </div>
-      <div class="partner"><img src="/right.png" alt="Logo Der" onerror="this.style.opacity=0.2"></div>
+      <div class="partner"><img src="/right.png" alt="Compartir" onerror="this.style.opacity=0.2"></div>
     </div>
   </header>
 
-  <!-- ===== SEGUNDA Y TERCERA PARTE ===== -->
   <main class="container">
-    <!-- Entrada + controles -->
     <section class="card">
       <textarea id="q" placeholder="Escribe tu pregunta o usa dictado…"></textarea>
 
+      <!-- ✅ Controles centrados + selector exportación -->
       <div class="controls">
         <button class="btn primary" id="send">Enviar</button>
         <button class="btn" id="micBtn">🎙️ Dictado</button>
@@ -93,13 +96,11 @@
       </div>
     </section>
 
-    <!-- Sección 2: Respuesta -->
     <section class="card">
       <h3>Respuesta</h3>
       <div id="answer" class="out muted">—</div>
     </section>
 
-    <!-- Sección 3: Tablas/Listas -->
     <section class="card">
       <h3>Tablas y Listas</h3>
       <div id="tables" class="tables muted">—</div>
@@ -107,7 +108,6 @@
   </main>
 
   <script>
-    // ====== DOM ======
     const txt = document.getElementById('q');
     const btnSend = document.getElementById('send');
     const btnMic  = document.getElementById('micBtn');
@@ -122,65 +122,97 @@
     const exportBtn = document.getElementById('exportBtn');
     const exportType= document.getElementById('exportType');
 
-    // ====== Voz femenina ES-MX / LATAM ======
+    // =========================================================
+    // TTS: Voz femenina ES-MX (volumen estable) + video loop
+    // =========================================================
     const synth = window.speechSynthesis;
     let currentUtter = null;
-    let speaking = false;
 
-    function pickFemaleSpanishVoice() {
+    function pickSpanishFemaleVoice() {
       const voices = synth.getVoices() || [];
-      const preferNames = ['Microsoft Sabina','Microsoft Dalia','Paulina','Lucia','Conchita','Camila','Lupe'];
-      // es-MX femenina
-      let v = voices.find(v => /es-?MX/i.test(v.lang) && /female|mujer|woman/i.test(v.name)); if (v) return v;
-      // es-MX cualquiera
-      v = voices.find(v => /es-?MX/i.test(v.lang)); if (v) return v;
-      // es-419 femenina
-      v = voices.find(v => /es-?419/i.test(v.lang) && /female|mujer|woman/i.test(v.name)); if (v) return v;
-      // por nombre
-      for (const n of preferNames){ const c = voices.find(v => (v.name||'').toLowerCase().includes(n.toLowerCase())); if (c) return c; }
-      // cualquier español
-      return voices.find(v => /^es/i.test(v.lang)) || voices[0] || null;
+      // Preferencias comunes (varía por SO/navegador)
+      const preferred = [
+        /es-?MX/i, /Paulina/i, /Lucia/i, /Sofia/i, /es-?US/i,
+        /es-?ES/i, /Mónica/i, /Conchita/i, /Penélope/i
+      ];
+      for (const p of preferred) {
+        const v = voices.find(v => p.test(v.name) || p.test(v.lang));
+        if (v) return v;
+      }
+      // Fallback: primera voz en español
+      return voices.find(v => /^es/i.test(v.lang)) || null;
     }
 
     function stopSpeaking() {
-      speaking = false;
-      try{ video.pause(); video.loop = false; }catch(_){}
-      if (synth && synth.speaking) { try{ synth.cancel(); }catch(_){ } }
+      try { if (synth && synth.speaking) synth.cancel(); } catch(_){}
       currentUtter = null;
+      try{ video.pause(); video.currentTime = 0; }catch(_){}
+    }
+
+    function ensureVideoLooping(play=true){
+      try{
+        if (play) {
+          video.play().catch(()=>{});
+        } else {
+          video.pause();
+          video.currentTime = 0;
+        }
+      }catch(_){}
     }
 
     function speak(text){
       stopSpeaking();
       if (!text || !('speechSynthesis' in window)) return;
+
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1; u.pitch = 1; u.volume = 1; // volumen estable
-      const start = () => {
-        const v = pickFemaleSpanishVoice();
-        if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = 'es-MX'; }
-        currentUtter = u; speaking = true;
-        try{ video.currentTime = 0; video.loop = true; video.play().catch(()=>{}); }catch(_){}
+      // ✅ Volumen estable, timbre natural
+      u.rate = 1; u.pitch = 1; u.volume = 1;
+      u.onstart = () => ensureVideoLooping(true);
+      u.onend   = () => ensureVideoLooping(false);
+      u.onerror = () => ensureVideoLooping(false);
+
+      const go = () => {
+        const v = pickSpanishFemaleVoice();
+        if (v) u.voice = v;
+        currentUtter = u;
         synth.speak(u);
       };
-      if (synth.getVoices().length === 0) speechSynthesis.onvoiceschanged = start; else start();
-      u.onend = () => { speaking=false; try{ video.loop = false; video.pause(); }catch(_){} };
-      u.onerror = () => { speaking=false; try{ video.loop = false; video.pause(); }catch(_){} };
+
+      if (synth.getVoices().length===0) {
+        speechSynthesis.onvoiceschanged = () => go();
+      } else { go(); }
     }
 
-    // ====== Dictado ======
+    // =========================================================
+    // Dictado simple
+    // =========================================================
+    let rec=null, recOn=false;
     function toggleDictado(){
+      if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+        alert('Tu navegador no soporta dictado.');
+        return;
+      }
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRec) { alert('Tu navegador no soporta dictado.'); return; }
-      const rec = new SpeechRec(); rec.lang = 'es-MX'; rec.continuous = false; rec.interimResults = false;
-      statusEl.textContent='Escuchando…';
-      rec.onresult = (e) => { const t = e.results?.[0]?.[0]?.transcript || ''; txt.value = (txt.value + ' ' + t).trim(); };
-      rec.onend = ()=>{ statusEl.textContent='Listo'; };
-      rec.onerror= ()=>{ statusEl.textContent='Listo'; };
-      try{ rec.start(); }catch(_){}
+      if (!rec) {
+        rec = new SpeechRec();
+        rec.lang = 'es-MX';
+        rec.continuous = false; rec.interimResults = false;
+        rec.onresult = (e) => {
+          const t = e.results[0][0].transcript || '';
+          txt.value = (txt.value + ' ' + t).trim();
+        };
+        rec.onend = ()=>{ recOn=false; statusEl.textContent='Listo'; };
+        rec.onerror = ()=>{ recOn=false; statusEl.textContent='Listo'; };
+      }
+      if (!recOn) { recOn=true; statusEl.textContent='Escuchando…'; rec.start(); }
+      else { rec.stop(); recOn=false; statusEl.textContent='Listo'; }
     }
 
-    // ====== Markdown → Tabla (Sección 3) ======
+    // =========================================================
+    // Markdown → Tabla HTML con numeración
+    // =========================================================
     function extractFirstMarkdownTable(md){
-      const lines = md.split(/\r?\n/);
+      const lines = (md||'').split(/\r?\n/);
       const startIdx = lines.findIndex(l => /^\s*\|/.test(l));
       if (startIdx === -1) return null;
       let endIdx = startIdx + 1;
@@ -199,13 +231,17 @@
       const parsed = parseMarkdownTable(md);
       if (!parsed) return null;
       const { header, rows } = parsed;
+
       const table = document.createElement('table');
       const thead = document.createElement('thead');
       const trh = document.createElement('tr');
+
+      // columna # + headers
       const thNum = document.createElement('th'); thNum.textContent = '#';
       trh.appendChild(thNum);
       header.forEach(h => { const th=document.createElement('th'); th.textContent=h; trh.appendChild(th); });
       thead.appendChild(trh); table.appendChild(thead);
+
       const tbody = document.createElement('tbody');
       rows.forEach((r,idx) => {
         const tr = document.createElement('tr');
@@ -227,9 +263,11 @@
       return ` Se muestran ${total} registros. ${maxToSpeak>=1 ? 'Los primeros son: ' + nombres : ''}`;
     }
 
-    // ====== Exportaciones (título = tu pregunta) ======
+    // =========================================================
+    // Exportaciones (usa la pregunta como título)
+    // =========================================================
     function exportContent(type){
-      const titulo = (txt.value || 'Reporte').trim() || 'Reporte';
+      const titulo = (txt.value || 'Reporte').trim();
       const texto = (out.textContent || '').trim();
       let tableHTML = '';
       let csvData = '';
@@ -246,9 +284,8 @@
 
       if (type === 'pdf'){
         const w = window.open('', '_blank');
-        const styles = `<style>body{font-family:Arial,sans-serif;padding:20px;}h1{margin:0 0 8px}h2{margin:14px 0 8px}
-          table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f1f5f9}</style>`;
-        w.document.write(`<html><head><meta charset="utf-8">${styles}<title>${titulo}</title></head><body>`);
+        const styles = `<style>body{font-family:Arial,sans-serif;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f1f5f9}</style>`;
+        w.document.write(`<html><head><meta charset="utf-8">${styles}</head><body>`);
         w.document.write(`<h1>${titulo}</h1><h2>Respuesta</h2><p>${texto || '—'}</p>`);
         if (tableHTML) w.document.write(`<h2>Tablas</h2>${tableHTML}`);
         w.document.write('</body></html>');
@@ -263,7 +300,7 @@
           <body><h1>${titulo}</h1><h2>Respuesta</h2><p>${(texto || '—')}</p>${tableHTML ? `<h2>Tablas</h2>${tableHTML}`:''}</body></html>`;
         const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `${titulo.replace(/[^\w\-]+/g,'_')}.doc`; a.click();
+        const a = document.createElement('a'); a.href = url; a.download = (titulo||'reporte') + '.doc'; a.click();
         URL.revokeObjectURL(url);
         return;
       }
@@ -271,13 +308,32 @@
         if (!csvData){ alert('No hay tabla disponible para exportar a CSV.'); return; }
         const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `${titulo.replace(/[^\w\-]+/g,'_')}.csv`; a.click();
+        const a = document.createElement('a'); a.href = url; a.download = (titulo||'reporte') + '.csv'; a.click();
         URL.revokeObjectURL(url);
         return;
       }
     }
 
-    // ====== Consulta al backend ======
+    // =========================================================
+    // Cliente → Backend (intenta /api/ask y fallback /api/preguntar)
+    // =========================================================
+    async function callBackend(question){
+      const endpoints = ['/api/ask','/api/preguntar'];
+      let lastErr = null;
+      for (const ep of endpoints){
+        try{
+          const r = await fetch(ep, {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify({ question })
+          });
+          if (!r.ok) { lastErr = new Error('HTTP '+r.status); continue; }
+          return await r.json();
+        }catch(e){ lastErr = e; }
+      }
+      throw lastErr || new Error('No endpoints responded');
+    }
+
     async function send(){
       const question = (txt.value || '').trim();
       if (!question) { out.textContent = 'Por favor, escribe una pregunta.'; out.classList.remove('muted'); return; }
@@ -288,17 +344,20 @@
       tablesBox.textContent = '—'; tablesBox.classList.add('muted');
 
       try{
-        const r = await fetch('/api/ask', {
-          method:'POST',
-          headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ question })
-        });
-        const data = await r.json();
+        const data = await callBackend(question);
+        const texto = (data?.texto || '').trim();
+        const md = (data?.tablas_markdown || '').trim();
 
-        const texto = data?.texto || 'No obtuve respuesta.';
-        out.textContent = texto; out.classList.remove('muted');
+        if (!texto && !md){
+          out.textContent = 'El modelo no devolvió contenido utilizable en este intento. Intenta con una pregunta más específica, o vuelve a consultar en unos segundos.';
+          out.classList.remove('muted');
+          statusEl.textContent='Listo';
+          return;
+        }
 
-        const md = data?.tablas_markdown || '';
+        out.textContent = texto || '—';
+        out.classList.remove('muted');
+
         let extraNarr = '';
         if (md) {
           const rendered = renderTableFromMarkdown(md);
@@ -306,7 +365,7 @@
           if (rendered){
             tablesBox.appendChild(rendered.table);
             tablesBox.classList.remove('muted');
-            extraNarr = narrateTable(rendered.rows, rendered.header); // leer también tablas
+            extraNarr = narrateTable(rendered.rows, rendered.header);
           } else {
             tablesBox.innerHTML = '<pre>'+md+'</pre>';
             tablesBox.classList.remove('muted');
@@ -315,18 +374,20 @@
           tablesBox.textContent='—'; tablesBox.classList.add('muted');
         }
 
-        const narr = (texto && !/^no obtuve respuesta/i.test(texto)) ? (texto + (extraNarr||'')) : texto;
-        if (narr && narr.trim()) speak(narr);
+        // Locución (texto + breve resumen de tabla)
+        const narr = [texto, extraNarr].filter(Boolean).join(' ');
+        if (narr) speak(narr);
 
         statusEl.textContent='Listo';
       }catch(err){
         console.error(err);
         statusEl.textContent='Error';
         out.textContent='Ocurrió un problema procesando la consulta. Intenta nuevamente.';
+        out.classList.remove('muted');
       }
     }
 
-    // ====== Botones ======
+    // ---- Botones
     btnSend.onclick = send;
     btnMic.onclick  = toggleDictado;
     btnMute.onclick = stopSpeaking;
@@ -334,8 +395,19 @@
     btnNew.onclick  = ()=>{ txt.value=''; stopSpeaking(); out.textContent='—'; out.classList.add('muted'); tablesBox.textContent='—'; tablesBox.classList.add('muted'); statusEl.textContent='Listo'; };
     exportBtn.onclick = ()=> exportContent(exportType.value);
 
-    // “Despierta” autoplay sin sonido
-    document.addEventListener('DOMContentLoaded', ()=>{ try{ video.play().then(()=>video.pause()).catch(()=>{}); }catch(_){ } });
+    // “Despierta” autoplay sin sonido (permiso del navegador)
+    document.addEventListener('DOMContentLoaded', ()=>{
+      try{ video.play().then(()=>video.pause()).catch(()=>{}); }catch(_){ }
+      console.log('ready!');
+    });
+
+    // Enviar con Enter (sin saltar de línea)
+    txt.addEventListener('keydown', (e)=>{
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        send();
+      }
+    });
   </script>
 </body>
 </html>
