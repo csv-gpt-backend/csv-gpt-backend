@@ -11,7 +11,7 @@ function obtenerTexto(source = 'embed') {
     try {
       const filePath = path.join(process.cwd(), 'datos', 'emocionales.txt');
       return fs.readFileSync(filePath, 'utf-8');
-    } catch { /* fallback */ }
+    } catch { /* fallback al embed */ }
   }
   return TEXTO_BASE ?? '';
 }
@@ -24,11 +24,10 @@ function contexto(lines, i, k = 0) {
 
 export default function handler(req, res) {
   try {
-    const method = req.method?.toUpperCase?.() || 'GET';   // ✅ acepta GET y POST
+    const method = req.method?.toUpperCase?.() || 'GET'; // ✅ GET y POST
     if (method !== 'GET' && method !== 'POST') {
       return res.status(405).json({ error: 'Método no permitido. Usa GET o POST.' });
     }
-
     const params = method === 'POST' ? (req.body || {}) : (req.query || {});
     const { q = '', limit = '50', source = 'embed', context = '0' } = params;
 
@@ -38,33 +37,4 @@ export default function handler(req, res) {
     if (!q.trim()) {
       return res.status(200).json({
         ok: true, endpoint: 'ask2', method, mode: 'txt-full',
-        source, n_lineas: lineas.length, texto,
-      });
-    }
-
-    const qn = normaliza(q);
-    const maxRes = Math.max(1, Number(limit) || 50);
-    const ctx = Math.max(0, Number(context) || 0);
-
-    const resultados = [];
-    for (let i = 0; i < lineas.length; i++) {
-      const ln = lineas[i];
-      if (normaliza(ln).includes(qn)) {
-        resultados.push({
-          linea: i + 1,
-          texto: ln,
-          ...(ctx ? { contexto: contexto(lineas, i, ctx) } : {}),
-        });
-        if (resultados.length >= maxRes) break;
-      }
-    }
-
-    return res.status(200).json({
-      ok: true, endpoint: 'ask2', method, mode: 'txt-search',
-      query: q, source, total_encontrados: resultados.length,
-      n_lineas: lineas.length, resultados,
-    });
-  } catch (err) {
-    return res.status(500).json({ ok: false, endpoint: 'ask2', error: String(err?.message || err) });
-  }
-}
+        source, n_lineas: lineas.length_
