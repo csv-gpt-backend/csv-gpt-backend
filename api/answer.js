@@ -1,5 +1,5 @@
 // /api/answer.js
-// Fuentes: /datos/decimo.csv + /data/texto_base.js (conceptual)
+// Fuente: /datos/decimo.csv + /data/texto_base.js (conceptual)
 // Requiere: open_ai_key (u OPENAI_API_KEY)
 
 import fs from "fs";
@@ -50,14 +50,23 @@ function statsForNumericColumns(rows){
     const median = n%2 ? sorted[(n-1)/2] : (sorted[n/2-1]+sorted[n/2])/2;
     const varSample = arr.reduce((a,b)=>a+(b-mean)**2,0)/(n-1||1);
     const stdev = Math.sqrt(varSample);
-    out[k] = { n, min, max, mean, median, stdev, sum };
+    // percentiles básicos aproximados
+    const pct = (p)=> {
+      if (n===1) return sorted[0];
+      const idx = (p/100)*(n-1);
+      const lo = Math.floor(idx), hi = Math.ceil(idx);
+      if (lo===hi) return sorted[lo];
+      const w = idx - lo;
+      return sorted[lo]*(1-w) + sorted[hi]*w;
+    };
+    out[k] = { n, min, max, mean, median, stdev, sum,
+               p10:pct(10), p25:pct(25), p50:median, p75:pct(75), p90:pct(90) };
   }
   return out;
 }
 
 /* ===== Cache ===== */
 let CACHE = { key:"", csv:{headers:[],rows:[]}, csvStats:{}, textoBase:"" };
-
 function clearCache(){ CACHE = { key:"", csv:{headers:[],rows:[]}, csvStats:{}, textoBase:"" }; }
 
 async function loadCache(){
@@ -90,11 +99,20 @@ function findNameColumns(headers){
   }
   return picks;
 }
+function fullNameFrom(row, nameCols){
+  const parts = nameCols.map(c=>row[c]).filter(Boolean);
+  return parts.join(" ").replace(/\s+/g," ").trim();
+}
 function findParallelColumn(headers){
   return headers.find(h=>/paralelo|secci[oó]n|curso/i.test(h)) || null;
 }
+function filterByParallel(rows, parCol, q){
+  if(!parCol) return rows;
+  if (/paralelo\s*A\b/i.test(q)) return rows.filter(r=>String(r[parCol]).toUpperCase().includes("A"));
+  if (/paralelo\s*B\b/i.test(q)) return rows.filter(r=>String(r[parCol]).toUpperCase().includes("B"));
+  return rows;
+}
 function findNumericColumn(headers, q){
-  // detecta la columna numérica mencionada en la pregunta
   const lower = q.toLowerCase();
   const scored = headers
     .map(h=>({h, score: lower.includes(h.toLowerCase()) ? h.length : 0}))
@@ -106,26 +124,30 @@ function findNumericColumn(headers, q){
 /* ===== Fast paths (sin GPT) ===== */
 function looksListStudents(q){ return /(lista|listado|muestr[a|e]|dime)\s+.*(estudiant|alumn)/i.test(q); }
 function looksAverage(q){ return /(promedio|media|average)/i.test(q); }
+function looksMedian(q){ return /(mediana)/i.test(q); }
+function looksStd(q){ return /(desviaci[oó]n\s*est[aá]ndar|stdev)/i.test(q); }
 function looksTop(q){ return /(top\s*\d+|mejores\s*\d+)/i.test(q); }
 function looksBottom(q){ return /(peores\s*\d+)/i.test(q); }
+function looksCount(q){ return /(cu[aá]ntos|conteo|n[úu]mero\s+de\s+estudiantes)/i.test(q); }
 function extractN(q, def=10){
   const m = q.match(/(top|mejores|peores)\s*(\d+)/i);
   return m ? Math.max(1, parseInt(m[2],10)) : def;
 }
-function filterByParallel(rows, parCol, q){
-  if(!parCol) return rows;
-  if (/paralelo\s*A\b/i.test(q)) return rows.filter(r=>String(r[parCol]).toUpperCase().includes("A"));
-  if (/paralelo\s*B\b/i.test(q)) return rows.filter(r=>String(r[parCol]).toUpperCase().includes("B"));
-  return rows;
-}
-function fullNameFrom(row, nameCols){
-  const parts = nameCols.map(c=>row[c]).filter(Boolean);
-  return parts.join(" ").replace(/\s+/g," ").trim();
-}
-function fastAnswer(question, csv){
+
+function fastAnswer(question, csv, csvStats){
   const q = String(question||"");
   const namesCols = findNameColumns(csv.headers);
   const parCol = findParallelColumn(csv.headers);
+
+  // 0) Conteo estudiantes (global / A / B)
+  if (looksCount(q)){
+    const filtered = filterByParallel(csv.rows, parCol, q);
+    return {
+      general: `Conteo de estudiantes${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B")+ ")" : ""}: ${filtered.length}.`,
+      lists:[],
+      tables:[{ title:"Conteo", columns:["Métrica","Valor"], rows:[["Estudiantes", String(filtered.length)]] }]
+    };
+  }
 
   // 1) Lista de estudiantes (global o por A/B)
   if (looksListStudents(q) && namesCols.length) {
@@ -137,71 +159,75 @@ function fastAnswer(question, csv){
       lists: [{ title: "Estudiantes de Décimo", items: uniq }],
       tables: [{
         title: "Listado de estudiantes",
-        columns: ["Estudiante"],    // el front añade # automáticamente
+        columns: ["Estudiante"],  // el front añade "#"
         rows: uniq.map(n=>[n])
       }]
     };
   }
 
-  // 2) Promedio de <col> (global o por A/B)
-  if (looksAverage(q)) {
-    const col = findNumericColumn(csv.headers, q);
-    if (col) {
-      const filtered = filterByParallel(csv.rows, parCol, q);
-      const vals = filtered.map(r=>r[col]).filter(isNum);
-      const n=vals.length, mean = vals.reduce((a,b)=>a+b,0)/(n||1);
-      return {
-        general: `Promedio de ${col}${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B") +")":""}: ${mean.toFixed(2)} (n=${n}).`,
-        tables:[{
-          title:`Promedio de ${col}`,
-          columns:["Métrica","Valor"],
-          rows:[["n", String(n)], ["Promedio", mean.toFixed(4)]]
-        }],
-        lists:[]
-      };
+  // 2) Promedio / Mediana / Desviación estándar de <col> (global o por A/B)
+  const col = findNumericColumn(csv.headers, q);
+  if (col) {
+    const filtered = filterByParallel(csv.rows, parCol, q).filter(r=>isNum(r[col]));
+    if (filtered.length){
+      const vals = filtered.map(r=>r[col]);
+      const n = vals.length;
+      const sum = vals.reduce((a,b)=>a+b,0);
+      const mean = sum/n;
+      const sorted = [...vals].sort((a,b)=>a-b);
+      const median = n%2 ? sorted[(n-1)/2] : (sorted[n/2-1]+sorted[n/2])/2;
+      const varSample = vals.reduce((a,b)=>a+(b-mean)**2,0)/(n-1||1);
+      const stdev = Math.sqrt(varSample);
+      if (looksAverage(q) || looksMedian(q) || looksStd(q)) {
+        const rows2 = [
+          ["n", String(n)],
+          ["Promedio", mean.toFixed(4)],
+          ["Mediana", median.toFixed(4)],
+          ["Desviación estándar", stdev.toFixed(4)]
+        ];
+        return {
+          general: `Estadísticos para ${col}${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B")+ ")" : ""}.`,
+          lists:[],
+          tables:[{ title:`Estadísticos de ${col}`, columns:["Métrica","Valor"], rows: rows2 }]
+        };
+      }
     }
   }
 
   // 3) Top N / Mejores N de <col>
-  if (looksTop(q)) {
+  if (looksTop(q) && col && namesCols.length) {
     const N = extractN(q, 10);
-    const col = findNumericColumn(csv.headers, q);
-    if (col && namesCols.length) {
-      const filtered = filterByParallel(csv.rows, parCol, q)
-        .filter(r=>isNum(r[col]));
-      filtered.sort((a,b)=>b[col]-a[col]);
-      const top = filtered.slice(0, N).map((r)=>[ fullNameFrom(r, namesCols), r[col] ]);
-      return {
-        general: `Top ${Math.min(N, top.length)} en ${col}.`,
-        tables:[{
-          title:`Top ${N} en ${col}`,
-          columns:["Estudiante", col],
-          rows: top.map(([n,v])=>[n, String(v)])
-        }],
-        lists:[]
-      };
-    }
+    const filtered = filterByParallel(csv.rows, parCol, q)
+      .filter(r=>isNum(r[col]));
+    filtered.sort((a,b)=>b[col]-a[col]);
+    const top = filtered.slice(0, N).map((r)=>[ fullNameFrom(r, namesCols), r[col] ]);
+    return {
+      general: `Top ${Math.min(N, top.length)} en ${col}.`,
+      tables:[{
+        title:`Top ${N} en ${col}`,
+        columns:["Estudiante", col],
+        rows: top.map(([n,v])=>[n, String(v)])
+      }],
+      lists:[]
+    };
   }
 
   // 4) Peores N de <col>
-  if (looksBottom(q)) {
+  if (looksBottom(q) && col && namesCols.length) {
     const N = extractN(q, 10);
-    const col = findNumericColumn(csv.headers, q);
-    if (col && namesCols.length) {
-      const filtered = filterByParallel(csv.rows, parCol, q)
-        .filter(r=>isNum(r[col]));
-      filtered.sort((a,b)=>a[col]-b[col]);
-      const bot = filtered.slice(0, N).map((r)=>[ fullNameFrom(r, namesCols), r[col] ]);
-      return {
-        general: `Peores ${Math.min(N, bot.length)} en ${col}.`,
-        tables:[{
-          title:`Peores ${N} en ${col}`,
-          columns:["Estudiante", col],
-          rows: bot.map(([n,v])=>[n, String(v)])
-        }],
-        lists:[]
-      };
-    }
+    const filtered = filterByParallel(csv.rows, parCol, q)
+      .filter(r=>isNum(r[col]));
+    filtered.sort((a,b)=>a[col]-b[col]);
+    const bot = filtered.slice(0, N).map((r)=>[ fullNameFrom(r, namesCols), r[col] ]);
+    return {
+      general: `Peores ${Math.min(N, bot.length)} en ${col}.`,
+      tables:[{
+        title:`Peores ${N} en ${col}`,
+        columns:["Estudiante", col],
+        rows: bot.map(([n,v])=>[n, String(v)])
+      }],
+      lists:[]
+    };
   }
 
   return null;
@@ -226,7 +252,7 @@ Devuelve EXCLUSIVAMENTE JSON válido:
 `.trim();
 
   const { headers, rows } = cache.csv;
-  const sample = rows.slice(0, 20);
+  const sample = rows.slice(0, 15); // muestra pequeña (más rápido)
   const csvStats = cache.csvStats;
   const textoBase = cache.textoBase;
 
@@ -234,13 +260,13 @@ Devuelve EXCLUSIVAMENTE JSON válido:
 PREGUNTA: ${String(question||"").replaceAll("*","")}
 
 Contexto del CSV decimo.csv:
-- Asunción/guía: 48 estudiantes (paralelos A y B) y 18 columnas de calificaciones/puntuaciones.
+- Guía: 48 estudiantes (paralelos A y B) y ~18 columnas de calificaciones/puntuaciones.
 - Cabeceras: ${JSON.stringify(headers)}
-- Muestra (primeras 20 filas): ${JSON.stringify(sample)}
+- Muestra (primeras 15 filas): ${JSON.stringify(sample)}
 - Estadísticos por columna numérica: ${JSON.stringify(csvStats)}
 
 TEXTO BASE (conceptual/metodológico):
-${clip(textoBase, 20000)}
+${clip(textoBase, 15000)}
 `.trim();
 
   const resp = await client.chat.completions.create({
@@ -267,12 +293,11 @@ export default async function handler(req, res){
     const apiKey = process.env.open_ai_key || process.env.OPENAI_API_KEY;
     const flush = body.flush || req.query.flush;
 
-    // flush de cache manual (y warmup corto)
     if (flush) { clearCache(); }
 
     if(!apiKey) return res.status(500).json({ ok:false, error:"Falta open_ai_key/OPENAI_API_KEY" });
 
-    // warmup sin costo (no requiere question real)
+    // warmup
     if (question === "__warmup") {
       await loadCache();
       return res.status(200).json({ ok:true, warmup:true });
@@ -281,8 +306,8 @@ export default async function handler(req, res){
 
     const cache = await loadCache();
 
-    // FAST PATHS (sin GPT) para máxima rapidez
-    const quick = fastAnswer(question, cache.csv);
+    // FAST PATHS (sin GPT) primero
+    const quick = fastAnswer(question, cache.csv, cache.csvStats);
     if (quick) {
       return res.status(200).json({
         ok:true,
@@ -291,7 +316,7 @@ export default async function handler(req, res){
       });
     }
 
-    // GPT con contexto mínimo si la consulta es compleja
+    // Si no es una consulta estándar, usa GPT con contexto mínimo
     const answer = await callOpenAI({ question, cache, model, apiKey });
     return res.status(200).json({
       ok:true,
