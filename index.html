@@ -2,12 +2,12 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="2viewport" content="width=device-width, initial-scale=1.0"/>
-<title>OAsistente · CSV + TXT</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>VAsistente · CSV</title>
 <style>
   :root{
     color-scheme: light dark;
-    --headerH: 28vh;          /* ← más bajo para que no tape botones */
+    --headerH: 50vh;          /* PARTE 1 = 50% de pantalla */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -26,12 +26,21 @@
     gap:12px; align-items:center; padding:0 var(--pad);
   }
   .topbar img{
-    max-height: calc(var(--headerH) - 40px);
+    max-height: calc(var(--headerH) - 48px);
     width: auto; object-fit: contain;
   }
-  .video-wrap{ width:100%; height:100%; }
-  .video-wrap video{
-    width:100%; height:100%; object-fit: contain;
+  .video-wrap{
+    width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+  }
+  /* Caja interior para “encoger” el video dentro del 50% (≈ 88% alto) */
+  .video-box{
+    width: 100%;
+    height: 88%;              /* <— reduce aún más el alto sin tocar el 50vh global */
+    display:flex; align-items:center; justify-content:center;
+  }
+  .video-box video{
+    width: 100%; height: 100%;
+    object-fit: contain;      /* no recorta y no invade la parte 2 */
     border:0; background:#fff;
   }
 
@@ -79,12 +88,14 @@
 </head>
 <body>
 
-<!-- ===== PARTE 1 (FIJA): IMÁGENES + VIDEO ===== -->
+<!-- ===== PARTE 1 (FIJA 50%): IMÁGENES + VIDEO ===== -->
 <header>
   <div class="topbar">
     <img src="/left.png" alt="left">
     <div class="video-wrap">
-      <video id="vid" src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" muted playsinline></video>
+      <div class="video-box">
+        <video id="vid" src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" muted playsinline></video>
+      </div>
     </div>
     <img src="/right.png" alt="right">
   </div>
@@ -133,37 +144,30 @@
 <script>
 /* ========= Voz femenina fija en ES (bloqueada) ========= */
 const FEMALE_PRIORITY = [
-  // Microsoft (suelen existir y son femeninas naturales)
   "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
   "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
   "Microsoft Helena Online (Natural) - Spanish (Spain)",
   "Microsoft Camila Online (Natural) - Spanish (Colombia)",
   "Microsoft Lorena Online (Natural) - Spanish (Mexico)",
-  // Google (nombres varían por SO/navegador)
   "Google español de Estados Unidos", "Google español",
-  // Genéricas femeninas
   "Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
 ];
 const VOICE_KEY = "voz-femenina-preferida";
 let voices = [];
 function pickFemaleSpanishLocked(){
   const all = speechSynthesis.getVoices();
-  // 1) usar la voz guardada si existe
   const saved = localStorage.getItem(VOICE_KEY);
   if (saved){
     const vSaved = all.find(v=>v.name===saved);
     if (vSaved) return vSaved;
     localStorage.removeItem(VOICE_KEY);
   }
-  // 2) prioridad por nombre exacto (femenina)
   for (const name of FEMALE_PRIORITY){
     const v = all.find(v=>v.name===name);
     if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
   }
-  // 3) heurística: español + nombre femenino
   let v = all.find(v=>/es|span/i.test(v.lang) && /(female|mujer|woman|Sabina|Dalia|Helena|Camila|Ana|Lucia|Isabel)/i.test(v.name));
   if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
-  // 4) cualquier español
   v = all.find(v=>/es/i.test(v.lang));
   if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
   return null;
