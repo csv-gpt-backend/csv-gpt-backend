@@ -1,41 +1,63 @@
 // api/ask.js
-// (Si al activarlo te da problemas, puedes dejar comentado)
+// Si al activarlo te da problemas en Vercel, déjalo comentado.
 // export const config = { runtime: 'nodejs20.x' };
 
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
-const OPENAI_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY;
+const OPENAI_KEY =
+  process.env.open_ai_key ||
+  process.env.OPENAI_API_KEY ||
+  process.env['CLAVE API DE OPENAI'];
+
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
-// 🔒 Fuentes fijas (solo estas)
+// CSV local: /datos/decimo.csv
 const CSV_PATH = process.env.CSV_FILE || path.join(process.cwd(), 'datos', 'decimo.csv');
+
+// Fuentes PDF publicadas (las que te interesan)
 const PDF_URLS = [
-  'https://csv-gpt-backend.vercel.app/emocionales.pdf'
+  'https://csv-gpt-backend.vercel.app/lexium.pdf',
+  'https://csv-gpt-backend.vercel.app/evaluaciones.pdf',
+  'https://csv-gpt-backend.vercel.app/emocionales.pdf',
 ];
 
-// Utilidad: lee CSV y produce encabezados + preview corto
+const client = new OpenAI({ apiKey: OPENAI_KEY });
+
+// Lee encabezados y trozo representativo del CSV (delimitado por ;)
 function readCsvSnapshot() {
   try {
     const raw = fs.readFileSync(CSV_PATH, 'utf8');
     const lines = raw.split(/\r?\n/).filter(Boolean);
-    const headerLine = lines[0] || '';
-    // Autodetección del separador: ; tiene prioridad si hay más ;
-    const semi = (headerLine.match(/;/g) || []).length;
-    const comma = (headerLine.match(/,/g) || []).length;
-    const sep = semi > comma ? ';' : ',';
-    const header = headerLine.split(sep).map(s => s.trim());
-
-    // Preview limitado: suficiente para orientar al modelo sin volver lenta la petición
-    const preview = raw.slice(0, 20000); // 20k chars
-    return { ok: true, header, preview, sep };
+    const header = (lines[0] || '').split(';').map(s => s.trim()); // <-- ; delimitado
+    // Con 4KB no hay problema, pero dejamos un límite alto por si crece
+    const preview = raw.slice(0, 200000);
+    return { ok: true, header, preview };
   } catch (e) {
-    return { ok: false, header: [], preview: '', sep: ',' };
+    console.error('CSV READ ERROR:', e?.message || e);
+    return { ok: false, header: [], preview: '' };
   }
 }
 
-const client = new OpenAI({ apiKey: OPENAI_KEY });
+function isGpt5Id(id = '') {
+  // gpt-5 / gpt-5-mini / gpt-5-chat-latest...
+  return /^gpt-5/i.test(id);
+}
+
+// Parser robusto: intenta JSON.parse y si falla, busca primer bloque {...}
+function safeParseToObj(s) {
+  if (!s || typeof s !== 'string') return null;
+  try {
+    return JSON.parse(s);
+  } catch {
+    const m = s.match(/\{[\s\S]*\}/);
+    if (m) {
+      try { return JSON.parse(m[0]); } catch { /* ignore */ }
+    }
+    return null;
+  }
+}
 
 export default async function handler(req, res) {
   try {
@@ -55,77 +77,87 @@ export default async function handler(req, res) {
     }
     const q = question.trim();
 
-    const { ok, header, preview, sep } = readCsvSnapshot();
-    const headerNote = ok
-      ? `Encabezados del CSV (${header.length} columnas, sep="${sep}"): ${header.join(' | ')}`
-      : `No pude leer el CSV (verifica ruta y permisos en el deploy).`;
+    // CSV
+    const { ok, header, preview } = readCsvSnapshot();
+    const headerNote = header.length
+      ? `Encabezados reales del CSV (${header.length} columnas): ${header.join(' | ')}`
+      : `No pude leer el CSV.`;
 
-    // Instrucciones compactas y estrictas
-    const system = `Eres analista educativa rigurosa. Responde SIEMPRE en español latino neutral.
-Reglas:
-- Prioriza datos del CSV "decimo.csv". Si el usuario lo solicita, puedes complementar con "emocionales.pdf".
-- Si piden "todos los estudiantes", no omitas ninguno.
-- Usa EXACTAMENTE las columnas pedidas. Si piden varias, inclúyelas todas.
-- Devuelve tablas en Markdown (| Col | ... |) y sin asteriscos decorativos.
-- No inventes datos. Si falta algo, dilo con claridad y sugiere alternativas.
-- El CSV puede estar separado por ";" o "," (ya detectado). Interprétalo correctamente.`;
+    // Prompt
+    const system = `Eres una analista educativa rigurosa. Responde SIEMPRE en español latino neutral.
+
+Reglas DURAS:
+- El CSV está delimitado por punto y coma (;). Trata los encabezados tal cual (con acentos) y úsalo como fuente principal cuando se pidan datos de alumnos/puntuaciones.
+- Si el usuario pide "todos los estudiantes", debes listar TODOS sin omitir ninguno.
+- Usa EXACTAMENTE las columnas y el orden solicitados por el usuario. Si pide varias columnas, inclúyelas todas.
+- Presenta las LISTAS/TABLAS en formato Markdown (| Col | ... |) cuando aplique.
+- Numera filas implícitamente (la UI agregará columna #).
+- Nada de "no puedo realizar". Si falta dato, explica brevemente y ofrece alternativas.
+- No uses asteriscos para resaltar (la UI los elimina).
+- Si el usuario pregunta sobre temas cubiertos por los PDFs (ver URLs listadas), usa esa información de apoyo en tu explicación textual (no inventes citas).`;
+
+    const pdfNote = `Fuentes PDF disponibles (si aplica):
+${PDF_URLS.map(u => `- ${u}`).join('\n')}`;
 
     const user = ok
       ? `PREGUNTA: "${q}"
 
 ${headerNote}
 
-FUENTES:
-- CSV local: decimo.csv
-- PDF: ${PDF_URLS.join(', ')}
-
-TROZO DEL CSV (representativo):
+TROZO DEL CSV (representativo, no todo):
 """${preview}"""
 
-SALIDA:
-Devuelve SOLO un JSON: {"texto": "...", "tablas_markdown": "..."}.
-- "texto": explicación clara en español.
-- "tablas_markdown": tabla en Markdown si corresponde (todas las filas pedidas, columnas exactas, encabezados claros).
-Si no aplica tabla, deja "tablas_markdown" vacío.`
+${pdfNote}
+
+Instrucciones de salida:
+1) "texto": explicación clara en español (sin asteriscos).
+2) "tablas_markdown": si el usuario pidió listas/tablas, entrega TABLA en Markdown con TODAS las filas solicitadas y las columnas exactas; si pidió "todos", NO omitas ninguno. Si no aplica tabla, deja vacío.
+
+Devuelve SOLO un JSON con {"texto": "...", "tablas_markdown": "..."}.`
       : `PREGUNTA: "${q}"
 
 ${headerNote}
 
-FUENTES:
-- PDF: ${PDF_URLS.join(', ')}
+No pude leer CSV. Explica o guía al usuario con lo que sepas, en texto claro.
+${pdfNote}
 
-No pude leer CSV. Explica con lo que sepas y sugiere cómo ubicar/adjuntar el CSV correcto.
-SALIDA JSON {"texto":"...","tablas_markdown":""}.`;
+Devuelve SOLO un JSON {"texto":"...","tablas_markdown":""}.`;
 
-    // Para modelos GPT-5 chat se omite temperature (solo default 1)
-    const isGpt5 = /^gpt-5/i.test(MODEL) || /gpt-5-chat/i.test(MODEL);
-    const common = {
+    // Llamada a OpenAI (parámetros según modelo)
+    const isG5 = isGpt5Id(MODEL);
+
+    const completion = await client.chat.completions.create({
       model: MODEL,
       messages: [
         { role: 'system', content: system },
-        { role: 'user', content: user }
+        { role: 'user',   content: user }
       ],
-      response_format: { type: 'json_object' },
-      // seguridad
-      max_tokens: 1200
-    };
+      ...(isG5
+        ? {
+            // GPT-5: solo admite temperature=1 y NO response_format
+            temperature: 1,
+            max_completion_tokens: 1000,
+          }
+        : {
+            // gpt-4o / mini: podemos usar JSON estricto y temperatura baja
+            temperature: 0.2,
+            max_completion_tokens: 1500,
+            response_format: { type: 'json_object' }
+          })
+    });
 
- const completion = await client.chat.completions.create({
-  model: MODEL,
-  messages: [
-    { role: 'system', content: system },
-    { role: 'user',   content: user }
-  ],
-  temperature: 1,                // GPT-5 solo acepta 1
-  max_completion_tokens: 1000    // ✅ Parámetro correcto
-});
+    // Parseo robusto
+    let raw = completion?.choices?.[0]?.message?.content || '';
+    console.log('RAW COMPLETION >>>', raw?.slice(0, 800)); // Mira logs en Vercel
 
-    const raw = completion?.choices?.[0]?.message?.content || '{}';
-    let parsed;
-    try { parsed = JSON.parse(raw); }
-    catch { parsed = { texto: raw, tablas_markdown: '' }; }
+    let parsed = safeParseToObj(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      // Si no hay JSON limpio, devolvemos el texto crudo para no caer en "No obtuve respuesta"
+      parsed = { texto: String(raw || 'No pude formatear la respuesta.'), tablas_markdown: '' };
+    }
 
-    const texto = String(parsed.texto || parsed.text || '').replace(/\*/g,'').trim();
+    // Normaliza claves
+    const texto = String(parsed.texto || parsed.text || '').replace(/\*/g, '').trim();
     const tablas_markdown = String(parsed.tablas_markdown || parsed.tables_markdown || '').trim();
 
     res.setHeader('Content-Type', 'application/json');
