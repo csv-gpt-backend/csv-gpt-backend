@@ -2,7 +2,10 @@
   "name": "csv-gpt-backend",
   "private": true,
   "type": "module",
-  "dependencies": {},
+  "dependencies": {
+    "openai": "^4.53.0",
+    "pdf-parse": "^1.1.1"
+  },
   "scripts": {
     "dev": "vercel dev",
     "start": "vercel dev"
