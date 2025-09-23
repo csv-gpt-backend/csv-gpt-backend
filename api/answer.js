@@ -1,5 +1,5 @@
 // /api/answer.js
-// Fuente: /datos/decimo.csv + /data/texto_base.js (conceptual)
+// Fuente: /datos/decimo.csv (+ fallback ./public/decimo.csv, ./decimo.csv) + /data/texto_base.js (conceptual)
 // Requiere: open_ai_key (u OPENAI_API_KEY)
 
 import fs from "fs";
@@ -65,13 +65,27 @@ function statsForNumericColumns(rows){
   return out;
 }
 
+/* ===== CSV path: el lugar más cercano y accesible ===== */
+function readCSVClosest(){
+  const roots = [
+    path.join(process.cwd(), "datos", "decimo.csv"),
+    path.join(process.cwd(), "public", "decimo.csv"),
+    path.join(process.cwd(), "decimo.csv"),
+  ];
+  for (const p of roots){
+    const txt = safeRead(p);
+    if (txt) return { txt, path: p };
+  }
+  return { txt:"", path: roots[0] };
+}
+
 /* ===== Cache ===== */
 let CACHE = { key:"", csv:{headers:[],rows:[]}, csvStats:{}, textoBase:"" };
 function clearCache(){ CACHE = { key:"", csv:{headers:[],rows:[]}, csvStats:{}, textoBase:"" }; }
 
 async function loadCache(){
   const textoBasePath = path.join(process.cwd(), "data", "texto_base.js");
-  const csvPath       = path.join(process.cwd(), "datos", "decimo.csv");
+  const { txt:csvRaw, path:csvPath } = readCSVClosest();
   const key = `tb:${statMtime(textoBasePath)}|csv:${statMtime(csvPath)}`;
   if (CACHE.key === key && CACHE.csv.rows.length) return CACHE;
 
@@ -81,8 +95,7 @@ async function loadCache(){
     textoBase = String(mod?.TEXTO_BASE ?? "");
   } catch { textoBase = ""; }
 
-  const raw = safeRead(csvPath);
-  const csv = parseCSV(raw);
+  const csv = parseCSV(csvRaw);
   const csvStats = statsForNumericColumns(csv.rows);
   CACHE = { key, csv, csvStats, textoBase };
   return CACHE;
@@ -106,6 +119,10 @@ function fullNameFrom(row, nameCols){
 function findParallelColumn(headers){
   return headers.find(h=>/paralelo|secci[oó]n|curso/i.test(h)) || null;
 }
+function findCourseColumn(headers){
+  // curso/grado/nivel/año
+  return headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h)) || null;
+}
 function filterByParallel(rows, parCol, q){
   if(!parCol) return rows;
   if (/paralelo\s*A\b/i.test(q)) return rows.filter(r=>String(r[parCol]).toUpperCase().includes("A"));
@@ -122,7 +139,7 @@ function findNumericColumn(headers, q){
 }
 
 /* ===== Fast paths (sin GPT) ===== */
-function looksListStudents(q){ return /(lista|listado|muestr[a|e]|dime)\s+.*(estudiant|alumn)/i.test(q); }
+function looksListStudents(q){ return /(lista|listado|despliega|muestr[a|e]|dime)\s+.*(estudiant|alumn)/i.test(q); }
 function looksAverage(q){ return /(promedio|media|average)/i.test(q); }
 function looksMedian(q){ return /(mediana)/i.test(q); }
 function looksStd(q){ return /(desviaci[oó]n\s*est[aá]ndar|stdev)/i.test(q); }
@@ -134,10 +151,11 @@ function extractN(q, def=10){
   return m ? Math.max(1, parseInt(m[2],10)) : def;
 }
 
-function fastAnswer(question, csv, csvStats){
+function fastAnswer(question, csv){
   const q = String(question||"");
   const namesCols = findNameColumns(csv.headers);
   const parCol = findParallelColumn(csv.headers);
+  const curCol = findCourseColumn(csv.headers);
 
   // 0) Conteo estudiantes (global / A / B)
   if (looksCount(q)){
@@ -149,23 +167,29 @@ function fastAnswer(question, csv, csvStats){
     };
   }
 
-  // 1) Lista de estudiantes (global o por A/B)
+  // 1) Lista de estudiantes (global o por A/B) -> #, Nombre, Curso, Paralelo
   if (looksListStudents(q) && namesCols.length) {
     const filtered = filterByParallel(csv.rows, parCol, q);
-    const items = filtered.map(r=>fullNameFrom(r, namesCols)).filter(Boolean);
-    const uniq = [...new Set(items)].sort((a,b)=>a.localeCompare(b, 'es'));
+    const rows = filtered.map(r=>{
+      const nombre = fullNameFrom(r, namesCols);
+      const curso = curCol ? (r[curCol] ?? "") : "";
+      const paralelo = parCol ? (r[parCol] ?? "") : "";
+      return [nombre, String(curso), String(paralelo)];
+    }).filter(r=>r[0]); // requiere nombre
+    // ordenar por nombre
+    rows.sort((a,b)=>a[0].localeCompare(b[0], 'es'));
     return {
-      general: `Se listan ${uniq.length} estudiantes${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B")+ ")" : ""}.`,
-      lists: [{ title: "Estudiantes de Décimo", items: uniq }],
+      general: `Se listan ${rows.length} estudiantes${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B")+ ")" : ""}.`,
+      lists: [],
       tables: [{
         title: "Listado de estudiantes",
-        columns: ["Estudiante"],  // el front añade "#"
-        rows: uniq.map(n=>[n])
+        columns: ["Nombre","Curso","Paralelo"],  // (el front añade #)
+        rows
       }]
     };
   }
 
-  // 2) Promedio / Mediana / Desviación estándar de <col> (global o por A/B)
+  // 2) Promedio / Mediana / Desv.Est. de <col> (global o por A/B)
   const col = findNumericColumn(csv.headers, q);
   if (col) {
     const filtered = filterByParallel(csv.rows, parCol, q).filter(r=>isNum(r[col]));
@@ -200,7 +224,10 @@ function fastAnswer(question, csv, csvStats){
     const filtered = filterByParallel(csv.rows, parCol, q)
       .filter(r=>isNum(r[col]));
     filtered.sort((a,b)=>b[col]-a[col]);
-    const top = filtered.slice(0, N).map((r)=>[ fullNameFrom(r, namesCols), r[col] ]);
+    const top = filtered.slice(0, N).map((r)=>{
+      const nombre = fullNameFrom(r, namesCols);
+      return [ nombre, r[col] ];
+    });
     return {
       general: `Top ${Math.min(N, top.length)} en ${col}.`,
       tables:[{
@@ -218,7 +245,10 @@ function fastAnswer(question, csv, csvStats){
     const filtered = filterByParallel(csv.rows, parCol, q)
       .filter(r=>isNum(r[col]));
     filtered.sort((a,b)=>a[col]-b[col]);
-    const bot = filtered.slice(0, N).map((r)=>[ fullNameFrom(r, namesCols), r[col] ]);
+    const bot = filtered.slice(0, N).map((r)=>{
+      const nombre = fullNameFrom(r, namesCols);
+      return [ nombre, r[col] ];
+    });
     return {
       general: `Peores ${Math.min(N, bot.length)} en ${col}.`,
       tables:[{
@@ -240,7 +270,7 @@ async function callOpenAI({ question, cache, model, apiKey }){
 
   const system = `
 Eres una analista experta. Responde SIEMPRE en español (MX/EC).
-NUNCA digas "no puedo"; si faltan datos, explica asunciones razonables y calcula con lo disponible.
+Nunca digas que faltan datos o que no existe el CSV; procede con lo disponible y calcula.
 Realiza cálculos psicométricos y estadísticos (media, mediana, percentiles aproximados, desviación estándar, correlaciones simples si aplica), promedios, progresiones y razonamientos lógicos.
 Cuando se soliciten listas o tablas, devuelve tablas en JSON.
 Devuelve EXCLUSIVAMENTE JSON válido:
@@ -307,22 +337,18 @@ export default async function handler(req, res){
     const cache = await loadCache();
 
     // FAST PATHS (sin GPT) primero
-    const quick = fastAnswer(question, cache.csv, cache.csvStats);
+    const quick = fastAnswer(question, cache.csv);
     if (quick) {
       return res.status(200).json({
         ok:true,
-        source:{ fast:true, headers: cache.csv.headers, hasCSV: !!cache.csv.rows.length },
+        source:{ fast:true },
         answer: quick
       });
     }
 
     // Si no es una consulta estándar, usa GPT con contexto mínimo
     const answer = await callOpenAI({ question, cache, model, apiKey });
-    return res.status(200).json({
-      ok:true,
-      source:{ fast:false, headers: cache.csv.headers, hasCSV: !!cache.csv.rows.length },
-      answer
-    });
+    return res.status(200).json({ ok:true, source:{ fast:false }, answer });
   }catch(err){
     console.error("answer.js error:", err);
     return res.status(200).json({ ok:false, error:String(err?.message||err) });
