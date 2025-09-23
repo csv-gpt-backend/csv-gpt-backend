@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>kjjCSV/PDF ↔ GPT (MX/EC)</title>
+  <title>CCSV/PDF ↔ GPT (MX/EC)</title>
   <style>
     :root{
       --brand:#1f6fff;
@@ -12,9 +12,12 @@
     *{box-sizing:border-box} html,body{height:100%}
     body{margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial; color:var(--ink); background:var(--bg)}
 
-    /* Header sticky con video y logos */
-    .hero{ position:sticky; top:0; z-index:9999; background:#fff; border-bottom:1px solid var(--ring);
-           box-shadow:0 2px 10px rgba(0,0,0,.05); }
+    /* Header sticky con video y logos (siempre visible) */
+    .hero{
+      position:sticky; top:0; z-index:9999;
+      background:#fff; border-bottom:1px solid var(--ring);
+      box-shadow:0 2px 10px rgba(0,0,0,.05);
+    }
     .hero-inner{ max-width:1200px; margin:0 auto; padding:12px 20px; display:grid;
       grid-template-columns: 1fr minmax(420px,640px) 1fr; gap:12px; align-items:center }
     .brand,.partner{display:flex; align-items:center; justify-content:center}
@@ -25,9 +28,10 @@
     .container{ max-width:1200px; margin:20px auto 28px; padding:0 20px }
     .card{ background:var(--card); border:1px solid var(--ring); border-radius:14px; padding:16px }
 
-    /* ✅ textarea: 2 líneas fijas */
+    /* textarea: exactamente 2 líneas */
     textarea{
-      width:100%; height:58px; max-height:58px; min-height:58px;
+      width:100%;
+      height:58px; max-height:58px; min-height:58px;
       padding:10px 12px; border-radius:12px; border:1px solid var(--ring);
       outline:none; font-size:16px; resize:none; background:#fff;
     }
@@ -41,7 +45,7 @@
     .out,.tables{ min-height:64px; padding:12px 14px; border-radius:12px; border:1px dashed var(--ring); background:#fff }
 
     .tables table{ width:100%; border-collapse:collapse; font-size:14px }
-    .tables th,.tables td{ border:1px solid var(--ring); padding:8px 10px; text-align:left; vertical-align:top }
+    .tables th,.tables td{ border:1px solid var(--ring); padding:8px 10px; text-align:left }
     .tables th{ background:#f8fafc }
 
     select{ padding:10px 14px; border:1px solid var(--ring); border-radius:10px; background:#fff; font-weight:600 }
@@ -57,6 +61,7 @@
     <div class="hero-inner">
       <div class="brand"><img src="/left.png" alt="Logo Izq" onerror="this.style.opacity=0.2"></div>
       <div class="video-shell">
+        <!-- Video SIEMPRE en mute; el audio sale de la voz TTS -->
         <video id="coachVideo" playsinline muted preload="auto" poster="/right.png" crossorigin="anonymous">
           <source src="https://xsmr71ubix2w6tve.public.blob.vercel-storage.com/OLIVIA%20IN%20CASUAL.mp4" type="video/mp4">
         </video>
@@ -67,7 +72,8 @@
 
   <main class="container">
     <section class="card">
-      <textarea id="q" placeholder="Escribe tu pregunta (ej. 'Lista todos los estudiantes con sus promedios')"></textarea>
+      <textarea id="q" placeholder="Escribe tu pregunta o usa dictado…"></textarea>
+
       <div class="controls">
         <button class="btn primary" id="send">Enviar</button>
         <button class="btn" id="micBtn">🎙️ Dictado</button>
@@ -118,10 +124,7 @@
 
     function pickSpanishVoice() {
       const voices = synth.getVoices() || [];
-      // preferencia fuerte por es-MX y nombres femeninos
-      let best = voices.find(v => /es-?MX/i.test(v.lang) && /female|mujer|woman|Google|Microsoft/i.test(v.name));
-      if (!best) best = voices.find(v => /es-?MX/i.test(v.lang));
-      if (!best) best = voices.find(v => /^es/i.test(v.lang) && /female|mujer|woman|Google|Microsoft/i.test(v.name));
+      let best = voices.find(v => /es-?MX/i.test(v.lang) || /mex/i.test(v.name));
       if (!best) best = voices.find(v => /^es/i.test(v.lang));
       return best || null;
     }
@@ -134,7 +137,7 @@
       stopSpeaking();
       if (!text || !('speechSynthesis' in window)) return;
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1; u.pitch = 1; u.volume = 1;  // volumen constante
+      u.rate = 1; u.pitch = 1; u.volume = 1; // volumen constante
       const go = () => {
         const v = pickSpanishVoice();
         if (v) u.voice = v;
@@ -172,7 +175,7 @@
       else { rec.stop(); recOn=false; statusEl.textContent='Listo'; }
     }
 
-    // =============== PARSE + RENDER TABLAS (Markdown → HTML con numeración) ===============
+    // ---- Markdown → tabla HTML con numeración
     function extractFirstMarkdownTable(md){
       const lines = md.split(/\r?\n/);
       const startIdx = lines.findIndex(l => /^\s*\|/.test(l));
@@ -197,7 +200,6 @@
       const table = document.createElement('table');
       const thead = document.createElement('thead');
       const trh = document.createElement('tr');
-
       const thNum = document.createElement('th'); thNum.textContent = '#';
       trh.appendChild(thNum);
       header.forEach(h => { const th=document.createElement('th'); th.textContent=h; trh.appendChild(th); });
@@ -225,7 +227,7 @@
       return ` Se muestran ${total} registros. ${maxToSpeak>=1 ? 'Los primeros son: ' + nombres : ''}`;
     }
 
-    // =============== EXPORTACIONES ===============
+    // ---- Exportaciones
     function exportContent(type){
       const titulo = 'Reporte GPT';
       const texto = (out.textContent || '').trim();
@@ -274,7 +276,7 @@
       }
     }
 
-    // =============== CONSULTA AL BACKEND ===============
+    // ---- Consulta al backend
     async function send(){
       const question = (txt.value || '').trim();
       if (!question) { out.textContent = 'Por favor, escribe una pregunta.'; out.classList.remove('muted'); return; }
@@ -303,7 +305,7 @@
           if (rendered){
             tablesBox.appendChild(rendered.table);
             tablesBox.classList.remove('muted');
-            extraNarr = narrateTable(rendered.rows, rendered.header); // lee también la tabla
+            extraNarr = narrateTable(rendered.rows, rendered.header); // lee también las tablas
           } else {
             tablesBox.innerHTML = '<pre>'+md+'</pre>';
             tablesBox.classList.remove('muted');
@@ -323,7 +325,7 @@
       }
     }
 
-    // Botones
+    // ---- Botones
     btnSend.onclick = send;
     btnMic.onclick  = toggleDictado;
     btnMute.onclick = stopSpeaking;
@@ -331,8 +333,10 @@
     btnNew.onclick  = ()=>{ txt.value=''; stopSpeaking(); out.textContent='—'; out.classList.add('muted'); tablesBox.textContent='—'; tablesBox.classList.add('muted'); statusEl.textContent='Listo'; };
     exportBtn.onclick = ()=> exportContent(exportType.value);
 
-    // Despierta autoplay sin sonido
+    // “Despierta” autoplay sin sonido
     document.addEventListener('DOMContentLoaded', ()=>{ try{ video.play().then(()=>video.pause()).catch(()=>{}); }catch(_){ } });
+
+    console.log('ready!');
   </script>
 </body>
 </html>
