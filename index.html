@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>3Asistente · CSV</title>
+<title>PAsistente · CSV</title>
 <style>
   :root{
     color-scheme: light dark;
-    --headerH: 50vh;          /* PARTE 1 = 50% de pantalla (fijo) */
+    --headerH: 45vh;          /* PARTE 1 = 45% de pantalla */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -30,12 +30,13 @@
     width: auto; object-fit: contain;
   }
   .video-wrap{
-    width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+    width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; /* arranca desde la primera línea */
+    padding-top: 0;
   }
-  /* Caja interior para encoger el video dentro del 50% (antes 88%, ahora 83% = 5% más pequeño) */
+  /* 8% más pequeño que antes: reduce la caja interior del video */
   .video-box{
     width: 100%;
-    height: 83%; /* ← reducción adicional del 5% */
+    height: 75%;  /* antes ~83%, ahora ~75% → 8% menos */
     display:flex; align-items:center; justify-content:center;
   }
   .video-box video{
@@ -54,8 +55,8 @@
   #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; overflow:visible; }
   .controls{ margin-bottom:12px; }
   .controls .row{
-    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; /* centrados */
-    width:100%; text-align:center;
+    display:flex; flex-wrap:wrap; gap:8px;
+    justify-content:center; align-items:center; width:100%; text-align:center; /* CENTRADOS respecto a la página */
   }
 
   textarea{
@@ -69,6 +70,7 @@
   button:hover, select:hover{ background:#ececec; }
   .mic{ font-size:18px; padding:12px 16px; }
   .new{ background:#ffe082; }  /* botón amarillo */
+  .stop{ background:#ffcdd2; } /* botón detener voz */
   .right{ margin-left:auto; }
   .small{ font-size:12px; color:#666; }
   h2{
@@ -92,7 +94,7 @@
 </head>
 <body>
 
-<!-- ===== PARTE 1 (FIJA 50%): IMÁGENES + VIDEO ===== -->
+<!-- ===== PARTE 1 (FIJA 45%): IMÁGENES + VIDEO ===== -->
 <header>
   <div class="topbar">
     <img src="/left.png" alt="left">
@@ -119,6 +121,7 @@
           <button id="send">Enviar</button>
           <button id="mic" class="mic">🎤 Dictar</button>
           <button id="mute">Silenciar voz</button>
+          <button id="stop" class="stop">Detener voz</button>
           <button id="clear">Limpiar</button>
           <button id="new" class="new">Nueva sesión</button>
           <select id="exportKind">
@@ -186,6 +189,9 @@ voices = speechSynthesis.getVoices();
 
 let muted=false;
 const vid=document.getElementById("vid");
+/* Para repetir el video mientras haya locución */
+let speaking = false;
+
 function speak(text){
   if(!text) return;
   const u=new SpeechSynthesisUtterance(text);
@@ -194,10 +200,31 @@ function speak(text){
   if (v) u.voice=v;
   u.volume = muted ? 0 : 1;
   u.rate = 1; u.pitch = 1;
-  u.onstart = ()=>{ try{ vid.play().catch(()=>{});}catch{} };
-  u.onend   = ()=>{ try{ vid.pause(); }catch{} };
+
+  u.onstart = ()=>{
+    speaking = true;
+    try {
+      vid.currentTime = 0;
+      vid.loop = true;             // repetir mientras hable
+      vid.play().catch(()=>{});
+    } catch {}
+  };
+  u.onend = ()=>{
+    speaking = false;
+    try {
+      vid.loop = false;
+      vid.pause();
+    } catch {}
+  };
   speechSynthesis.speak(u);
 }
+
+/* Botón detener voz */
+document.getElementById("stop").onclick = ()=>{
+  try { speechSynthesis.cancel(); } catch {}
+  speaking = false;
+  try { vid.loop = false; vid.pause(); } catch {}
+};
 
 /* ========= Dictado (voz a texto) ========= */
 let rec,recOn=false;
@@ -216,8 +243,9 @@ function toggleRec(){
 let sessionId="s-"+Date.now();
 let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
 const storeKey="sesiones-v1";
+function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
 function saveSession(){
-  const all=JSON.parse(localStorage.getItem(storeKey)||"[]");
+  const all=loadAllSessions();
   const i=all.findIndex(s=>s.id===session.id);
   if(i>=0) all[i]=session; else all.unshift(session);
   localStorage.setItem(storeKey, JSON.stringify(all));
@@ -261,7 +289,7 @@ function renderTables(tables){
     const thead=document.createElement("thead");
     const trh=document.createElement("tr");
 
-    /* SIEMPRE añadimos columna # al comienzo */
+    /* SIEMPRE añadimos columna # al comienzo (numerar desde 1) */
     const cols = t.columns && t.columns.length ? ["#", ...t.columns] : ["#"];
     cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
     thead.appendChild(trh);
@@ -269,7 +297,6 @@ function renderTables(tables){
     const tbody=document.createElement("tbody");
     (t.rows||[]).forEach((r,idx)=>{
       const tr=document.createElement("tr");
-      /* índice desde 1 */
       const tdIdx=document.createElement("td"); tdIdx.textContent=String(idx+1); tr.appendChild(tdIdx);
       (Array.isArray(r)?r:[r]).forEach(v=>{
         const td=document.createElement("td"); td.textContent=v; tr.appendChild(td);
@@ -300,31 +327,84 @@ document.getElementById("send").onclick = async ()=>{
   $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
   renderLists(ans.lists||ans.lista||[]);
   renderTables(ans.tables||[]);
-  speak(ans.general||"");
+  speak(ans.general||""); // locutar TODO el texto
 
   session.items.push({ at:new Date().toISOString(), q:prompt, a:ans });
   saveSession();
 };
 
-/* ========= Exportar ========= */
+/* ========= Exportar (toda la sesión activa) ========= */
+function sessionToHTML(sess){
+  const headerThumbs = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <img src="/left.png" alt="left" style="height:50px"/>
+      <video src="${vid.currentSrc||vid.src}" width="120" muted></video>
+      <img src="/right.png" alt="right" style="height:50px"/>
+    </div>
+  `;
+  let html = `<h1>Sesión ${sess.id}</h1><p>Iniciada: ${new Date(sess.startedAt).toLocaleString()}</p>${headerThumbs}`;
+  for(const it of (sess.items||[]).slice().reverse()){
+    html += `<hr><h2 style="font-family:Arial; font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
+    const a = it.a||{};
+    html += `<h2 style="font-family:Arial; font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
+    if (a.lists && a.lists.length){
+      html += `<h3 style="font-family:Arial; font-weight:normal;">Listas</h3>`;
+      a.lists.forEach(L=>{
+        html += `<h4>${L.title||""}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`;
+      });
+    }
+    if (a.tables && a.tables.length){
+      html += `<h3 style="font-family:Arial; font-weight:normal;">Tablas</h3>`;
+      a.tables.forEach(t=>{
+        const cols = ["#", ...(t.columns||[])];
+        html += `<h4>${t.title||"Tabla"}</h4><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%"><thead><tr>`;
+        cols.forEach(c=> html += `<th>${c}</th>` );
+        html += `</tr></thead><tbody>`;
+        (t.rows||[]).forEach((row,idx)=>{
+          const arr = Array.isArray(row)?row:[row];
+          html += `<tr><td>${idx+1}</td>` + arr.map(v=>`<td>${v}</td>`).join("") + `</tr>`;
+        });
+        html += `</tbody></table>`;
+      });
+    }
+  }
+  return html;
+}
+
 document.getElementById("export").onclick=()=>{
   const kind=document.getElementById("exportKind").value;
-  if(kind==="pdf"){ window.print(); }
-  else if(kind==="doc"){
-    const html=`<html><head><meta charset="UTF-8"></head><body>
-      <h1>Respuesta</h1>${$gen.innerHTML}
-      <h2>Listas</h2>${$lists.innerHTML}
-      <h2>Tablas</h2>${$tables.innerHTML}
-    </body></html>`;
-    const blob=new Blob([html],{type:"application/msword"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="respuesta.doc"; a.click();
-  }else if(kind==="xls"){
-    const t=$tables.querySelectorAll("table"); let csv="";
-    t.forEach((tb,i)=>{ tb.querySelectorAll("tr").forEach(tr=>{
-      const cells=[...tr.children].map(td=>`"${td.textContent.replace(/"/g,'""')}"`); csv += cells.join(",")+"\n"; });
-      if(i<t.length-1) csv+="\n"; });
+  const html = sessionToHTML(session);
+
+  if(kind==="pdf"){
+    const w = window.open("", "_blank");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+      <title>Exportación Sesión</title>
+      <style>body{font-family:Arial, sans-serif;}</style></head><body>${html}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  } else if(kind==="doc"){
+    const blob=new Blob([`<html><head><meta charset="UTF-8"></head><body>${html}</body></html>`],{type:"application/msword"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.doc`; a.click();
+  } else if(kind==="xls"){
+    // Exporta todas las tablas de la sesión en CSV múltiple
+    let csv="";
+    (session.items||[]).forEach(it=>{
+      const a=it.a||{};
+      (a.tables||[]).forEach(t=>{
+        csv += (t.title||"Tabla") + "\n";
+        const header = ["#", ...(t.columns||[])];
+        csv += header.map(h=>`"${String(h).replace(/"/g,'""')}"`).join(",") + "\n";
+        (t.rows||[]).forEach((row,idx)=>{
+          const arr = Array.isArray(row)?row:[row];
+          const line = [String(idx+1), ...arr.map(v=>String(v))];
+          csv += line.map(x=>`"${x.replace(/"/g,'""')}"`).join(",") + "\n";
+        });
+        csv += "\n";
+      });
+    });
     const blob=new Blob([csv],{type:"application/vnd.ms-excel"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="tablas.xls"; a.click();
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.xls`; a.click();
   }
 };
 </script>
