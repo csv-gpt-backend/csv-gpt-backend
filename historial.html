@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Historial de sesiones</title>
+<style>
+  body{font-family:system-ui,Arial,sans-serif;margin:24px}
+  .card{border:1px solid #eee;border-radius:8px;padding:12px;margin:8px 0}
+  .small{color:#666;font-size:12px}
+  pre{white-space:pre-wrap;background:#fafafa;padding:8px}
+</style>
+</head>
+<body>
+<h1>Historial</h1>
+<div id="list"></div>
+<script>
+const key="sesiones-v1";
+const list=document.getElementById('list');
+const all=JSON.parse(localStorage.getItem(key)||"[]");
+if(!all.length){list.innerHTML="<em>Sin sesiones</em>";}
+all.forEach(s=>{
+  const d=document.createElement('div'); d.className="card";
+  d.innerHTML=`<div><strong>ID:</strong> ${s.id}</div>
+  <div class="small">Inicio: ${s.startedAt}</div>
+  <div class="small">Items: ${s.items?.length||0}</div>
+  <button>Ver</button>`;
+  d.querySelector('button').onclick=()=>{
+    const w=window.open("","_blank");
+    const html=`<html><head><meta charset="UTF-8"><title>Sesión ${s.id}</title></head><body>
+    <h1>Sesión ${s.id}</h1>
+    <p class="small">Inicio: ${s.startedAt}</p>
+    ${(s.items||[]).map(it=>`
+      <h3>Pregunta</h3><pre>${it.q}</pre>
+      <h3>Respuesta</h3><pre>${JSON.stringify(it.a, null, 2)}</pre>
+    `).join('')}
+    </body></html>`;
+    w.document.write(html); w.document.close();
+  };
+  list.appendChild(d);
+});
+</script>
+</body>
+</html>
