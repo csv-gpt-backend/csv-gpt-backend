@@ -1,11 +1,13 @@
-// /api/ask2.js — búsqueda sin imports (texto inline)
+// /api/ask2.js — búsqueda con import protegido
 export const config = { runtime: "nodejs" };
 
-const TEXTO_BASE = `\
-Linea 1: prueba de percentiles y gauss.
-Linea 2: otra linea con Percentiles de ejemplo.
-Linea 3: nada que ver aqui.
-`;
+let TEXTO_BASE = "CARGA_FALLIDA";
+try {
+  const mod = await import("../data/texto_base.js"); // ESM dinámico
+  TEXTO_BASE = String(mod?.TEXTO_BASE ?? "VACIO");
+} catch (e) {
+  console.error("Error importando /data/texto_base.js:", e);
+}
 
 function normaliza(s = "") {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -19,6 +21,13 @@ export default async function handler(req, res) {
     }
     const params = method === "POST" ? (req.body || {}) : (req.query || {});
     const { q = "", limit = "50", context = "0" } = params;
+
+    if (TEXTO_BASE === "CARGA_FALLIDA") {
+      return res.status(200).json({
+        ok: false,
+        error: "No se pudo cargar /data/texto_base.js (revisa backticks y que cierre el template)."
+      });
+    }
 
     const text = TEXTO_BASE;
     const lines = text.split(/\r?\n/);
@@ -55,6 +64,6 @@ export default async function handler(req, res) {
       n_lineas: lines.length, resultados
     });
   } catch (err) {
-    res.status(500).json({ ok: false, where: "ask2-search", error: String(err?.message || err) });
+    res.status(200).json({ ok: false, where: "ask2-imported", error: String(err?.message || err) });
   }
 }
