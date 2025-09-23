@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>KAsistente · CSV + TXT + PDF</title>
+<title>Asistente · CSV + TXT</title>
 <style>
   :root{
     color-scheme: light dark;
-    --headerH: 40vh;          /* PARTE 1 = 40% de pantalla (ajústalo si quieres) */
+    --headerH: 28vh;          /* ← más bajo para que no tape botones */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -26,23 +26,20 @@
     gap:12px; align-items:center; padding:0 var(--pad);
   }
   .topbar img{
-    max-height: calc(var(--headerH) - 60px);
-    width: auto;
-    object-fit: contain;
+    max-height: calc(var(--headerH) - 40px);
+    width: auto; object-fit: contain;
   }
   .video-wrap{ width:100%; height:100%; }
   .video-wrap video{
-    width:100%; height:100%;
-    object-fit: contain;        /* ya no se recorta ni invade la parte 2 */
+    width:100%; height:100%; object-fit: contain;
     border:0; background:#fff;
   }
 
-  /* ===== BLOQUE INFERIOR (debajo de la parte fija) ===== */
+  /* ===== BLOQUE INFERIOR (debajo de la franja fija) ===== */
   main{ padding-top: var(--headerH); }
   #below{
     height: calc(100vh - var(--headerH));
-    display:flex; flex-direction:column;
-    min-height: 320px;
+    display:flex; flex-direction:column; min-height: 320px;
   }
 
   /* PARTE 2: texto + botones + respuesta (crece lo que necesite) */
@@ -61,7 +58,7 @@
   }
   button:hover, select:hover{ background:#ececec; }
   .mic{ font-size:18px; padding:12px 16px; }
-  .new{ background:#ffe082; }     /* botón amarillo */
+  .new{ background:#ffe082; }  /* botón amarillo */
   .right{ margin-left:auto; }
   .small{ font-size:12px; color:#666; }
   h2{ margin:0 0 10px 0; font-size:18px; }
@@ -82,7 +79,7 @@
 </head>
 <body>
 
-<!-- ===== PARTE 1 (FIJA 40%): IMÁGENES + VIDEO ===== -->
+<!-- ===== PARTE 1 (FIJA): IMÁGENES + VIDEO ===== -->
 <header>
   <div class="topbar">
     <img src="/left.png" alt="left">
@@ -134,36 +131,58 @@
 </main>
 
 <script>
-/* ========= Voz femenina ES-EC / ES-MX ========= */
-let voices=[];
-function pickFemaleSpanish(){
-  // prioriza voces que parezcan femeninas en es-EC/es-MX/es-ES
+/* ========= Voz femenina fija en ES (bloqueada) ========= */
+const FEMALE_PRIORITY = [
+  // Microsoft (suelen existir y son femeninas naturales)
+  "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
+  "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
+  "Microsoft Helena Online (Natural) - Spanish (Spain)",
+  "Microsoft Camila Online (Natural) - Spanish (Colombia)",
+  "Microsoft Lorena Online (Natural) - Spanish (Mexico)",
+  // Google (nombres varían por SO/navegador)
+  "Google español de Estados Unidos", "Google español",
+  // Genéricas femeninas
+  "Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
+];
+const VOICE_KEY = "voz-femenina-preferida";
+let voices = [];
+function pickFemaleSpanishLocked(){
   const all = speechSynthesis.getVoices();
-  // 1) Femenina + español
-  let v = all.find(v=>/^(es|es-EC|es-MX|es-ES)/i.test(v.lang) && /(female|mujer|woman)/i.test(v.name));
-  // 2) Google/Microsoft femeninas en español
-  if(!v) v = all.find(v=>/es/i.test(v.lang) && /(Google|Microsoft)/i.test(v.name) && /(female|mujer|woman)/i.test(v.name));
-  // 3) Cualquier voz en español
-  if(!v) v = all.find(v=>/es/i.test(v.lang));
-  return v || null;
+  // 1) usar la voz guardada si existe
+  const saved = localStorage.getItem(VOICE_KEY);
+  if (saved){
+    const vSaved = all.find(v=>v.name===saved);
+    if (vSaved) return vSaved;
+    localStorage.removeItem(VOICE_KEY);
+  }
+  // 2) prioridad por nombre exacto (femenina)
+  for (const name of FEMALE_PRIORITY){
+    const v = all.find(v=>v.name===name);
+    if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  }
+  // 3) heurística: español + nombre femenino
+  let v = all.find(v=>/es|span/i.test(v.lang) && /(female|mujer|woman|Sabina|Dalia|Helena|Camila|Ana|Lucia|Isabel)/i.test(v.name));
+  if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  // 4) cualquier español
+  v = all.find(v=>/es/i.test(v.lang));
+  if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  return null;
 }
 speechSynthesis.onvoiceschanged = ()=>{ voices = speechSynthesis.getVoices(); };
 voices = speechSynthesis.getVoices();
 
 let muted=false;
 const vid=document.getElementById("vid");
-
 function speak(text){
   if(!text) return;
   const u=new SpeechSynthesisUtterance(text);
-  const v=pickFemaleSpanish();
-  // intenta MX y EC explícito si existe
+  const v=pickFemaleSpanishLocked();
   u.lang = v?.lang || "es-MX";
-  if(v) u.voice=v;
-  u.volume= muted ? 0 : 1;
-  u.rate=1; u.pitch=1;
-  u.onstart=()=>{ try{ vid.play().catch(()=>{});}catch{} };
-  u.onend  =()=>{ try{ vid.pause(); }catch{} };
+  if (v) u.voice=v;
+  u.volume = muted ? 0 : 1;
+  u.rate = 1; u.pitch = 1;
+  u.onstart = ()=>{ try{ vid.play().catch(()=>{});}catch{} };
+  u.onend   = ()=>{ try{ vid.pause(); }catch{} };
   speechSynthesis.speak(u);
 }
 
@@ -241,9 +260,7 @@ function renderTables(tables){
   });
 }
 
-/* ========= Enviar =========
-   /api/answer ya incluye /datos/decimo.csv en el análisis con GPT-5
-*/
+/* ========= Enviar ========= */
 document.getElementById("send").onclick = async ()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
