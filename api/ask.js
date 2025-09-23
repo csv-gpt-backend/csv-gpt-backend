@@ -1,5 +1,5 @@
 // api/ask.js
-// export const config = { runtime: 'nodejs20.x' }; // descomenta si necesitas forzar runtime
+// export const config = { runtime: 'nodejs20.x' }; // descomenta si lo necesitas
 
 import fs from 'fs';
 import path from 'path';
@@ -8,38 +8,50 @@ import OpenAI from 'openai';
 const OPENAI_KEY = process.env.open_ai_key || process.env.OPENAI_API_KEY;
 const MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 
-// Archivos principales
+// Rutas locales
 const CSV_PATH = path.join(process.cwd(), 'datos', 'decimo.csv');
-const PDFS = [
-  path.join(process.cwd(), 'datos', 'emocionales.pdf')
-];
+const PDF_EMOCIONALES = path.join(process.cwd(), 'datos', 'emocionales.pdf');
 
 const client = new OpenAI({ apiKey: OPENAI_KEY });
 
-// --------- Lectura CSV ---------
-function readCsvSnapshot() {
+// ---------- Utilidades ----------
+function readCsvSnapshot(maxChars = 80000) { // <= recorte agresivo
   try {
     const raw = fs.readFileSync(CSV_PATH, 'utf8');
     const lines = raw.split(/\r?\n/).filter(Boolean);
-    const header = (lines[0] || '').split(';').map(s => s.trim()); // separador ;
-    return { ok: true, header, raw };
+    // separador ; como comentaste
+    const header = (lines[0] || '').split(';').map(s => s.trim());
+    return { ok: true, header, preview: raw.slice(0, maxChars) };
   } catch (e) {
     console.error('Error leyendo CSV:', e);
-    return { ok: false, header: [], raw: '' };
+    return { ok: false, header: [], preview: '' };
   }
 }
 
-// --------- Lectura PDFs ---------
-function readPdfs() {
+// Solo leemos el PDF si la pregunta lo amerita
+function readEmocionalesPdfBase64() {
   try {
-    return PDFS.filter(p => fs.existsSync(p)).map(p => {
-      const data = fs.readFileSync(p);
-      return `PDF: ${path.basename(p)} contenido en base64:\n${data.toString('base64')}`;
-    });
+    if (fs.existsSync(PDF_EMOCIONALES)) {
+      const buf = fs.readFileSync(PDF_EMOCIONALES);
+      return buf.toString('base64');
+    }
   } catch (e) {
-    console.error('Error leyendo PDFs:', e);
-    return [];
+    console.error('Error leyendo PDF emocionales:', e);
   }
+  return '';
+}
+
+// Decide si incluir PDFs según la pregunta
+function shouldIncludePdf(q) {
+  const t = q.toLowerCase();
+  return (
+    t.includes('pdf') ||
+    t.includes('lexium') ||
+    t.includes('evaluaciones') ||
+    t.includes('emocionales') ||
+    t.includes('anexo') ||
+    t.includes('documento')
+  );
 }
 
 export default async function handler(req, res) {
@@ -61,39 +73,49 @@ export default async function handler(req, res) {
 
     const q = question.trim();
 
-    // Datos CSV y PDFs
-    const { ok, header, raw } = readCsvSnapshot();
-    const pdfData = readPdfs();
-
+    // CSV recortado (rápido)
+    const { ok, header, preview } = readCsvSnapshot(80000);
     const headerNote = ok
-      ? `Encabezados reales del CSV (${header.length} columnas): ${header.join(' | ')}`
-      : `No pude leer el CSV.`
+      ? `Encabezados reales del CSV (${header.length}): ${header.join(' | ')}`
+      : `No pude leer el CSV.`;
 
-    // Prompt del sistema
-    const system = `Eres una analista educativa rigurosa. Responde SIEMPRE en español latino neutral.
-Reglas estrictas:
-- Si el usuario pide "todos los estudiantes", debes listar a TODOS sin omitir ninguno.
-- Usa EXACTAMENTE las columnas solicitadas por el usuario. Si pide varias columnas, inclúyelas todas.
-- Presenta las listas/tablas en formato Markdown (| Col | ... |) con separadores claros.
-- Numera filas implícitamente (la UI agregará columna #).
-- No uses asteriscos para resaltar.
-- Si el usuario pregunta por PDFs, utiliza la información incluida a continuación para responder con exactitud.`;
+    // Adjuntamos PDF SOLO si hace falta
+    let pdfNote = '';
+    if (shouldIncludePdf(q)) {
+      const emo64 = readEmocionalesPdfBase64();
+      if (emo64) {
+        // No enviamos todo: indicamos que hay PDF y dejamos ejemplo de uso
+        // (Puedes pasar solo una parte si necesitas, pero evita 4–8 páginas completas en base64)
+        pdfNote = `\nSe adjunta el PDF "emocionales.pdf" en base64 (contenido disponible para citas breves y específicas).`;
+      } else {
+        pdfNote = `\nNo pude abrir "emocionales.pdf".`;
+      }
+    }
 
-    // Prompt del usuario
-    let user = `PREGUNTA: "${q}"\n\n${headerNote}\n\n`;
-    if (ok) {
-      user += `Contenido CSV (fragmento representativo):\n"""\n${raw.slice(0, 200000)}\n"""\n\n`;
-    }
-    if (pdfData.length > 0) {
-      user += `Información contenida en PDFs:\n${pdfData.join('\n\n')}\n\n`;
-    }
-    user += `\nFormato de salida:\nDevuelve SOLO un JSON como este:
+    const system =
+`Eres una analista educativa rigurosa. Responde SIEMPRE en español latino neutral.
+Reglas:
+- Si piden "todos los estudiantes", NO omitas ninguno.
+- Usa EXACTAMENTE las columnas solicitadas.
+- Presenta tablas en Markdown (| Col | ... |) y sin asteriscos de formato.
+- La UI numera filas; no agregues numeración en la primera columna.
+- Si mencionan PDF, puedes citar su contenido de forma breve y precisa.`;
+
+    let user =
+`PREGUNTA: "${q}"
+
+${headerNote}
+
+TROZO REPRESENTATIVO DEL CSV (recortado para rendimiento):
+"""${preview}"""${pdfNote}
+
+SALIDA OBLIGATORIA (JSON):
 {
-  "texto": "respuesta en español latino clara, sin asteriscos",
-  "tablas_markdown": "si aplica, tabla en Markdown con TODAS las filas y columnas exactas solicitadas; si no aplica, deja vacío"
+  "texto": "explicación clara en español (sin asteriscos)",
+  "tablas_markdown": "si aplica, tabla Markdown con TODAS las filas y columnas exactas pedidas; si no aplica, string vacío"
 }`;
 
-    // --- Configuración dinámica GPT-5 vs GPT-4o ---
+    // --- Config dinámica por modelo
     const isGpt5 = /^gpt-5/i.test(MODEL);
     const base = {
       model: MODEL,
@@ -103,36 +125,35 @@ Reglas estrictas:
       ]
     };
 
+    // Limitar tokens de salida para bajar latencia
     const opts = isGpt5
-      ? { ...base, temperature: 1, max_completion_tokens: 2000 } // GPT-5 requiere esto
-      : { ...base, temperature: 0.2, max_tokens: 2000 };          // GPT-4o y otros
+      ? { ...base, temperature: 1,   max_completion_tokens: 900 } // GPT-5 solo acepta 1 y este parámetro
+      : { ...base, temperature: 0.2, max_tokens: 900 };           // GPT-4o y anteriores
 
-    // --- Llamada a la API ---
     const completion = await client.chat.completions.create(opts);
 
-    const rawResponse = completion?.choices?.[0]?.message?.content || '{}';
+    const raw = completion?.choices?.[0]?.message?.content || '{}';
 
     let parsed;
-    try {
-      parsed = JSON.parse(rawResponse);
-    } catch (err) {
-      console.error('Error parseando respuesta GPT:', err, rawResponse);
+    try { parsed = JSON.parse(raw); }
+    catch (e) {
+      console.error('No pude parsear JSON del modelo:', raw);
       return res.status(200).json({
-        texto: 'No pude formatear la respuesta del modelo. Revisa la pregunta o el formato.',
+        texto: 'No pude formatear la respuesta del modelo. Reformula la pregunta o pide menos columnas.',
         tablas_markdown: ''
       });
     }
 
-    // Sanitizar
-    const texto = String(parsed.texto || parsed.text || '').replace(/\*/g, '').trim();
+    const texto = String(parsed.texto || parsed.text || '').replace(/\*/g,'').trim();
     const tablas_markdown = String(parsed.tablas_markdown || parsed.tables_markdown || '').trim();
 
+    res.setHeader('Content-Type','application/json');
     return res.status(200).json({ texto, tablas_markdown });
 
   } catch (err) {
     console.error('ASK ERROR:', err);
     return res.status(200).json({
-      texto: `Error: ${err?.message || 'Desconocido.'}`,
+      texto: `Ocurrió un error interno: ${err?.message || 'Desconocido'}.`,
       tablas_markdown: ''
     });
   }
