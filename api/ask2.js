@@ -1,16 +1,28 @@
-// /api/ask2.js — búsqueda con import protegido
+// /api/ask2.js — usa /data/texto_base.js con fallback seguro
 export const config = { runtime: "nodejs" };
 
-let TEXTO_BASE = "CARGA_FALLIDA";
-try {
-  const mod = await import("../data/texto_base.js"); // ESM dinámico
-  TEXTO_BASE = String(mod?.TEXTO_BASE ?? "VACIO");
-} catch (e) {
-  console.error("Error importando /data/texto_base.js:", e);
-}
+const FALLBACK_TEXT = `\
+Linea 1: fallback activo.
+Linea 2: edita /data/texto_base.js para usar tu texto real.
+`;
 
 function normaliza(s = "") {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+let TEXT_CACHE; // undefined = aún no cargado, string = cargado
+async function getText() {
+  if (TEXT_CACHE !== undefined) return TEXT_CACHE;
+  try {
+    // Import dinámico DENTRO de la función (evita fallos de top-level)
+    const mod = await import("../data/texto_base.js");
+    const t = String(mod?.TEXTO_BASE ?? "");
+    TEXT_CACHE = t.length ? t : FALLBACK_TEXT;
+  } catch (e) {
+    console.error("No se pudo importar /data/texto_base.js:", e);
+    TEXT_CACHE = FALLBACK_TEXT;
+  }
+  return TEXT_CACHE;
 }
 
 export default async function handler(req, res) {
@@ -22,14 +34,7 @@ export default async function handler(req, res) {
     const params = method === "POST" ? (req.body || {}) : (req.query || {});
     const { q = "", limit = "50", context = "0" } = params;
 
-    if (TEXTO_BASE === "CARGA_FALLIDA") {
-      return res.status(200).json({
-        ok: false,
-        error: "No se pudo cargar /data/texto_base.js (revisa backticks y que cierre el template)."
-      });
-    }
-
-    const text = TEXTO_BASE;
+    const text = await getText();
     const lines = text.split(/\r?\n/);
 
     if (!q.trim()) {
@@ -51,19 +56,4 @@ export default async function handler(req, res) {
         if (ctx) {
           const ini = Math.max(0, i - ctx);
           const fin = Math.min(lines.length, i + ctx + 1);
-          match.contexto = { desde: ini + 1, hasta: fin, fragmento: lines.slice(ini, fin) };
-        }
-        resultados.push(match);
-        if (resultados.length >= maxRes) break;
-      }
-    }
-
-    return res.status(200).json({
-      ok: true, endpoint: "ask2", mode: "txt-search",
-      query: q, total_encontrados: resultados.length,
-      n_lineas: lines.length, resultados
-    });
-  } catch (err) {
-    res.status(200).json({ ok: false, where: "ask2-imported", error: String(err?.message || err) });
-  }
-}
+          match.contexto = { desde: ini + 1, hasta: fin, fragmento: lines.slice(i
