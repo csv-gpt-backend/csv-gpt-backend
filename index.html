@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>TR Asistente · CSV</title>
+<title>jhAsistente · CSV</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <style>
   :root{
     --headerH: 45vh;       /* Parte fija arriba = 45% de la pantalla */
@@ -54,7 +57,7 @@
   .new{ background:#ffe082; } .stop{ background:#ffcdd2; } .mic{ font-size:18px; padding:12px 16px; }
   h2{ margin:0 0 10px 0; font-size:18px; font-weight:normal; }
   .muted{ opacity:.5; }
-  .status{ margin:6px 0 0; text-align:center; font-size:12px; color:#666; }
+  .status{ margin:6px 0 0; text-align:center; font-size:12px; color:#666; min-height:18px; }
   .badge{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
   .gpt{ background:#f0e6ff; color:#402060; }
   .note{ font-size:12px; color:#777; margin-top:6px; }
@@ -133,10 +136,20 @@
 </main>
 
 <script>
-/* ============ Warmup + flush cache al cargar ============ */
-window.addEventListener("load", ()=>{ fetch("/api/answer?flush=1&q=__warmup").catch(()=>{}); });
+/* ====== Diagnóstico y warmup ====== */
+window.addEventListener("error", (e)=> {
+  try { console.error("JS Error:", e.message, e.filename+":"+e.lineno); } catch {}
+  const st = document.getElementById("status");
+  if (st) st.textContent = "Error de script: " + e.message;
+});
+window.addEventListener("unhandledrejection", (e)=> {
+  try { console.error("Unhandled promise:", e.reason); } catch {}
+  const st = document.getElementById("status");
+  if (st) st.textContent = "Error de ejecución: " + (e.reason?.message || e.reason || "desconocido");
+});
+window.addEventListener("load", ()=>{ fetch("/api/answer?q=__warmup&flush=1").catch(()=>{}); });
 
-/* ============ Voz femenina (y leer también tablas/listas) ============ */
+/* ====== Voz femenina ====== */
 const FEMALE_PRIORITY = [
   "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
   "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
@@ -154,57 +167,78 @@ function pickFemaleVoice(){
   return all.find(x=>/es/i.test(x.lang));
 }
 
-let muted=false, speaking=false;
-const vid = document.getElementById("vid");
+/* ====== Elementos ====== */
+const vid    = document.getElementById("vid");
+const q      = document.getElementById("q");
+const $gen   = document.getElementById("general");
+const $lists = document.getElementById("lists");
+const $tables= document.getElementById("tables");
+const $status= document.getElementById("status");
+const $note  = document.getElementById("note");
 
+function setBusy(b){
+  document.querySelectorAll("button,select,textarea").forEach(el=>{
+    el.disabled = !!b;
+    el.style.opacity = b ? 0.7 : 1;
+  });
+  $status.textContent = b ? "Procesando…" : "";
+}
+
+/* ====== Voz: leer texto + tablas/listas ====== */
+let muted=false, speaking=false;
 function tablesToReadableText(tables){
   if(!tables || !tables.length) return "";
-  let out = "";
+  let out="";
   tables.forEach(t=>{
     out += ` Tabla: ${(t.title||"Tabla")}. `;
-    const cols = t.columns && t.columns.length ? t.columns : [];
+    const cols = t.columns?.length ? t.columns : [];
     if(cols.length) out += ` Columnas: ${cols.join(", ")}. `;
-    (t.rows||[]).forEach((row,idx)=>{
+    (t.rows||[]).forEach((row,i)=>{
       const arr = Array.isArray(row)?row:[row];
-      out += ` Fila ${idx+1}: ${arr.join(", ")}.`;
+      out += ` Fila ${i+1}: ${arr.join(", ")}.`;
     });
   });
   return out.trim();
 }
 function listsToReadableText(lists){
   if(!lists || !lists.length) return "";
-  let out = "";
+  let out="";
   lists.forEach(L=>{
     if(L.title) out += ` Lista: ${L.title}. `;
-    (L.items||[]).forEach((it,idx)=>{ out += ` Ítem ${idx+1}: ${it}.`; });
+    (L.items||[]).forEach((it,i)=> out += ` Ítem ${i+1}: ${it}.`);
   });
   return out.trim();
 }
-
 function speakFull(answer){
   const general = answer?.general || "";
   const tablesTxt = tablesToReadableText(answer?.tables||[]);
   const listsTxt  = listsToReadableText(answer?.lists||[]);
   const text = [general, listsTxt, tablesTxt].filter(Boolean).join(" ");
   if(!text) return;
-  const u=new SpeechSynthesisUtterance(text);
-  const v=pickFemaleVoice();
+  const u = new SpeechSynthesisUtterance(text);
+  const v = pickFemaleVoice();
   u.lang = v?.lang || "es-MX"; if(v) u.voice=v;
   u.volume = muted ? 0 : 1; u.rate=1; u.pitch=1;
   u.onstart=()=>{ speaking=true; try{ vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{});}catch{} };
-  u.onend=()=>{ speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
+  u.onend  =()=>{ speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
   speechSynthesis.speak(u);
 }
 
-/* detener / silenciar */
-document.getElementById("stop").onclick=()=>{ try{ speechSynthesis.cancel(); }catch{} speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
-document.getElementById("mute").onclick=()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
+/* ====== Botones voz ====== */
+document.getElementById("stop").addEventListener("click", ()=>{
+  try{ speechSynthesis.cancel(); }catch{}
+  speaking=false; try{ vid.loop=false; vid.pause(); }catch{}
+});
+document.getElementById("mute").addEventListener("click", ()=>{
+  muted = !muted;
+  alert(muted ? "Voz silenciada" : "Voz activada");
+});
 
-/* ============ Dictado (voz a texto) ============ */
-let rec,recOn=false;
-const mic=document.getElementById("mic");
+/* ====== Dictado ====== */
+let rec, recOn=false;
+const mic = document.getElementById("mic");
 function toggleRec(){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){ alert("Reconocimiento de voz no soportado."); return; }
   if(!rec){ rec=new SR(); rec.lang="es-MX"; rec.continuous=false; rec.interimResults=false; }
   if(!recOn){
@@ -213,90 +247,27 @@ function toggleRec(){
     rec.onend   =()=>{ recOn=false; mic.classList.remove("muted"); };
   }else{ rec.stop(); recOn=false; mic.classList.remove("muted"); }
 }
-mic.onclick=toggleRec;
+mic.addEventListener("click", toggleRec);
 
-/* ============ Sesión local ============ */
+/* ====== Sesión local simple ====== */
 let sessionId="s-"+Date.now();
 let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
 const storeKey="sesiones-v1";
 function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
 function saveSession(){ const all=loadAllSessions(); const i=all.findIndex(s=>s.id===session.id); if(i>=0) all[i]=session; else all.unshift(session); localStorage.setItem(storeKey, JSON.stringify(all)); }
 
-/* ============ UI helpers ============ */
-const q=document.getElementById("q"), $gen=document.getElementById("general"), $lists=document.getElementById("lists"), $tables=document.getElementById("tables"), $status=document.getElementById("status"), $note=document.getElementById("note");
-function setBusy(b){ document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=b; el.style.opacity=b?.7:1; }); }
+/* ====== Heurística: “lista de estudiantes” ====== */
+function looksListStudents(txt){ return /(lista|listado|despliega|muestr[ae]|dime)\s+.*(estudiant|alumn)/i.test(txt||""); }
 
-/* Heurísticas para columnas Nombre/Curso/Paralelo */
-function findNameColumns(headers){
-  const cand=[/^nombre(s)?$/i,/^apellid/i,/estudiante/i,/alumn/i];
-  const out=[]; headers.forEach(h=>{ if(cand.some(rx=>rx.test(h))) out.push(h); });
-  if(!out.length){ const c=headers.find(h=>/nombre/i.test(h)); if(c) out.push(c); }
-  return out;
-}
-function findParallelColumn(headers){
-  return headers.find(h=>/paralelo|secci[oó]n|grupo/i.test(h)) || null;
-}
-function findCourseColumn(headers){
-  return headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h)) || null;
-}
-function fullNameFrom(row, nameCols){
-  return nameCols.map(c=>row[c]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
-}
-
-/* Transformación para "lista de estudiantes..." → solo Nombre/Curso/Paralelo, sin duplicados */
-function looksListStudents(q){ return /(lista|listado|despliega|muestr[ae]|dime)\s+.*(estudiant|alumn)/i.test(q||""); }
-function transformToCleanStudentList(answer){
-  try{
-    const a = answer || {};
-    const t = (a.tables||[])[0];
-    if(!t || !t.rows || !t.rows.length) return a;
-
-    const headers = t.columns||[];
-    const rows = t.rows;
-
-    const nameCols = findNameColumns(headers);
-    const parCol   = findParallelColumn(headers);
-    const curCol   = findCourseColumn(headers);
-
-    if(!nameCols.length) return a;
-
-    // Reconstituir objetos para deduplicar
-    const idx = Object.fromEntries(headers.map((h,i)=>[h,i]));
-    const map = new Map();
-    rows.forEach(r=>{
-      // r puede ser array o objeto; normalizamos a objeto por headers
-      const obj = Array.isArray(r) ? Object.fromEntries(headers.map((h,i)=>[h, r[i]])) : r;
-      const nombre = fullNameFrom(obj, nameCols);
-      const curso  = curCol? (obj[curCol]??"") : "";
-      const para   = parCol? (obj[parCol]??"") : "";
-      if(!nombre) return;
-      const key = (nombre + "|" + curso + "|" + para).toLowerCase();
-      if(!map.has(key)) map.set(key, [nombre, String(curso), String(para)]);
-    });
-
-    const finalRows = Array.from(map.values()).sort((a,b)=>a[0].localeCompare(b[0], "es"));
-    return {
-      ...a,
-      lists: [],
-      tables: [{
-        title: t.title || "Listado de estudiantes",
-        columns: ["Nombre","Curso","Paralelo"],
-        rows: finalRows
-      }],
-      general: a.general || `Se listan ${finalRows.length} estudiantes.`
-    };
-  }catch{ return answer; }
-}
-
-/* render listas / tablas */
+/* ====== Render ====== */
 function renderLists(lists){
   $lists.innerHTML="";
-  if(!lists || !lists.length) return;
-  (lists||[]).forEach(L=>{
+  if(!lists?.length) return;
+  lists.forEach(L=>{
     const wrap=document.createElement("div"); wrap.className="list-card";
     if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
     const ol=document.createElement("ol");
-    (L.items||[]).forEach((it)=>{ const li=document.createElement("li"); li.textContent=it; ol.appendChild(li); });
+    (L.items||[]).forEach(it=>{ const li=document.createElement("li"); li.textContent=it; ol.appendChild(li); });
     wrap.appendChild(ol); $lists.appendChild(wrap);
   });
 }
@@ -307,7 +278,7 @@ function renderTables(tables){
     const table=document.createElement("table");
     const thead=document.createElement("thead");
     const trh=document.createElement("tr");
-    const cols = t.columns && t.columns.length ? ["#", ...t.columns] : ["#"];
+    const cols = t.columns?.length ? ["#", ...t.columns] : ["#"];
     cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
     thead.appendChild(trh);
     const tbody=document.createElement("tbody");
@@ -322,72 +293,123 @@ function renderTables(tables){
   });
 }
 
-/* ============ Enviar pregunta ============ */
-const $send=document.getElementById("send");
-$send.onclick = async ()=>{
+/* ====== API: POST con fallback a GET ====== */
+async function callAnswerAPI(prompt, wantsList){
+  try{
+    const res = await fetch("/api/answer",{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ question: prompt, ...(wantsList? {forceFullList:true}: {}) })
+    });
+    if(!res.ok) throw new Error(`POST /api/answer -> ${res.status}`);
+    return await res.json();
+  }catch(err){
+    console.warn("POST falló, intentando GET…", err);
+    const url = "/api/answer?q=" + encodeURIComponent(prompt);
+    const res2 = await fetch(url);
+    if(!res2.ok) throw new Error(`GET /api/answer -> ${res2.status}`);
+    return await res2.json();
+  }
+}
+
+/* Limpiar “lista de estudiantes” (solo Nombre/Curso/Paralelo, sin duplicados) */
+function transformToCleanStudentList(answer){
+  try{
+    const a = answer || {};
+    const t = (a.tables||[])[0];
+    if(!t || !t.rows?.length) return a;
+    const headers = t.columns||[];
+    const rows = t.rows;
+
+    const nameCols = headers.filter(h=>/^nombre(s)?$/i.test(h) || /estudian|alumn|apellid/i.test(h));
+    const parCol   = headers.find(h=>/paralelo|secci[oó]n|grupo/i.test(h));
+    const curCol   = headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h));
+    if(!nameCols.length) return a;
+
+    const map = new Map();
+    rows.forEach(r=>{
+      const arr = Array.isArray(r)?r:[r];
+      const obj = Object.fromEntries(headers.map((h,i)=>[h, arr[i]]));
+      const nombre = nameCols.map(c=>obj[c]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
+      const curso  = curCol? (obj[curCol]??"") : "";
+      const para   = parCol? (obj[parCol]??"") : "";
+      if(!nombre) return;
+      const key = (nombre+"|"+curso+"|"+para).toLowerCase();
+      if(!map.has(key)) map.set(key, [nombre, String(curso), String(para)]);
+    });
+
+    const finalRows = Array.from(map.values()).sort((a,b)=>a[0].localeCompare(b[0],"es"));
+    return {
+      ...a,
+      lists: [],
+      tables: [{ title: t.title || "Listado de estudiantes", columns: ["Nombre","Curso","Paralelo"], rows: finalRows }],
+      general: a.general || `Se listan ${finalRows.length} estudiantes.`
+    };
+  }catch{ return answer; }
+}
+
+/* ====== Enviar ====== */
+document.getElementById("send").addEventListener("click", async ()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
 
   setBusy(true);
-  $note.textContent="";
+  $note.textContent=""; $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
   const t0=performance.now();
-  $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML=""; $status.textContent="";
 
-  const wantsStudentList = looksListStudents(prompt);
-
+  const wantsList = looksListStudents(prompt);
   let r;
-  try {
-    r = await fetch("/api/answer",{
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      // En pedidos de lista, pedimos TODOS (48) al backend si lo soporta:
-      body: JSON.stringify({ question: prompt, ...(wantsStudentList? {forceFullList:true}: {}) })
-    }).then(x=>x.json());
-  } catch(e){
-    r = { ok:false, error: e.message||"Error de red" };
+  try{
+    r = await callAnswerAPI(prompt, wantsList);
+  }catch(e){
+    $gen.textContent = "Hubo un problema al analizar: " + (e.message||"desconocido");
+    $status.textContent = "";
+    console.error("API error:", e);
+    setBusy(false);
+    return;
   }
 
-  const t1=performance.now();
-  const ms=Math.max(1, Math.round(t1-t0));
-
-  if(!r || !r.ok){
+  if(!r?.ok){
     $gen.textContent = "Hubo un problema al analizar: " + (r?.error || "desconocido");
     $status.textContent = "";
     setBusy(false);
     return;
   }
 
-  // Posprocesado: si es lista de estudiantes, limpiamos columnas y duplicados
   let ans = r.answer || {};
-  if(wantsStudentList) ans = transformToCleanStudentList(ans);
+  if(wantsList) ans = transformToCleanStudentList(ans);
 
-  // Render
   $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
   renderLists(ans.lists||[]);
   renderTables(ans.tables||[]);
 
-  // Nota si visualmente detectamos pocas filas
   const totalRows = (ans.tables && ans.tables[0] && ans.tables[0].rows) ? ans.tables[0].rows.length : 0;
-  if(wantsStudentList && totalRows && totalRows < 48){
-    $note.textContent = "Nota: se listaron " + totalRows + " estudiantes. Si esperabas 48, verifica el CSV o el filtro aplicado.";
+  if(wantsList && totalRows && totalRows < 48){
+    $note.textContent = `Nota: se listaron ${totalRows} estudiantes.`;
   }
 
+  const ms = Math.max(1, Math.round(performance.now()-t0));
   $status.innerHTML = `Listo en ${ms/1000}s <span class="badge gpt">🧠 GPT-5</span>`;
 
-  // Voz (lee también listas y tablas)
   speakFull(ans);
 
-  // Guardar sesión local
   session.items.push({ at:new Date().toISOString(), q:prompt, a:ans, meta:r.source||{} });
   saveSession();
   setBusy(false);
-};
+});
 
-/* limpiar / nueva sesión */
-document.getElementById("clear").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; };
-document.getElementById("new").onclick=()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; alert("Nueva sesión creada."); };
+/* Limpiar / nueva sesión */
+document.getElementById("clear").addEventListener("click", ()=>{
+  $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent="";
+});
+document.getElementById("new").addEventListener("click", ()=>{
+  sessionId="s-"+Date.now();
+  session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
+  $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent="";
+  alert("Nueva sesión creada.");
+});
 
-/* ============ Exportar toda la sesión ============ */
+/* ====== Exportación ====== */
 const vidEl=document.getElementById("vid");
 function sessionToHTML(sess){
   const headerThumbs = `
@@ -401,13 +423,13 @@ function sessionToHTML(sess){
     html += `<hr><h2 style="font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
     const a = it.a||{};
     html += `<h2 style="font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
-    if (a.lists && a.lists.length){
+    if (a.lists?.length){
       html += `<h3 style="font-weight:normal;">Listas</h3>`;
       a.lists.forEach(L=>{
-        html += `<h4>${L.title||""}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`;
+        html += `<h4>${L.title||" "}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`;
       });
     }
-    if (a.tables && a.tables.length){
+    if (a.tables?.length){
       html += `<h3 style="font-weight:normal;">Tablas</h3>`;
       a.tables.forEach(t=>{
         const cols = ["#", ...(t.columns||[])];
@@ -435,7 +457,7 @@ function sessionToHTML(sess){
     tr{ page-break-inside: avoid; }
   </style></head><body>${html}</body></html>`;
 }
-document.getElementById("export").onclick=()=>{
+document.getElementById("export").addEventListener("click", ()=>{
   const kind=document.getElementById("exportKind").value;
   const fullHTML = sessionToHTML(session);
   if(kind==="pdf"){
@@ -446,7 +468,6 @@ document.getElementById("export").onclick=()=>{
     const blob=new Blob([fullHTML],{type:"application/msword"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.doc`; a.click();
   } else if(kind==="xls"){
-    // Exportamos solo tablas a CSV (compatibilidad Excel) — sin cortes
     let csv="";
     (session.items||[]).forEach(it=>{
       const a=it.a||{};
@@ -465,7 +486,7 @@ document.getElementById("export").onclick=()=>{
     const blob=new Blob([csv],{type:"application/vnd.ms-excel"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.xls`; a.click();
   }
-};
+});
 </script>
 </body>
 </html>
