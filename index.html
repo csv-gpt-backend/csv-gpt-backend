@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>hAsistente · CSV</title>
+<title>KAsistente · CSV</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <style>
   :root{
-    --headerH: 45vh;       /* Parte fija arriba = 45% de la pantalla */
+    --headerH: 45vh;       /* PARTE 1 fija = 45% vertical */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -160,7 +160,7 @@ const $lists=document.getElementById("lists");
 const $tables=document.getElementById("tables");
 const $status=document.getElementById("status");
 const $note=document.getElementById("note");
-function setBusy(b){ document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=!!b; el.style.opacity=b?0.7:1; }); $status.innerHTML=b?`Procesando… <span class="badge gpt">v-hotfix-3</span>`:""; }
+function setBusy(b){ document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=!!b; el.style.opacity=b?0.7:1; }); $status.innerHTML=b?`Procesando… <span class="badge gpt">v-hotfix-4</span>`:""; }
 
 /* ====== Voz: lee texto + listas + tablas ====== */
 let muted=false, speaking=false;
@@ -210,39 +210,77 @@ async function callAnswerAPI(prompt, wantsList){
   }
 }
 
-/* ====== Elegir la mejor tabla para “lista de estudiantes” y limpiar ====== */
+/* ====== Limpieza de “lista de estudiantes”: Nombre/Curso/Paralelo, sin duplicados ====== */
 function transformToCleanStudentList(answer){
   try{
-    const a=answer||{}; const tables=a.tables||[]; if(!tables.length) return a;
-    // Buscar tabla que tenga columnas de nombres típicos
+    const a = answer || {};
+    const tables = a.tables || [];
+    if (!tables.length) return a;
+
+    // Elegir mejor tabla candidata
     const pick = tables.find(t=>{
       const cols=(t.columns||[]).map(h=>String(h||""));
       return cols.some(h=>/^nombre(s)?$/i.test(h) || /estudian|alumn|apellid/i.test(h));
     }) || tables[0];
 
-    if(!pick || !pick.rows?.length) return a;
+    if (!pick || !pick.rows?.length) return a;
 
-    const headers=pick.columns||[]; const rows=pick.rows;
-    const nameCols=headers.filter(h=>/^nombre(s)?$/i.test(h) || /estudian|alumn|apellid/i.test(h));
-    const parCol=headers.find(h=>/paralelo|secci[oó]n|grupo/i.test(h));
-    const curCol=headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h));
-    if(!nameCols.length) return a;
+    const headers = (pick.columns||[]).map(String);
+    const rows = pick.rows;
 
-    const map=new Map();
+    const nameCols = headers.filter(h=>/^nombre(s)?$/i.test(h) || /estudian|alumn|apellid/i.test(h));
+    const parCol  = headers.find(h=>/paralelo|secci[oó]n|grupo/i.test(h));
+    const curCol  = headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h));
+
+    // Caso cuando la fila viene en un string "A S Oscar;13;DÉCIMO;B;..."
+    function splitGuess(s){
+      const parts = String(s).split(/;|,/).map(x=>x.trim()).filter(Boolean);
+      const nombre   = parts[0] || "";
+      const curso    = parts[2] ||
+        (parts.find(p=>/(d[eé]cimo|noveno|octavo|séptimo|sexto|quinto|cuarto|tercero|segundo|primero|preparatoria|bachillerato|educaci[oó]n)/i.test(p)) || "");
+      const paralelo = parts[3] ||
+        (parts.find(p=>/^[A-Z]$/i.test(p)) || "");
+      return [nombre, String(curso), String(paralelo)];
+    }
+
+    const map = new Map();
+
     rows.forEach(r=>{
-      const arr=Array.isArray(r)?r:[r];
-      const obj=Object.fromEntries(headers.map((h,i)=>[h, arr[i]]));
-      const nombre=nameCols.map(c=>obj[c]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
-      const curso=curCol?(obj[curCol]??""):"";
-      const para=parCol?(obj[parCol]??""):"";
-      if(!nombre) return;
-      const key=(nombre+"|"+curso+"|"+para).toLowerCase();
-      if(!map.has(key)) map.set(key, [nombre, String(curso), String(para)]);
+      const arr = Array.isArray(r) ? r : [r];
+      let nombre="", curso="", paralelo="";
+
+      if (arr.length===1 && typeof arr[0]==="string" && /[;,]/.test(arr[0])) {
+        [nombre, curso, paralelo] = splitGuess(arr[0]);
+      } else {
+        const obj = Object.fromEntries(headers.map((h,i)=>[h, arr[i]]));
+        nombre   = nameCols.length ? nameCols.map(c=>obj[c]).filter(Boolean).join(" ").replace(/\s+/g," ").trim() : (arr[0]||"");
+        curso    = curCol ? (obj[curCol] ?? "") : (arr[2] ?? "");
+        paralelo = parCol ? (obj[parCol] ?? "") : (arr[3] ?? "");
+      }
+
+      if (!nombre) return;
+      const key = (nombre+"|"+curso+"|"+paralelo).toLowerCase();
+      if (!map.has(key)) map.set(key, [nombre, curso, paralelo]);
     });
 
-    const finalRows=Array.from(map.values()).sort((a,b)=>a[0].localeCompare(b[0],"es"));
-    return { ...a, lists:[], tables:[{ title: pick.title||"Listado de estudiantes", columns:["Nombre","Curso","Paralelo"], rows:finalRows }], general: a.general || `Se listan ${finalRows.length} estudiantes.` };
-  }catch{ return answer; }
+    const finalRows = Array.from(map.values())
+      .filter(v=>v[0])
+      .sort((a,b)=>a[0].localeCompare(b[0],"es"));
+
+    return {
+      ...a,
+      lists: [],
+      tables: [{
+        title:  pick.title || "Listado de estudiantes",
+        columns:["Nombre","Curso","Paralelo"],
+        rows:   finalRows
+      }],
+      general: a.general || `Se listan ${finalRows.length} estudiantes.`
+    };
+  } catch(e){
+    console.warn("transformToCleanStudentList fallo:", e);
+    return answer;
+  }
 }
 
 /* ====== Enviar ====== */
@@ -271,7 +309,7 @@ document.getElementById("send").onclick=async()=>{
   if(wantsList && totalRows && totalRows<48){ $note.textContent=`Nota: se listaron ${totalRows} estudiantes.`; }
 
   const ms=Math.max(1,Math.round(performance.now()-t0));
-  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-3</span>`;
+  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-4</span>`;
 
   speakFull(ans);
 
