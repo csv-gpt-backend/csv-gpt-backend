@@ -6,80 +6,107 @@
 <title>Super Asistente · CSV</title>
 <style>
   :root{
-    --headerH: 45vh;       /* Parte fija arriba = 45% de la pantalla */
+    color-scheme: light dark;
+    --headerH: 45vh;          /* PARTE 1 = 45% de pantalla */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
-  html,body{ height:100%; margin:0; font-family:Arial, system-ui, sans-serif; background:#fff; color:#111; }
+  html,body{ height:100%; }
+  body{ margin:0; font-family:Arial, system-ui, sans-serif; background:#fff; color:#111; }
 
   /* ===== PARTE 1: FIJA (no se mueve) ===== */
   header{
     position: fixed; top:0; left:0; right:0; height:var(--headerH);
     background:#fff; border-bottom:1px solid #eee; z-index:20;
   }
+  /* Link de historial en esquina superior derecha, sutil */
   #histLink{
-    position:absolute; top:6px; right:10px; font-size:12px; color:#666; text-decoration:none;
-    opacity:.55; text-shadow:0 1px 1px rgba(0,0,0,.06); transition: opacity .15s ease;
+    position:absolute; top:6px; right:10px;
+    font-size:12px; color:#666; text-decoration:none;
+    opacity:.55; text-shadow:0 1px 1px rgba(0,0,0,.06);
+    transition: opacity .15s ease;
   }
-  #histLink:hover{ opacity:.85; text-decoration:underline; }
+  #histLink:hover{ opacity:.8; text-decoration:underline; }
 
   .topbar{
-    position:relative; height:100%;
-    display:grid; grid-template-columns:1fr 2fr 1fr; gap:12px; align-items:center; padding:0 var(--pad);
+    position:relative;
+    height:100%;
+    display:grid;
+    grid-template-columns:1fr 2fr 1fr;   /* 25% - 50% - 25% */
+    gap:12px; align-items:center; padding:0 var(--pad);
   }
-  .topbar img{ max-height: calc(var(--headerH) - 48px); width:auto; object-fit:contain; }
-  .video-wrap{ width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; }
-  .video-box{ width:100%; height:75%; display:flex; align-items:center; justify-content:center; } /* 75% del header */
-  .video-box video{ width:100%; height:100%; object-fit:contain; border:0; background:#fff; }
+  .topbar img{
+    max-height: calc(var(--headerH) - 48px);
+    width: auto; object-fit: contain;
+  }
+  .video-wrap{
+    width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; /* arranca desde la primera línea */
+    padding-top: 0;
+  }
+  /* 8% más pequeño que antes: reduce la caja interior del video */
+  .video-box{
+    width: 100%;
+    height: 75%;  /* ~8% menos que el ajuste previo */
+    display:flex; align-items:center; justify-content:center;
+  }
+  .video-box video{
+    width: 100%; height: 100%;
+    object-fit: contain; border:0; background:#fff;
+  }
 
-  /* ===== Debajo de la franja fija ===== */
+  /* ===== BLOQUE INFERIOR (debajo de la franja fija) ===== */
   main{ padding-top: var(--headerH); }
-  /* Un solo scroll compartido para las secciones 2 y 3 */
-  #scrollWrap{ height: calc(100vh - var(--headerH)); overflow:auto; display:block; }
-
-  /* PARTE 2 */
-  #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; }
-  .controls{ margin-bottom:10px; }
-  .controls .row{
-    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; width:100%;
+  #below{
+    height: calc(100vh - var(--headerH));
+    display:flex; flex-direction:column; min-height: 320px;
   }
+
+  /* PARTE 2: caja de texto + botones + respuesta */
+  #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; overflow:visible; }
+  .controls{ margin-bottom:12px; }
+  .controls .row{
+    display:flex; flex-wrap:wrap; gap:8px;
+    justify-content:center; align-items:center; width:100%; text-align:center; /* CENTRADOS respecto a la página */
+  }
+
   textarea{
     width:min(1100px,98%); height:64px; padding:10px; font-size:15px;
     border:1px solid #e6e6e6; border-radius:8px; background:#fff; outline:none;
   }
   button, select{
-    padding:10px 12px; font-size:14px; cursor:pointer; border:none; outline:none; border-radius:8px; background:#f3f3f3; color:#111;
+    padding:10px 12px; font-size:14px; cursor:pointer;
+    border:none; outline:none; border-radius:8px; background:#f3f3f3; color:#111;
   }
   button:hover, select:hover{ background:#ececec; }
-  .new{ background:#ffe082; } .stop{ background:#ffcdd2; } .mic{ font-size:18px; padding:12px 16px; }
-  h2{ margin:0 0 10px 0; font-size:18px; font-weight:normal; }
+  .mic{ font-size:18px; padding:12px 16px; }
+  .new{ background:#ffe082; }  /* botón amarillo */
+  .stop{ background:#ffcdd2; } /* botón detener voz */
+  .small{ font-size:12px; color:#666; }
+  h2{
+    margin:0 0 10px 0; font-size:18px;
+    font-family: Arial, Helvetica, sans-serif; font-weight: normal; /* Arial normal para títulos parte 2 y 3 */
+  }
   .muted{ opacity:.5; }
-  .status{ margin:6px 0 0; text-align:center; font-size:12px; color:#666; }
-  .badge{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
-  .gpt{ background:#f0e6ff; color:#402060; }
-  .note{ font-size:12px; color:#777; margin-top:6px; }
 
-  /* PARTE 3 */
-  #pane3{ padding:14px 16px; }
-  table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; table-layout:auto; }
+  /* PARTE 3: lo que queda, con scroll propio */
+  #pane3{
+    flex:1 1 auto; min-height:140px; overflow:auto; padding:14px 16px;
+  }
+
+  /* Tablas y listas */
+  table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; }
   th,td{ border:1px solid #e5e5e5; padding:6px 8px; text-align:left; vertical-align:top; }
   th{ background:#fafafa; }
   ol{ margin:10px 0 16px 22px; }
   .list-card{ margin:10px 0; }
-
-  /* Impresión (exportación a PDF en ventana) */
-  @media print{
-    @page { size: A4; margin:12mm; }
-    table{ page-break-inside: avoid; width:100%; }
-    h1,h2,h3,h4{ page-break-after: avoid; }
-  }
 </style>
 </head>
 <body>
 
+<!-- ===== PARTE 1 (FIJA 45%): IMÁGENES + VIDEO ===== -->
 <header>
   <div class="topbar">
-    <a id="histLink" href="/historial.html" title="Ver historial de sesiones">Historial</a>
+    <a id="histLink" href="/historial.html">Historial</a>
     <img src="/left.png" alt="left">
     <div class="video-wrap">
       <div class="video-box">
@@ -90,39 +117,37 @@
   </div>
 </header>
 
+<!-- ===== PARTES 2 y 3 (debajo de la franja fija) ===== -->
 <main>
-  <!-- Un solo contenedor con scroll para las partes 2 y 3 -->
-  <div id="scrollWrap">
+  <div id="below">
 
-    <!-- PARTE 2 -->
+    <!-- PARTE 2: caja de texto + botones + RESPUESTA -->
     <section id="pane2">
       <div class="controls">
         <div class="row">
           <textarea id="q" placeholder="Escribe tu pregunta (o usa el micrófono)…"></textarea>
         </div>
         <div class="row">
-          <button id="send" title="Enviar la pregunta y analizar">Enviar</button>
-          <button id="mic" class="mic" title="Dictar por voz (es-MX/es-ES)">🎤 Dictar</button>
-          <button id="mute" title="Silencia la voz de la computadora (no afecta el análisis)">Silenciar voz</button>
-          <button id="stop" class="stop" title="Detiene la voz y pausa el video">Detener voz</button>
-          <button id="clear" title="Limpia el texto y tablas en pantalla (no borra memoria)">Limpiar</button>
-          <button id="new" class="new" title="Crea una nueva sesión y borra todo el contexto">Nueva sesión</button>
-          <select id="exportKind" title="Selecciona el formato de exportación">
+          <button id="send">Enviar</button>
+          <button id="mic" class="mic">🎤 Dictar</button>
+          <button id="mute">Silenciar voz</button>
+          <button id="stop" class="stop">Detener voz</button>
+          <button id="clear">Limpiar</button>
+          <button id="new" class="new">Nueva sesión</button>
+          <select id="exportKind">
             <option value="pdf">Exportar: PDF</option>
             <option value="xls">Exportar: XLS</option>
             <option value="doc">Exportar: DOC</option>
           </select>
-          <button id="export" title="Exporta toda la información de esta sesión">Exportar</button>
+          <button id="export">Exportar</button>
         </div>
-        <div id="status" class="status"></div>
-        <div id="note" class="note"></div>
       </div>
 
       <h2>Respuesta (texto e información general)</h2>
       <div id="general"></div>
     </section>
 
-    <!-- PARTE 3 -->
+    <!-- PARTE 3: LISTAS/TABLAS (con scroll propio) -->
     <section id="pane3">
       <h2>Listas numeradas y tablas</h2>
       <div id="lists"></div>
@@ -133,76 +158,85 @@
 </main>
 
 <script>
-/* ============ Warmup + flush cache al cargar ============ */
-window.addEventListener("load", ()=>{ fetch("/api/answer?flush=1&q=__warmup").catch(()=>{}); });
+/* ========= Warmup + flush cache al cargar ========= */
+window.addEventListener("load", ()=>{
+  fetch("/api/answer?flush=1&q=__warmup").catch(()=>{});
+});
 
-/* ============ Voz femenina (y leer también tablas/listas) ============ */
+/* ========= Voz femenina fija en ES (bloqueada) ========= */
 const FEMALE_PRIORITY = [
   "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
   "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
   "Microsoft Helena Online (Natural) - Spanish (Spain)",
   "Microsoft Camila Online (Natural) - Spanish (Colombia)",
   "Microsoft Lorena Online (Natural) - Spanish (Mexico)",
-  "Google español de Estados Unidos","Google español","Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
+  "Google español de Estados Unidos", "Google español",
+  "Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
 ];
-function pickFemaleVoice(){
+const VOICE_KEY = "voz-femenina-preferida";
+let voices = [];
+function pickFemaleSpanishLocked(){
   const all = speechSynthesis.getVoices();
-  for(const name of FEMALE_PRIORITY){
-    const v=all.find(x=>x.name===name);
-    if(v) return v;
+  const saved = localStorage.getItem(VOICE_KEY);
+  if (saved){
+    const vSaved = all.find(v=>v.name===saved);
+    if (vSaved) return vSaved;
+    localStorage.removeItem(VOICE_KEY);
   }
-  return all.find(x=>/es/i.test(x.lang));
+  for (const name of FEMALE_PRIORITY){
+    const v = all.find(v=>v.name===name);
+    if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  }
+  let v = all.find(v=>/es|span/i.test(v.lang) && /(female|mujer|woman|Sabina|Dalia|Helena|Camila|Ana|Lucia|Isabel)/i.test(v.name));
+  if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  v = all.find(v=>/es/i.test(v.lang));
+  if (v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  return null;
 }
+speechSynthesis.onvoiceschanged = ()=>{ voices = speechSynthesis.getVoices(); };
+voices = speechSynthesis.getVoices();
 
-let muted=false, speaking=false;
-const vid = document.getElementById("vid");
+let muted=false;
+const vid=document.getElementById("vid");
+/* Para repetir el video mientras haya locución */
+let speaking = false;
 
-function tablesToReadableText(tables){
-  if(!tables || !tables.length) return "";
-  let out = "";
-  tables.forEach(t=>{
-    out += ` Tabla: ${(t.title||"Tabla")}. `;
-    const cols = t.columns && t.columns.length ? t.columns : [];
-    if(cols.length) out += ` Columnas: ${cols.join(", ")}. `;
-    (t.rows||[]).forEach((row,idx)=>{
-      const arr = Array.isArray(row)?row:[row];
-      out += ` Fila ${idx+1}: ${arr.join(", ")}.`;
-    });
-  });
-  return out.trim();
-}
-function listsToReadableText(lists){
-  if(!lists || !lists.length) return "";
-  let out = "";
-  lists.forEach(L=>{
-    if(L.title) out += ` Lista: ${L.title}. `;
-    (L.items||[]).forEach((it,idx)=>{ out += ` Ítem ${idx+1}: ${it}.`; });
-  });
-  return out.trim();
-}
-
-function speakFull(answer){
-  const general = answer?.general || "";
-  const tablesTxt = tablesToReadableText(answer?.tables||[]);
-  const listsTxt  = listsToReadableText(answer?.lists||[]);
-  const text = [general, listsTxt, tablesTxt].filter(Boolean).join(" ");
+function speak(text){
   if(!text) return;
   const u=new SpeechSynthesisUtterance(text);
-  const v=pickFemaleVoice();
-  u.lang = v?.lang || "es-MX"; if(v) u.voice=v;
-  u.volume = muted ? 0 : 1; u.rate=1; u.pitch=1;
-  u.onstart=()=>{ speaking=true; try{ vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{});}catch{} };
-  u.onend=()=>{ speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
+  const v=pickFemaleSpanishLocked();
+  u.lang = v?.lang || "es-MX";
+  if (v) u.voice=v;
+  u.volume = muted ? 0 : 1;
+  u.rate = 1; u.pitch = 1;
+
+  u.onstart = ()=>{
+    speaking = true;
+    try {
+      vid.currentTime = 0;
+      vid.loop = true;             // repetir mientras hable
+      vid.play().catch(()=>{});
+    } catch {}
+  };
+  u.onend = ()=>{
+    speaking = false;
+    try {
+      vid.loop = false;
+      vid.pause();
+    } catch {}
+  };
   speechSynthesis.speak(u);
 }
 
-/* detener / silenciar */
-document.getElementById("stop").onclick=()=>{ try{ speechSynthesis.cancel(); }catch{} speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
-document.getElementById("mute").onclick=()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
+/* Botón detener voz */
+document.getElementById("stop").onclick = ()=>{
+  try { speechSynthesis.cancel(); } catch {}
+  speaking = false;
+  try { vid.loop = false; vid.pause(); } catch {}
+};
 
-/* ============ Dictado (voz a texto) ============ */
+/* ========= Dictado (voz a texto) ========= */
 let rec,recOn=false;
-const mic=document.getElementById("mic");
 function toggleRec(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){ alert("Reconocimiento de voz no soportado."); return; }
@@ -213,90 +247,46 @@ function toggleRec(){
     rec.onend   =()=>{ recOn=false; mic.classList.remove("muted"); };
   }else{ rec.stop(); recOn=false; mic.classList.remove("muted"); }
 }
-mic.onclick=toggleRec;
 
-/* ============ Sesión local ============ */
+/* ========= Sesiones ========= */
 let sessionId="s-"+Date.now();
 let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
 const storeKey="sesiones-v1";
 function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
-function saveSession(){ const all=loadAllSessions(); const i=all.findIndex(s=>s.id===session.id); if(i>=0) all[i]=session; else all.unshift(session); localStorage.setItem(storeKey, JSON.stringify(all)); }
-
-/* ============ UI helpers ============ */
-const q=document.getElementById("q"), $gen=document.getElementById("general"), $lists=document.getElementById("lists"), $tables=document.getElementById("tables"), $status=document.getElementById("status"), $note=document.getElementById("note");
-function setBusy(b){ document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=b; el.style.opacity=b?.7:1; }); }
-
-/* Heurísticas para columnas Nombre/Curso/Paralelo */
-function findNameColumns(headers){
-  const cand=[/^nombre(s)?$/i,/^apellid/i,/estudiante/i,/alumn/i];
-  const out=[]; headers.forEach(h=>{ if(cand.some(rx=>rx.test(h))) out.push(h); });
-  if(!out.length){ const c=headers.find(h=>/nombre/i.test(h)); if(c) out.push(c); }
-  return out;
-}
-function findParallelColumn(headers){
-  return headers.find(h=>/paralelo|secci[oó]n|grupo/i.test(h)) || null;
-}
-function findCourseColumn(headers){
-  return headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h)) || null;
-}
-function fullNameFrom(row, nameCols){
-  return nameCols.map(c=>row[c]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
+function saveSession(){
+  const all=loadAllSessions();
+  const i=all.findIndex(s=>s.id===session.id);
+  if(i>=0) all[i]=session; else all.unshift(session);
+  localStorage.setItem(storeKey, JSON.stringify(all));
 }
 
-/* Transformación para "lista de estudiantes..." → solo Nombre/Curso/Paralelo, sin duplicados */
-function looksListStudents(q){ return /(lista|listado|despliega|muestr[ae]|dime)\s+.*(estudiant|alumn)/i.test(q||""); }
-function transformToCleanStudentList(answer){
-  try{
-    const a = answer || {};
-    const t = (a.tables||[])[0];
-    if(!t || !t.rows || !t.rows.length) return a;
+/* ========= UI ========= */
+const q=document.getElementById("q");
+const $gen=document.getElementById("general");
+const $lists=document.getElementById("lists");
+const $tables=document.getElementById("tables");
+const mic=document.getElementById("mic");
 
-    const headers = t.columns||[];
-    const rows = t.rows;
+document.getElementById("mute").onclick = ()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
+document.getElementById("clear").onclick= ()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; };
+document.getElementById("new").onclick  = ()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; alert("Nueva sesión creada."); };
+mic.onclick = toggleRec;
 
-    const nameCols = findNameColumns(headers);
-    const parCol   = findParallelColumn(headers);
-    const curCol   = findCourseColumn(headers);
-
-    if(!nameCols.length) return a;
-
-    // Reconstituir objetos para deduplicar
-    const idx = Object.fromEntries(headers.map((h,i)=>[h,i]));
-    const map = new Map();
-    rows.forEach(r=>{
-      // r puede ser array o objeto; normalizamos a objeto por headers
-      const obj = Array.isArray(r) ? Object.fromEntries(headers.map((h,i)=>[h, r[i]])) : r;
-      const nombre = fullNameFrom(obj, nameCols);
-      const curso  = curCol? (obj[curCol]??"") : "";
-      const para   = parCol? (obj[parCol]??"") : "";
-      if(!nombre) return;
-      const key = (nombre + "|" + curso + "|" + para).toLowerCase();
-      if(!map.has(key)) map.set(key, [nombre, String(curso), String(para)]);
-    });
-
-    const finalRows = Array.from(map.values()).sort((a,b)=>a[0].localeCompare(b[0], "es"));
-    return {
-      ...a,
-      lists: [],
-      tables: [{
-        title: t.title || "Listado de estudiantes",
-        columns: ["Nombre","Curso","Paralelo"],
-        rows: finalRows
-      }],
-      general: a.general || `Se listan ${finalRows.length} estudiantes.`
-    };
-  }catch{ return answer; }
-}
-
-/* render listas / tablas */
+/* ========= Render listas/tablas ========= */
 function renderLists(lists){
   $lists.innerHTML="";
-  if(!lists || !lists.length) return;
+  if(!lists||(Array.isArray(lists)&&lists.length===0)) return;
+  if(Array.isArray(lists) && typeof lists[0]==="string"){
+    const wrap=document.createElement("div"); wrap.className="list-card";
+    const ol=document.createElement("ol");
+    lists.forEach(item=>{ const li=document.createElement("li"); li.textContent=item; ol.appendChild(li); });
+    wrap.appendChild(ol); $lists.appendChild(wrap); return;
+  }
   (lists||[]).forEach(L=>{
     const wrap=document.createElement("div"); wrap.className="list-card";
     if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
     const ol=document.createElement("ol");
-    (L.items||[]).forEach((it)=>{ const li=document.createElement("li"); li.textContent=it; ol.appendChild(li); });
+    (L.items||[]).forEach(item=>{ const li=document.createElement("li"); li.textContent=item; ol.appendChild(li); });
     wrap.appendChild(ol); $lists.appendChild(wrap);
   });
 }
@@ -307,14 +297,19 @@ function renderTables(tables){
     const table=document.createElement("table");
     const thead=document.createElement("thead");
     const trh=document.createElement("tr");
+
+    /* SIEMPRE añadimos columna # al comienzo (numerar desde 1) */
     const cols = t.columns && t.columns.length ? ["#", ...t.columns] : ["#"];
     cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
     thead.appendChild(trh);
+
     const tbody=document.createElement("tbody");
     (t.rows||[]).forEach((r,idx)=>{
       const tr=document.createElement("tr");
       const tdIdx=document.createElement("td"); tdIdx.textContent=String(idx+1); tr.appendChild(tdIdx);
-      (Array.isArray(r)?r:[r]).forEach(v=>{ const td=document.createElement("td"); td.textContent=v; tr.appendChild(td); });
+      (Array.isArray(r)?r:[r]).forEach(v=>{
+        const td=document.createElement("td"); td.textContent=v; tr.appendChild(td);
+      });
       tbody.appendChild(tr);
     });
     table.appendChild(thead); table.appendChild(tbody);
@@ -322,131 +317,86 @@ function renderTables(tables){
   });
 }
 
-/* ============ Enviar pregunta ============ */
-const $send=document.getElementById("send");
-$send.onclick = async ()=>{
+/* ========= Enviar ========= */
+document.getElementById("send").onclick = async ()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
 
-  setBusy(true);
-  $note.textContent="";
-  const t0=performance.now();
-  $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML=""; $status.textContent="";
+  $gen.innerHTML="<em>Analizando…</em>";
+  $lists.innerHTML=""; $tables.innerHTML="";
 
-  const wantsStudentList = looksListStudents(prompt);
+  const r=await fetch("/api/answer",{
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ question: prompt })
+  }).then(r=>r.json()).catch(e=>({ok:false,error:String(e)}));
 
-  let r;
-  try {
-    r = await fetch("/api/answer",{
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      // En pedidos de lista, pedimos TODOS (48) al backend si lo soporta:
-      body: JSON.stringify({ question: prompt, ...(wantsStudentList? {forceFullList:true}: {}) })
-    }).then(x=>x.json());
-  } catch(e){
-    r = { ok:false, error: e.message||"Error de red" };
-  }
+  if(!r.ok){ $gen.textContent="Hubo un problema al analizar."; return; }
 
-  const t1=performance.now();
-  const ms=Math.max(1, Math.round(t1-t0));
-
-  if(!r || !r.ok){
-    $gen.textContent = "Hubo un problema al analizar: " + (r?.error || "desconocido");
-    $status.textContent = "";
-    setBusy(false);
-    return;
-  }
-
-  // Posprocesado: si es lista de estudiantes, limpiamos columnas y duplicados
-  let ans = r.answer || {};
-  if(wantsStudentList) ans = transformToCleanStudentList(ans);
-
-  // Render
+  const ans=r.answer||{};
   $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
-  renderLists(ans.lists||[]);
+  renderLists(ans.lists||ans.lista||[]);
   renderTables(ans.tables||[]);
+  speak(ans.general||""); // locutar TODO el texto
 
-  // Nota si visualmente detectamos pocas filas
-  const totalRows = (ans.tables && ans.tables[0] && ans.tables[0].rows) ? ans.tables[0].rows.length : 0;
-  if(wantsStudentList && totalRows && totalRows < 48){
-    $note.textContent = "Nota: se listaron " + totalRows + " estudiantes. Si esperabas 48, verifica el CSV o el filtro aplicado.";
-  }
-
-  $status.innerHTML = `Listo en ${ms/1000}s <span class="badge gpt">🧠 GPT-5</span>`;
-
-  // Voz (lee también listas y tablas)
-  speakFull(ans);
-
-  // Guardar sesión local
-  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans, meta:r.source||{} });
+  session.items.push({ at:new Date().toISOString(), q:prompt, a:ans });
   saveSession();
-  setBusy(false);
 };
 
-/* limpiar / nueva sesión */
-document.getElementById("clear").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; };
-document.getElementById("new").onclick=()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; alert("Nueva sesión creada."); };
-
-/* ============ Exportar toda la sesión ============ */
-const vidEl=document.getElementById("vid");
+/* ========= Exportar (toda la sesión activa) ========= */
 function sessionToHTML(sess){
   const headerThumbs = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
       <img src="/left.png" alt="left" style="height:50px"/>
-      <video src="${vidEl.currentSrc||vidEl.src}" width="120" muted></video>
+      <video src="${vid.currentSrc||vid.src}" width="120" muted></video>
       <img src="/right.png" alt="right" style="height:50px"/>
-    </div>`;
+    </div>
+  `;
   let html = `<h1>Sesión ${sess.id}</h1><p>Iniciada: ${new Date(sess.startedAt).toLocaleString()}</p>${headerThumbs}`;
   for(const it of (sess.items||[]).slice().reverse()){
-    html += `<hr><h2 style="font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
+    html += `<hr><h2 style="font-family:Arial; font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
     const a = it.a||{};
-    html += `<h2 style="font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
+    html += `<h2 style="font-family:Arial; font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
     if (a.lists && a.lists.length){
-      html += `<h3 style="font-weight:normal;">Listas</h3>`;
+      html += `<h3 style="font-family:Arial; font-weight:normal;">Listas</h3>`;
       a.lists.forEach(L=>{
         html += `<h4>${L.title||""}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`;
       });
     }
     if (a.tables && a.tables.length){
-      html += `<h3 style="font-weight:normal;">Tablas</h3>`;
+      html += `<h3 style="font-family:Arial; font-weight:normal;">Tablas</h3>`;
       a.tables.forEach(t=>{
         const cols = ["#", ...(t.columns||[])];
-        html += `<h4>${t.title||"Tabla"}</h4>
-        <table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%">
-          <thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
-          <tbody>
-            ${(t.rows||[]).map((row,idx)=>{
-              const arr = Array.isArray(row)?row:[row];
-              return `<tr><td>${idx+1}</td>${arr.map(v=>`<td>${String(v)}</td>`).join("")}</tr>`;
-            }).join("")}
-          </tbody>
-        </table>`;
+        html += `<h4>${t.title||"Tabla"}</h4><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%"><thead><tr>`;
+        cols.forEach(c=> html += `<th>${c}</th>` );
+        html += `</tr></thead><tbody>`;
+        (t.rows||[]).forEach((row,idx)=>{
+          const arr = Array.isArray(row)?row:[row];
+          html += `<tr><td>${idx+1}</td>` + arr.map(v=>`<td>${v}</td>`).join("") + `</tr>`;
+        });
+        html += `</tbody></table>`;
       });
     }
   }
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Exportación Sesión</title>
-  <style>
-    @page { size: A4; margin:12mm; }
-    body{ font-family:Arial, sans-serif; color:#111; }
-    table{ width:100%; border-collapse:collapse; margin:10px 0; table-layout:auto; }
-    th,td{ border:1px solid #ccc; padding:6px 8px; }
-    th{ background:#f5f5f5; }
-    h1,h2,h3,h4{ page-break-after: avoid; }
-    tr{ page-break-inside: avoid; }
-  </style></head><body>${html}</body></html>`;
+  return html;
 }
+
 document.getElementById("export").onclick=()=>{
   const kind=document.getElementById("exportKind").value;
-  const fullHTML = sessionToHTML(session);
+  const html = sessionToHTML(session);
+
   if(kind==="pdf"){
     const w = window.open("", "_blank");
-    w.document.write(fullHTML);
-    w.document.close(); w.focus(); w.print();
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+      <title>Exportación Sesión</title>
+      <style>body{font-family:Arial, sans-serif;}</style></head><body>${html}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
   } else if(kind==="doc"){
-    const blob=new Blob([fullHTML],{type:"application/msword"});
+    const blob=new Blob([`<html><head><meta charset="UTF-8"></head><body>${html}</body></html>`],{type:"application/msword"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.doc`; a.click();
   } else if(kind==="xls"){
-    // Exportamos solo tablas a CSV (compatibilidad Excel) — sin cortes
+    // Exporta todas las tablas de la sesión en CSV múltiple
     let csv="";
     (session.items||[]).forEach(it=>{
       const a=it.a||{};
