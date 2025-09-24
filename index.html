@@ -3,13 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>NNAsistente · CSV</title>
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-<meta http-equiv="Pragma" content="no-cache" />
-<meta http-equiv="Expires" content="0" />
+<title>Super Asistente · CSV</title>
 <style>
   :root{
-    --headerH: 45vh;       /* PARTE 1 fija = 45% vertical */
+    --headerH: 45vh;       /* Parte fija arriba = 45% de la pantalla */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -32,8 +29,8 @@
   }
   .topbar img{ max-height: calc(var(--headerH) - 48px); width:auto; object-fit:contain; }
   .video-wrap{ width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; }
-  .video-box{ width:100%; height:75% !important; display:flex; align-items:center; justify-content:center; } /* 75% del header */
-  .video-box video{ width:100%; height:100%; object-fit:contain !important; border:0; background:#fff; }
+  .video-box{ width:100%; height:75%; display:flex; align-items:center; justify-content:center; } /* 75% del header */
+  .video-box video{ width:100%; height:100%; object-fit:contain; border:0; background:#fff; }
 
   /* ===== Debajo de la franja fija ===== */
   main{ padding-top: var(--headerH); }
@@ -44,7 +41,7 @@
   #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; }
   .controls{ margin-bottom:10px; }
   .controls .row{
-    display:flex; flex-wrap:wrap; gap:8px; justify-content:center !important; align-items:center; width:100%;
+    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; width:100%;
   }
   textarea{
     width:min(1100px,98%); height:64px; padding:10px; font-size:15px;
@@ -57,7 +54,7 @@
   .new{ background:#ffe082; } .stop{ background:#ffcdd2; } .mic{ font-size:18px; padding:12px 16px; }
   h2{ margin:0 0 10px 0; font-size:18px; font-weight:normal; }
   .muted{ opacity:.5; }
-  .status{ margin:6px 0 0; text-align:center; font-size:12px; color:#666; min-height:18px; }
+  .status{ margin:6px 0 0; text-align:center; font-size:12px; color:#666; }
   .badge{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
   .gpt{ background:#f0e6ff; color:#402060; }
   .note{ font-size:12px; color:#777; margin-top:6px; }
@@ -136,231 +133,337 @@
 </main>
 
 <script>
-/* ==== Diagnóstico / errores visibles ==== */
-window.addEventListener("error", (e)=>{ console.error("JS Error:", e.message); const st=document.getElementById("status"); if(st) st.textContent="Error: "+e.message; });
-window.addEventListener("unhandledrejection", (e)=>{ console.error("Unhandled:", e.reason); const st=document.getElementById("status"); if(st) st.textContent="Error: "+(e.reason?.message||e.reason); });
+/* ============ Warmup + flush cache al cargar ============ */
+window.addEventListener("load", ()=>{ fetch("/api/answer?flush=1&q=__warmup").catch(()=>{}); });
 
-/* Warmup/flush backend */
-window.addEventListener("load", ()=>{ fetch("/api/answer?q=__warmup&flush=1").catch(()=>{}); });
-
-/* ====== Voz femenina ====== */
-const FEMALE_PRIORITY=[
-  "Microsoft Sabina Online (Natural) - Spanish (Mexico)","Microsoft Dalia Online (Natural) - Spanish (Mexico)",
-  "Microsoft Helena Online (Natural) - Spanish (Spain)","Microsoft Camila Online (Natural) - Spanish (Colombia)",
-  "Microsoft Lorena Online (Natural) - Spanish (Mexico)","Google español de Estados Unidos","Google español",
-  "Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
+/* ============ Voz femenina (y leer también tablas/listas) ============ */
+const FEMALE_PRIORITY = [
+  "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
+  "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
+  "Microsoft Helena Online (Natural) - Spanish (Spain)",
+  "Microsoft Camila Online (Natural) - Spanish (Colombia)",
+  "Microsoft Lorena Online (Natural) - Spanish (Mexico)",
+  "Google español de Estados Unidos","Google español","Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
 ];
-function pickFemaleVoice(){ const all=speechSynthesis.getVoices(); for(const n of FEMALE_PRIORITY){ const v=all.find(x=>x.name===n); if(v) return v; } return all.find(x=>/es/i.test(x.lang)); }
+function pickFemaleVoice(){
+  const all = speechSynthesis.getVoices();
+  for(const name of FEMALE_PRIORITY){
+    const v=all.find(x=>x.name===name);
+    if(v) return v;
+  }
+  return all.find(x=>/es/i.test(x.lang));
+}
 
-/* ====== Elementos ====== */
-const vid=document.getElementById("vid");
-const q=document.getElementById("q");
-const $gen=document.getElementById("general");
-const $lists=document.getElementById("lists");
-const $tables=document.getElementById("tables");
-const $status=document.getElementById("status");
-const $note=document.getElementById("note");
-function setBusy(b){ document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=!!b; el.style.opacity=b?0.7:1; }); $status.innerHTML=b?`Procesando… <span class="badge gpt">v-hotfix-4</span>`:""; }
-
-/* ====== Voz: lee texto + listas + tablas ====== */
 let muted=false, speaking=false;
-function tablesToReadableText(tables){ if(!tables?.length) return ""; let out=""; tables.forEach(t=>{ out+=` Tabla: ${(t.title||"Tabla")}. `; const cols=t.columns?.length?t.columns:[]; if(cols.length) out+=` Columnas: ${cols.join(", ")}. `; (t.rows||[]).forEach((row,i)=>{ const arr=Array.isArray(row)?row:[row]; out+=` Fila ${i+1}: ${arr.join(", ")}.`; }); }); return out.trim(); }
-function listsToReadableText(lists){ if(!lists?.length) return ""; let out=""; lists.forEach(L=>{ if(L.title) out+=` Lista: ${L.title}. `; (L.items||[]).forEach((it,i)=> out+=` Ítem ${i+1}: ${it}.`); }); return out.trim(); }
-function speakFull(ans){ const text=[ans?.general||"", listsToReadableText(ans?.lists||[]), tablesToReadableText(ans?.tables||[])].filter(Boolean).join(" "); if(!text) return; const u=new SpeechSynthesisUtterance(text); const v=pickFemaleVoice(); u.lang=v?.lang||"es-MX"; if(v) u.voice=v; u.volume=muted?0:1; u.rate=1; u.pitch=1; u.onstart=()=>{ speaking=true; try{ vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{});}catch{} }; u.onend=()=>{ speaking=false; try{ vid.loop=false; vid.pause(); }catch{} }; speechSynthesis.speak(u); }
+const vid = document.getElementById("vid");
 
-/* ====== Controles de voz ====== */
+function tablesToReadableText(tables){
+  if(!tables || !tables.length) return "";
+  let out = "";
+  tables.forEach(t=>{
+    out += ` Tabla: ${(t.title||"Tabla")}. `;
+    const cols = t.columns && t.columns.length ? t.columns : [];
+    if(cols.length) out += ` Columnas: ${cols.join(", ")}. `;
+    (t.rows||[]).forEach((row,idx)=>{
+      const arr = Array.isArray(row)?row:[row];
+      out += ` Fila ${idx+1}: ${arr.join(", ")}.`;
+    });
+  });
+  return out.trim();
+}
+function listsToReadableText(lists){
+  if(!lists || !lists.length) return "";
+  let out = "";
+  lists.forEach(L=>{
+    if(L.title) out += ` Lista: ${L.title}. `;
+    (L.items||[]).forEach((it,idx)=>{ out += ` Ítem ${idx+1}: ${it}.`; });
+  });
+  return out.trim();
+}
+
+function speakFull(answer){
+  const general = answer?.general || "";
+  const tablesTxt = tablesToReadableText(answer?.tables||[]);
+  const listsTxt  = listsToReadableText(answer?.lists||[]);
+  const text = [general, listsTxt, tablesTxt].filter(Boolean).join(" ");
+  if(!text) return;
+  const u=new SpeechSynthesisUtterance(text);
+  const v=pickFemaleVoice();
+  u.lang = v?.lang || "es-MX"; if(v) u.voice=v;
+  u.volume = muted ? 0 : 1; u.rate=1; u.pitch=1;
+  u.onstart=()=>{ speaking=true; try{ vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{});}catch{} };
+  u.onend=()=>{ speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
+  speechSynthesis.speak(u);
+}
+
+/* detener / silenciar */
 document.getElementById("stop").onclick=()=>{ try{ speechSynthesis.cancel(); }catch{} speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
 document.getElementById("mute").onclick=()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
 
-/* ====== Dictado ====== */
-let rec, recOn=false;
-document.getElementById("mic").onclick=()=>{
+/* ============ Dictado (voz a texto) ============ */
+let rec,recOn=false;
+const mic=document.getElementById("mic");
+function toggleRec(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){ alert("Reconocimiento de voz no soportado."); return; }
   if(!rec){ rec=new SR(); rec.lang="es-MX"; rec.continuous=false; rec.interimResults=false; }
-  if(!recOn){ rec.start(); recOn=true; mic.classList.add("muted"); rec.onresult=e=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); }; rec.onend=()=>{ recOn=false; mic.classList.remove("muted"); }; } else { rec.stop(); recOn=false; mic.classList.remove("muted"); }
-};
+  if(!recOn){
+    rec.start(); recOn=true; mic.classList.add("muted");
+    rec.onresult=e=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); };
+    rec.onend   =()=>{ recOn=false; mic.classList.remove("muted"); };
+  }else{ rec.stop(); recOn=false; mic.classList.remove("muted"); }
+}
+mic.onclick=toggleRec;
 
-/* ====== Sesión local ====== */
+/* ============ Sesión local ============ */
 let sessionId="s-"+Date.now();
 let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
 const storeKey="sesiones-v1";
 function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
 function saveSession(){ const all=loadAllSessions(); const i=all.findIndex(s=>s.id===session.id); if(i>=0) all[i]=session; else all.unshift(session); localStorage.setItem(storeKey, JSON.stringify(all)); }
 
-/* ====== Heurística: “lista de estudiantes …” ====== */
-function looksListStudents(txt){ return /(lista|listado|despliega|muestr[ae]|dime)\s+.*(estudiant|alumn)/i.test(txt||""); }
+/* ============ UI helpers ============ */
+const q=document.getElementById("q"), $gen=document.getElementById("general"), $lists=document.getElementById("lists"), $tables=document.getElementById("tables"), $status=document.getElementById("status"), $note=document.getElementById("note");
+function setBusy(b){ document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=b; el.style.opacity=b?.7:1; }); }
 
-/* ====== Render ====== */
-function renderLists(lists){ $lists.innerHTML=""; if(!lists?.length) return; lists.forEach(L=>{ const wrap=document.createElement("div"); wrap.className="list-card"; if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); } const ol=document.createElement("ol"); (L.items||[]).forEach(it=>{ const li=document.createElement("li"); li.textContent=it; ol.appendChild(li); }); wrap.appendChild(ol); $lists.appendChild(wrap); }); }
-function renderTables(tables){ $tables.innerHTML=""; (tables||[]).forEach(t=>{ const title=document.createElement("h3"); title.textContent=t.title||"Tabla"; const table=document.createElement("table"); const thead=document.createElement("thead"); const trh=document.createElement("tr"); const cols=t.columns?.length?["#",...t.columns]:["#"]; cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); }); thead.appendChild(trh); const tbody=document.createElement("tbody"); (t.rows||[]).forEach((r,idx)=>{ const tr=document.createElement("tr"); const tdIdx=document.createElement("td"); tdIdx.textContent=String(idx+1); tr.appendChild(tdIdx); (Array.isArray(r)?r:[r]).forEach(v=>{ const td=document.createElement("td"); td.textContent=v; tr.appendChild(td); }); tbody.appendChild(tr); }); table.appendChild(thead); table.appendChild(tbody); $tables.appendChild(title); $tables.appendChild(table); }); }
-
-/* ====== API con fallback ====== */
-async function callAnswerAPI(prompt, wantsList){
-  try{
-    const res=await fetch("/api/answer",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ question: prompt, ...(wantsList? {forceFullList:true}: {}) }) });
-    if(!res.ok) throw new Error(`POST /api/answer -> ${res.status}`);
-    return await res.json();
-  }catch(err){
-    console.warn("POST falló, probando GET…", err);
-    const url="/api/answer?q="+encodeURIComponent(prompt)+(wantsList?"&forceFullList=1":"");
-    const res2=await fetch(url);
-    if(!res2.ok) throw new Error(`GET /api/answer -> ${res2.status}`);
-    return await res2.json();
-  }
+/* Heurísticas para columnas Nombre/Curso/Paralelo */
+function findNameColumns(headers){
+  const cand=[/^nombre(s)?$/i,/^apellid/i,/estudiante/i,/alumn/i];
+  const out=[]; headers.forEach(h=>{ if(cand.some(rx=>rx.test(h))) out.push(h); });
+  if(!out.length){ const c=headers.find(h=>/nombre/i.test(h)); if(c) out.push(c); }
+  return out;
+}
+function findParallelColumn(headers){
+  return headers.find(h=>/paralelo|secci[oó]n|grupo/i.test(h)) || null;
+}
+function findCourseColumn(headers){
+  return headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h)) || null;
+}
+function fullNameFrom(row, nameCols){
+  return nameCols.map(c=>row[c]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
 }
 
-/* ====== Limpieza de “lista de estudiantes”: Nombre/Curso/Paralelo, sin duplicados ====== */
+/* Transformación para "lista de estudiantes..." → solo Nombre/Curso/Paralelo, sin duplicados */
+function looksListStudents(q){ return /(lista|listado|despliega|muestr[ae]|dime)\s+.*(estudiant|alumn)/i.test(q||""); }
 function transformToCleanStudentList(answer){
   try{
     const a = answer || {};
-    const tables = a.tables || [];
-    if (!tables.length) return a;
+    const t = (a.tables||[])[0];
+    if(!t || !t.rows || !t.rows.length) return a;
 
-    // Elegir mejor tabla candidata
-    const pick = tables.find(t=>{
-      const cols=(t.columns||[]).map(h=>String(h||""));
-      return cols.some(h=>/^nombre(s)?$/i.test(h) || /estudian|alumn|apellid/i.test(h));
-    }) || tables[0];
+    const headers = t.columns||[];
+    const rows = t.rows;
 
-    if (!pick || !pick.rows?.length) return a;
+    const nameCols = findNameColumns(headers);
+    const parCol   = findParallelColumn(headers);
+    const curCol   = findCourseColumn(headers);
 
-    const headers = (pick.columns||[]).map(String);
-    const rows = pick.rows;
+    if(!nameCols.length) return a;
 
-    const nameCols = headers.filter(h=>/^nombre(s)?$/i.test(h) || /estudian|alumn|apellid/i.test(h));
-    const parCol  = headers.find(h=>/paralelo|secci[oó]n|grupo/i.test(h));
-    const curCol  = headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h));
-
-    // Caso cuando la fila viene en un string "A S Oscar;13;DÉCIMO;B;..."
-    function splitGuess(s){
-      const parts = String(s).split(/;|,/).map(x=>x.trim()).filter(Boolean);
-      const nombre   = parts[0] || "";
-      const curso    = parts[2] ||
-        (parts.find(p=>/(d[eé]cimo|noveno|octavo|séptimo|sexto|quinto|cuarto|tercero|segundo|primero|preparatoria|bachillerato|educaci[oó]n)/i.test(p)) || "");
-      const paralelo = parts[3] ||
-        (parts.find(p=>/^[A-Z]$/i.test(p)) || "");
-      return [nombre, String(curso), String(paralelo)];
-    }
-
+    // Reconstituir objetos para deduplicar
+    const idx = Object.fromEntries(headers.map((h,i)=>[h,i]));
     const map = new Map();
-
     rows.forEach(r=>{
-      const arr = Array.isArray(r) ? r : [r];
-      let nombre="", curso="", paralelo="";
-
-      if (arr.length===1 && typeof arr[0]==="string" && /[;,]/.test(arr[0])) {
-        [nombre, curso, paralelo] = splitGuess(arr[0]);
-      } else {
-        const obj = Object.fromEntries(headers.map((h,i)=>[h, arr[i]]));
-        nombre   = nameCols.length ? nameCols.map(c=>obj[c]).filter(Boolean).join(" ").replace(/\s+/g," ").trim() : (arr[0]||"");
-        curso    = curCol ? (obj[curCol] ?? "") : (arr[2] ?? "");
-        paralelo = parCol ? (obj[parCol] ?? "") : (arr[3] ?? "");
-      }
-
-      if (!nombre) return;
-      const key = (nombre+"|"+curso+"|"+paralelo).toLowerCase();
-      if (!map.has(key)) map.set(key, [nombre, curso, paralelo]);
+      // r puede ser array o objeto; normalizamos a objeto por headers
+      const obj = Array.isArray(r) ? Object.fromEntries(headers.map((h,i)=>[h, r[i]])) : r;
+      const nombre = fullNameFrom(obj, nameCols);
+      const curso  = curCol? (obj[curCol]??"") : "";
+      const para   = parCol? (obj[parCol]??"") : "";
+      if(!nombre) return;
+      const key = (nombre + "|" + curso + "|" + para).toLowerCase();
+      if(!map.has(key)) map.set(key, [nombre, String(curso), String(para)]);
     });
 
-    const finalRows = Array.from(map.values())
-      .filter(v=>v[0])
-      .sort((a,b)=>a[0].localeCompare(b[0],"es"));
-
+    const finalRows = Array.from(map.values()).sort((a,b)=>a[0].localeCompare(b[0], "es"));
     return {
       ...a,
       lists: [],
       tables: [{
-        title:  pick.title || "Listado de estudiantes",
-        columns:["Nombre","Curso","Paralelo"],
-        rows:   finalRows
+        title: t.title || "Listado de estudiantes",
+        columns: ["Nombre","Curso","Paralelo"],
+        rows: finalRows
       }],
       general: a.general || `Se listan ${finalRows.length} estudiantes.`
     };
-  } catch(e){
-    console.warn("transformToCleanStudentList fallo:", e);
-    return answer;
-  }
+  }catch{ return answer; }
 }
 
-/* ====== Enviar ====== */
-document.getElementById("send").onclick=async()=>{
+/* render listas / tablas */
+function renderLists(lists){
+  $lists.innerHTML="";
+  if(!lists || !lists.length) return;
+  (lists||[]).forEach(L=>{
+    const wrap=document.createElement("div"); wrap.className="list-card";
+    if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
+    const ol=document.createElement("ol");
+    (L.items||[]).forEach((it)=>{ const li=document.createElement("li"); li.textContent=it; ol.appendChild(li); });
+    wrap.appendChild(ol); $lists.appendChild(wrap);
+  });
+}
+function renderTables(tables){
+  $tables.innerHTML="";
+  (tables||[]).forEach(t=>{
+    const title=document.createElement("h3"); title.textContent=t.title||"Tabla";
+    const table=document.createElement("table");
+    const thead=document.createElement("thead");
+    const trh=document.createElement("tr");
+    const cols = t.columns && t.columns.length ? ["#", ...t.columns] : ["#"];
+    cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
+    thead.appendChild(trh);
+    const tbody=document.createElement("tbody");
+    (t.rows||[]).forEach((r,idx)=>{
+      const tr=document.createElement("tr");
+      const tdIdx=document.createElement("td"); tdIdx.textContent=String(idx+1); tr.appendChild(tdIdx);
+      (Array.isArray(r)?r:[r]).forEach(v=>{ const td=document.createElement("td"); td.textContent=v; tr.appendChild(td); });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(thead); table.appendChild(tbody);
+    $tables.appendChild(title); $tables.appendChild(table);
+  });
+}
+
+/* ============ Enviar pregunta ============ */
+const $send=document.getElementById("send");
+$send.onclick = async ()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
+
   setBusy(true);
-  $note.textContent=""; $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
+  $note.textContent="";
   const t0=performance.now();
+  $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML=""; $status.textContent="";
 
-  const wantsList=looksListStudents(prompt);
+  const wantsStudentList = looksListStudents(prompt);
+
   let r;
-  try{ r=await callAnswerAPI(prompt, wantsList); }
-  catch(e){ $gen.textContent="Hubo un problema al analizar: "+(e.message||"desconocido"); $status.textContent=""; console.error("API error:",e); setBusy(false); return; }
+  try {
+    r = await fetch("/api/answer",{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      // En pedidos de lista, pedimos TODOS (48) al backend si lo soporta:
+      body: JSON.stringify({ question: prompt, ...(wantsStudentList? {forceFullList:true}: {}) })
+    }).then(x=>x.json());
+  } catch(e){
+    r = { ok:false, error: e.message||"Error de red" };
+  }
 
-  if(!r?.ok){ $gen.textContent="Hubo un problema al analizar: "+(r?.error||"desconocido"); $status.textContent=""; setBusy(false); return; }
+  const t1=performance.now();
+  const ms=Math.max(1, Math.round(t1-t0));
 
-  let ans=r.answer||{};
-  if(wantsList) ans=transformToCleanStudentList(ans);
+  if(!r || !r.ok){
+    $gen.textContent = "Hubo un problema al analizar: " + (r?.error || "desconocido");
+    $status.textContent = "";
+    setBusy(false);
+    return;
+  }
 
+  // Posprocesado: si es lista de estudiantes, limpiamos columnas y duplicados
+  let ans = r.answer || {};
+  if(wantsStudentList) ans = transformToCleanStudentList(ans);
+
+  // Render
   $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
   renderLists(ans.lists||[]);
   renderTables(ans.tables||[]);
 
-  const totalRows=(ans.tables && ans.tables[0] && ans.tables[0].rows)? ans.tables[0].rows.length : 0;
-  if(wantsList && totalRows && totalRows<48){ $note.textContent=`Nota: se listaron ${totalRows} estudiantes.`; }
+  // Nota si visualmente detectamos pocas filas
+  const totalRows = (ans.tables && ans.tables[0] && ans.tables[0].rows) ? ans.tables[0].rows.length : 0;
+  if(wantsStudentList && totalRows && totalRows < 48){
+    $note.textContent = "Nota: se listaron " + totalRows + " estudiantes. Si esperabas 48, verifica el CSV o el filtro aplicado.";
+  }
 
-  const ms=Math.max(1,Math.round(performance.now()-t0));
-  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-4</span>`;
+  $status.innerHTML = `Listo en ${ms/1000}s <span class="badge gpt">🧠 GPT-5</span>`;
 
+  // Voz (lee también listas y tablas)
   speakFull(ans);
 
+  // Guardar sesión local
   session.items.push({ at:new Date().toISOString(), q:prompt, a:ans, meta:r.source||{} });
   saveSession();
   setBusy(false);
 };
 
-/* Limpiar / nueva sesión */
+/* limpiar / nueva sesión */
 document.getElementById("clear").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; };
 document.getElementById("new").onclick=()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; alert("Nueva sesión creada."); };
 
-/* ====== Export ====== */
+/* ============ Exportar toda la sesión ============ */
 const vidEl=document.getElementById("vid");
 function sessionToHTML(sess){
-  const headerThumbs=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-    <img src="/left.png" alt="left" style="height:50px"/>
-    <video src="${vidEl.currentSrc||vidEl.src}" width="120" muted></video>
-    <img src="/right.png" alt="right" style="height:50px"/></div>`;
-  let html=`<h1>Sesión ${sess.id}</h1><p>Iniciada: ${new Date(sess.startedAt).toLocaleString()}</p>${headerThumbs}`;
+  const headerThumbs = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <img src="/left.png" alt="left" style="height:50px"/>
+      <video src="${vidEl.currentSrc||vidEl.src}" width="120" muted></video>
+      <img src="/right.png" alt="right" style="height:50px"/>
+    </div>`;
+  let html = `<h1>Sesión ${sess.id}</h1><p>Iniciada: ${new Date(sess.startedAt).toLocaleString()}</p>${headerThumbs}`;
   for(const it of (sess.items||[]).slice().reverse()){
-    html+=`<hr><h2 style="font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
-    const a=it.a||{};
-    html+=`<h2 style="font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
-    if(a.lists?.length){ html+=`<h3 style="font-weight:normal;">Listas</h3>`; a.lists.forEach(L=>{ html+=`<h4>${L.title||" "}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`; }); }
-    if(a.tables?.length){
-      html+=`<h3 style="font-weight:normal;">Tablas</h3>`;
+    html += `<hr><h2 style="font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
+    const a = it.a||{};
+    html += `<h2 style="font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
+    if (a.lists && a.lists.length){
+      html += `<h3 style="font-weight:normal;">Listas</h3>`;
+      a.lists.forEach(L=>{
+        html += `<h4>${L.title||""}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`;
+      });
+    }
+    if (a.tables && a.tables.length){
+      html += `<h3 style="font-weight:normal;">Tablas</h3>`;
       a.tables.forEach(t=>{
-        const cols=["#", ...(t.columns||[])];
-        html+=`<h4>${t.title||"Tabla"}</h4>
+        const cols = ["#", ...(t.columns||[])];
+        html += `<h4>${t.title||"Tabla"}</h4>
         <table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%">
           <thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
-          <tbody>${(t.rows||[]).map((row,idx)=>{ const arr=Array.isArray(row)?row:[row]; return `<tr><td>${idx+1}</td>${arr.map(v=>`<td>${String(v)}</td>`).join("")}</tr>`; }).join("")}</tbody>
+          <tbody>
+            ${(t.rows||[]).map((row,idx)=>{
+              const arr = Array.isArray(row)?row:[row];
+              return `<tr><td>${idx+1}</td>${arr.map(v=>`<td>${String(v)}</td>`).join("")}</tr>`;
+            }).join("")}
+          </tbody>
         </table>`;
       });
     }
   }
   return `<!doctype html><html><head><meta charset="utf-8"><title>Exportación Sesión</title>
-  <style>@page{size:A4;margin:12mm;} body{font-family:Arial,sans-serif;color:#111;}
-  table{width:100%;border-collapse:collapse;margin:10px 0;table-layout:auto;}
-  th,td{border:1px solid #ccc;padding:6px 8px;} th{background:#f5f5f5;}
-  h1,h2,h3,h4{page-break-after: avoid;} tr{page-break-inside: avoid;}</style></head><body>${html}</body></html>`;
+  <style>
+    @page { size: A4; margin:12mm; }
+    body{ font-family:Arial, sans-serif; color:#111; }
+    table{ width:100%; border-collapse:collapse; margin:10px 0; table-layout:auto; }
+    th,td{ border:1px solid #ccc; padding:6px 8px; }
+    th{ background:#f5f5f5; }
+    h1,h2,h3,h4{ page-break-after: avoid; }
+    tr{ page-break-inside: avoid; }
+  </style></head><body>${html}</body></html>`;
 }
 document.getElementById("export").onclick=()=>{
   const kind=document.getElementById("exportKind").value;
-  const fullHTML=sessionToHTML(session);
-  if(kind==="pdf"){ const w=window.open("","_blank"); w.document.write(fullHTML); w.document.close(); w.focus(); w.print(); }
-  else if(kind==="doc"){ const blob=new Blob([fullHTML],{type:"application/msword"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.doc`; a.click(); }
-  else if(kind==="xls"){
-    let csv=""; (session.items||[]).forEach(it=>{ const a=it.a||{}; (a.tables||[]).forEach(t=>{ csv+=(t.title||"Tabla")+"\n"; const header=["#", ...(t.columns||[])]; csv+=header.map(h=>`"${String(h).replace(/"/g,'""')}"`).join(",")+"\n"; (t.rows||[]).forEach((row,idx)=>{ const arr=Array.isArray(row)?row:[row]; const line=[String(idx+1), ...arr.map(v=>String(v))]; csv+=line.map(x=>`"${x.replace(/"/g,'""')}"`).join(",")+"\n"; }); csv+="\n"; }); });
-    const blob=new Blob([csv],{type:"application/vnd.ms-excel"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.xls`; a.click();
+  const fullHTML = sessionToHTML(session);
+  if(kind==="pdf"){
+    const w = window.open("", "_blank");
+    w.document.write(fullHTML);
+    w.document.close(); w.focus(); w.print();
+  } else if(kind==="doc"){
+    const blob=new Blob([fullHTML],{type:"application/msword"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.doc`; a.click();
+  } else if(kind==="xls"){
+    // Exportamos solo tablas a CSV (compatibilidad Excel) — sin cortes
+    let csv="";
+    (session.items||[]).forEach(it=>{
+      const a=it.a||{};
+      (a.tables||[]).forEach(t=>{
+        csv += (t.title||"Tabla") + "\n";
+        const header = ["#", ...(t.columns||[])];
+        csv += header.map(h=>`"${String(h).replace(/"/g,'""')}"`).join(",") + "\n";
+        (t.rows||[]).forEach((row,idx)=>{
+          const arr = Array.isArray(row)?row:[row];
+          const line = [String(idx+1), ...arr.map(v=>String(v))];
+          csv += line.map(x=>`"${x.replace(/"/g,'""')}"`).join(",") + "\n";
+        });
+        csv += "\n";
+      });
+    });
+    const blob=new Blob([csv],{type:"application/vnd.ms-excel"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.xls`; a.click();
   }
 };
 </script>
