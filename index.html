@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>jhAsistente · CSV</title>
+<title>hAsistente · CSV</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
@@ -32,8 +32,8 @@
   }
   .topbar img{ max-height: calc(var(--headerH) - 48px); width:auto; object-fit:contain; }
   .video-wrap{ width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; }
-  .video-box{ width:100%; height:75%; display:flex; align-items:center; justify-content:center; } /* 75% del header */
-  .video-box video{ width:100%; height:100%; object-fit:contain; border:0; background:#fff; }
+  .video-box{ width:100%; height:75% !important; display:flex; align-items:center; justify-content:center; } /* 75% del header */
+  .video-box video{ width:100%; height:100%; object-fit:contain !important; border:0; background:#fff; }
 
   /* ===== Debajo de la franja fija ===== */
   main{ padding-top: var(--headerH); }
@@ -44,7 +44,7 @@
   #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; }
   .controls{ margin-bottom:10px; }
   .controls .row{
-    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; width:100%;
+    display:flex; flex-wrap:wrap; gap:8px; justify-content:center !important; align-items:center; width:100%;
   }
   textarea{
     width:min(1100px,98%); height:64px; padding:10px; font-size:15px;
@@ -136,357 +136,195 @@
 </main>
 
 <script>
-/* ====== Diagnóstico y warmup ====== */
-window.addEventListener("error", (e)=> {
-  try { console.error("JS Error:", e.message, e.filename+":"+e.lineno); } catch {}
-  const st = document.getElementById("status");
-  if (st) st.textContent = "Error de script: " + e.message;
-});
-window.addEventListener("unhandledrejection", (e)=> {
-  try { console.error("Unhandled promise:", e.reason); } catch {}
-  const st = document.getElementById("status");
-  if (st) st.textContent = "Error de ejecución: " + (e.reason?.message || e.reason || "desconocido");
-});
+/* ==== Diagnóstico / errores visibles ==== */
+window.addEventListener("error", (e)=>{ console.error("JS Error:", e.message); const st=document.getElementById("status"); if(st) st.textContent="Error: "+e.message; });
+window.addEventListener("unhandledrejection", (e)=>{ console.error("Unhandled:", e.reason); const st=document.getElementById("status"); if(st) st.textContent="Error: "+(e.reason?.message||e.reason); });
+
+/* Warmup/flush backend */
 window.addEventListener("load", ()=>{ fetch("/api/answer?q=__warmup&flush=1").catch(()=>{}); });
 
 /* ====== Voz femenina ====== */
-const FEMALE_PRIORITY = [
-  "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
-  "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
-  "Microsoft Helena Online (Natural) - Spanish (Spain)",
-  "Microsoft Camila Online (Natural) - Spanish (Colombia)",
-  "Microsoft Lorena Online (Natural) - Spanish (Mexico)",
-  "Google español de Estados Unidos","Google español","Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
+const FEMALE_PRIORITY=[
+  "Microsoft Sabina Online (Natural) - Spanish (Mexico)","Microsoft Dalia Online (Natural) - Spanish (Mexico)",
+  "Microsoft Helena Online (Natural) - Spanish (Spain)","Microsoft Camila Online (Natural) - Spanish (Colombia)",
+  "Microsoft Lorena Online (Natural) - Spanish (Mexico)","Google español de Estados Unidos","Google español",
+  "Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
 ];
-function pickFemaleVoice(){
-  const all = speechSynthesis.getVoices();
-  for(const name of FEMALE_PRIORITY){
-    const v=all.find(x=>x.name===name);
-    if(v) return v;
-  }
-  return all.find(x=>/es/i.test(x.lang));
-}
+function pickFemaleVoice(){ const all=speechSynthesis.getVoices(); for(const n of FEMALE_PRIORITY){ const v=all.find(x=>x.name===n); if(v) return v; } return all.find(x=>/es/i.test(x.lang)); }
 
 /* ====== Elementos ====== */
-const vid    = document.getElementById("vid");
-const q      = document.getElementById("q");
-const $gen   = document.getElementById("general");
-const $lists = document.getElementById("lists");
-const $tables= document.getElementById("tables");
-const $status= document.getElementById("status");
-const $note  = document.getElementById("note");
+const vid=document.getElementById("vid");
+const q=document.getElementById("q");
+const $gen=document.getElementById("general");
+const $lists=document.getElementById("lists");
+const $tables=document.getElementById("tables");
+const $status=document.getElementById("status");
+const $note=document.getElementById("note");
+function setBusy(b){ document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=!!b; el.style.opacity=b?0.7:1; }); $status.innerHTML=b?`Procesando… <span class="badge gpt">v-hotfix-3</span>`:""; }
 
-function setBusy(b){
-  document.querySelectorAll("button,select,textarea").forEach(el=>{
-    el.disabled = !!b;
-    el.style.opacity = b ? 0.7 : 1;
-  });
-  $status.textContent = b ? "Procesando…" : "";
-}
-
-/* ====== Voz: leer texto + tablas/listas ====== */
+/* ====== Voz: lee texto + listas + tablas ====== */
 let muted=false, speaking=false;
-function tablesToReadableText(tables){
-  if(!tables || !tables.length) return "";
-  let out="";
-  tables.forEach(t=>{
-    out += ` Tabla: ${(t.title||"Tabla")}. `;
-    const cols = t.columns?.length ? t.columns : [];
-    if(cols.length) out += ` Columnas: ${cols.join(", ")}. `;
-    (t.rows||[]).forEach((row,i)=>{
-      const arr = Array.isArray(row)?row:[row];
-      out += ` Fila ${i+1}: ${arr.join(", ")}.`;
-    });
-  });
-  return out.trim();
-}
-function listsToReadableText(lists){
-  if(!lists || !lists.length) return "";
-  let out="";
-  lists.forEach(L=>{
-    if(L.title) out += ` Lista: ${L.title}. `;
-    (L.items||[]).forEach((it,i)=> out += ` Ítem ${i+1}: ${it}.`);
-  });
-  return out.trim();
-}
-function speakFull(answer){
-  const general = answer?.general || "";
-  const tablesTxt = tablesToReadableText(answer?.tables||[]);
-  const listsTxt  = listsToReadableText(answer?.lists||[]);
-  const text = [general, listsTxt, tablesTxt].filter(Boolean).join(" ");
-  if(!text) return;
-  const u = new SpeechSynthesisUtterance(text);
-  const v = pickFemaleVoice();
-  u.lang = v?.lang || "es-MX"; if(v) u.voice=v;
-  u.volume = muted ? 0 : 1; u.rate=1; u.pitch=1;
-  u.onstart=()=>{ speaking=true; try{ vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{});}catch{} };
-  u.onend  =()=>{ speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
-  speechSynthesis.speak(u);
-}
+function tablesToReadableText(tables){ if(!tables?.length) return ""; let out=""; tables.forEach(t=>{ out+=` Tabla: ${(t.title||"Tabla")}. `; const cols=t.columns?.length?t.columns:[]; if(cols.length) out+=` Columnas: ${cols.join(", ")}. `; (t.rows||[]).forEach((row,i)=>{ const arr=Array.isArray(row)?row:[row]; out+=` Fila ${i+1}: ${arr.join(", ")}.`; }); }); return out.trim(); }
+function listsToReadableText(lists){ if(!lists?.length) return ""; let out=""; lists.forEach(L=>{ if(L.title) out+=` Lista: ${L.title}. `; (L.items||[]).forEach((it,i)=> out+=` Ítem ${i+1}: ${it}.`); }); return out.trim(); }
+function speakFull(ans){ const text=[ans?.general||"", listsToReadableText(ans?.lists||[]), tablesToReadableText(ans?.tables||[])].filter(Boolean).join(" "); if(!text) return; const u=new SpeechSynthesisUtterance(text); const v=pickFemaleVoice(); u.lang=v?.lang||"es-MX"; if(v) u.voice=v; u.volume=muted?0:1; u.rate=1; u.pitch=1; u.onstart=()=>{ speaking=true; try{ vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{});}catch{} }; u.onend=()=>{ speaking=false; try{ vid.loop=false; vid.pause(); }catch{} }; speechSynthesis.speak(u); }
 
-/* ====== Botones voz ====== */
-document.getElementById("stop").addEventListener("click", ()=>{
-  try{ speechSynthesis.cancel(); }catch{}
-  speaking=false; try{ vid.loop=false; vid.pause(); }catch{}
-});
-document.getElementById("mute").addEventListener("click", ()=>{
-  muted = !muted;
-  alert(muted ? "Voz silenciada" : "Voz activada");
-});
+/* ====== Controles de voz ====== */
+document.getElementById("stop").onclick=()=>{ try{ speechSynthesis.cancel(); }catch{} speaking=false; try{ vid.loop=false; vid.pause(); }catch{} };
+document.getElementById("mute").onclick=()=>{ muted=!muted; alert(muted?"Voz silenciada":"Voz activada"); };
 
 /* ====== Dictado ====== */
 let rec, recOn=false;
-const mic = document.getElementById("mic");
-function toggleRec(){
-  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+document.getElementById("mic").onclick=()=>{
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){ alert("Reconocimiento de voz no soportado."); return; }
   if(!rec){ rec=new SR(); rec.lang="es-MX"; rec.continuous=false; rec.interimResults=false; }
-  if(!recOn){
-    rec.start(); recOn=true; mic.classList.add("muted");
-    rec.onresult=e=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); };
-    rec.onend   =()=>{ recOn=false; mic.classList.remove("muted"); };
-  }else{ rec.stop(); recOn=false; mic.classList.remove("muted"); }
-}
-mic.addEventListener("click", toggleRec);
+  if(!recOn){ rec.start(); recOn=true; mic.classList.add("muted"); rec.onresult=e=>{ const t=e.results[0][0].transcript||""; q.value=(q.value+" "+t).trim(); recOn=false; mic.classList.remove("muted"); }; rec.onend=()=>{ recOn=false; mic.classList.remove("muted"); }; } else { rec.stop(); recOn=false; mic.classList.remove("muted"); }
+};
 
-/* ====== Sesión local simple ====== */
+/* ====== Sesión local ====== */
 let sessionId="s-"+Date.now();
 let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
 const storeKey="sesiones-v1";
 function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
 function saveSession(){ const all=loadAllSessions(); const i=all.findIndex(s=>s.id===session.id); if(i>=0) all[i]=session; else all.unshift(session); localStorage.setItem(storeKey, JSON.stringify(all)); }
 
-/* ====== Heurística: “lista de estudiantes” ====== */
+/* ====== Heurística: “lista de estudiantes …” ====== */
 function looksListStudents(txt){ return /(lista|listado|despliega|muestr[ae]|dime)\s+.*(estudiant|alumn)/i.test(txt||""); }
 
 /* ====== Render ====== */
-function renderLists(lists){
-  $lists.innerHTML="";
-  if(!lists?.length) return;
-  lists.forEach(L=>{
-    const wrap=document.createElement("div"); wrap.className="list-card";
-    if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
-    const ol=document.createElement("ol");
-    (L.items||[]).forEach(it=>{ const li=document.createElement("li"); li.textContent=it; ol.appendChild(li); });
-    wrap.appendChild(ol); $lists.appendChild(wrap);
-  });
-}
-function renderTables(tables){
-  $tables.innerHTML="";
-  (tables||[]).forEach(t=>{
-    const title=document.createElement("h3"); title.textContent=t.title||"Tabla";
-    const table=document.createElement("table");
-    const thead=document.createElement("thead");
-    const trh=document.createElement("tr");
-    const cols = t.columns?.length ? ["#", ...t.columns] : ["#"];
-    cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
-    thead.appendChild(trh);
-    const tbody=document.createElement("tbody");
-    (t.rows||[]).forEach((r,idx)=>{
-      const tr=document.createElement("tr");
-      const tdIdx=document.createElement("td"); tdIdx.textContent=String(idx+1); tr.appendChild(tdIdx);
-      (Array.isArray(r)?r:[r]).forEach(v=>{ const td=document.createElement("td"); td.textContent=v; tr.appendChild(td); });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(thead); table.appendChild(tbody);
-    $tables.appendChild(title); $tables.appendChild(table);
-  });
-}
+function renderLists(lists){ $lists.innerHTML=""; if(!lists?.length) return; lists.forEach(L=>{ const wrap=document.createElement("div"); wrap.className="list-card"; if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); } const ol=document.createElement("ol"); (L.items||[]).forEach(it=>{ const li=document.createElement("li"); li.textContent=it; ol.appendChild(li); }); wrap.appendChild(ol); $lists.appendChild(wrap); }); }
+function renderTables(tables){ $tables.innerHTML=""; (tables||[]).forEach(t=>{ const title=document.createElement("h3"); title.textContent=t.title||"Tabla"; const table=document.createElement("table"); const thead=document.createElement("thead"); const trh=document.createElement("tr"); const cols=t.columns?.length?["#",...t.columns]:["#"]; cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); }); thead.appendChild(trh); const tbody=document.createElement("tbody"); (t.rows||[]).forEach((r,idx)=>{ const tr=document.createElement("tr"); const tdIdx=document.createElement("td"); tdIdx.textContent=String(idx+1); tr.appendChild(tdIdx); (Array.isArray(r)?r:[r]).forEach(v=>{ const td=document.createElement("td"); td.textContent=v; tr.appendChild(td); }); tbody.appendChild(tr); }); table.appendChild(thead); table.appendChild(tbody); $tables.appendChild(title); $tables.appendChild(table); }); }
 
-/* ====== API: POST con fallback a GET ====== */
+/* ====== API con fallback ====== */
 async function callAnswerAPI(prompt, wantsList){
   try{
-    const res = await fetch("/api/answer",{
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ question: prompt, ...(wantsList? {forceFullList:true}: {}) })
-    });
+    const res=await fetch("/api/answer",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ question: prompt, ...(wantsList? {forceFullList:true}: {}) }) });
     if(!res.ok) throw new Error(`POST /api/answer -> ${res.status}`);
     return await res.json();
   }catch(err){
-    console.warn("POST falló, intentando GET…", err);
-    const url = "/api/answer?q=" + encodeURIComponent(prompt);
-    const res2 = await fetch(url);
+    console.warn("POST falló, probando GET…", err);
+    const url="/api/answer?q="+encodeURIComponent(prompt)+(wantsList?"&forceFullList=1":"");
+    const res2=await fetch(url);
     if(!res2.ok) throw new Error(`GET /api/answer -> ${res2.status}`);
     return await res2.json();
   }
 }
 
-/* Limpiar “lista de estudiantes” (solo Nombre/Curso/Paralelo, sin duplicados) */
+/* ====== Elegir la mejor tabla para “lista de estudiantes” y limpiar ====== */
 function transformToCleanStudentList(answer){
   try{
-    const a = answer || {};
-    const t = (a.tables||[])[0];
-    if(!t || !t.rows?.length) return a;
-    const headers = t.columns||[];
-    const rows = t.rows;
+    const a=answer||{}; const tables=a.tables||[]; if(!tables.length) return a;
+    // Buscar tabla que tenga columnas de nombres típicos
+    const pick = tables.find(t=>{
+      const cols=(t.columns||[]).map(h=>String(h||""));
+      return cols.some(h=>/^nombre(s)?$/i.test(h) || /estudian|alumn|apellid/i.test(h));
+    }) || tables[0];
 
-    const nameCols = headers.filter(h=>/^nombre(s)?$/i.test(h) || /estudian|alumn|apellid/i.test(h));
-    const parCol   = headers.find(h=>/paralelo|secci[oó]n|grupo/i.test(h));
-    const curCol   = headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h));
+    if(!pick || !pick.rows?.length) return a;
+
+    const headers=pick.columns||[]; const rows=pick.rows;
+    const nameCols=headers.filter(h=>/^nombre(s)?$/i.test(h) || /estudian|alumn|apellid/i.test(h));
+    const parCol=headers.find(h=>/paralelo|secci[oó]n|grupo/i.test(h));
+    const curCol=headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h));
     if(!nameCols.length) return a;
 
-    const map = new Map();
+    const map=new Map();
     rows.forEach(r=>{
-      const arr = Array.isArray(r)?r:[r];
-      const obj = Object.fromEntries(headers.map((h,i)=>[h, arr[i]]));
-      const nombre = nameCols.map(c=>obj[c]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
-      const curso  = curCol? (obj[curCol]??"") : "";
-      const para   = parCol? (obj[parCol]??"") : "";
+      const arr=Array.isArray(r)?r:[r];
+      const obj=Object.fromEntries(headers.map((h,i)=>[h, arr[i]]));
+      const nombre=nameCols.map(c=>obj[c]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
+      const curso=curCol?(obj[curCol]??""):"";
+      const para=parCol?(obj[parCol]??""):"";
       if(!nombre) return;
-      const key = (nombre+"|"+curso+"|"+para).toLowerCase();
+      const key=(nombre+"|"+curso+"|"+para).toLowerCase();
       if(!map.has(key)) map.set(key, [nombre, String(curso), String(para)]);
     });
 
-    const finalRows = Array.from(map.values()).sort((a,b)=>a[0].localeCompare(b[0],"es"));
-    return {
-      ...a,
-      lists: [],
-      tables: [{ title: t.title || "Listado de estudiantes", columns: ["Nombre","Curso","Paralelo"], rows: finalRows }],
-      general: a.general || `Se listan ${finalRows.length} estudiantes.`
-    };
+    const finalRows=Array.from(map.values()).sort((a,b)=>a[0].localeCompare(b[0],"es"));
+    return { ...a, lists:[], tables:[{ title: pick.title||"Listado de estudiantes", columns:["Nombre","Curso","Paralelo"], rows:finalRows }], general: a.general || `Se listan ${finalRows.length} estudiantes.` };
   }catch{ return answer; }
 }
 
 /* ====== Enviar ====== */
-document.getElementById("send").addEventListener("click", async ()=>{
+document.getElementById("send").onclick=async()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
-
   setBusy(true);
   $note.textContent=""; $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
   const t0=performance.now();
 
-  const wantsList = looksListStudents(prompt);
+  const wantsList=looksListStudents(prompt);
   let r;
-  try{
-    r = await callAnswerAPI(prompt, wantsList);
-  }catch(e){
-    $gen.textContent = "Hubo un problema al analizar: " + (e.message||"desconocido");
-    $status.textContent = "";
-    console.error("API error:", e);
-    setBusy(false);
-    return;
-  }
+  try{ r=await callAnswerAPI(prompt, wantsList); }
+  catch(e){ $gen.textContent="Hubo un problema al analizar: "+(e.message||"desconocido"); $status.textContent=""; console.error("API error:",e); setBusy(false); return; }
 
-  if(!r?.ok){
-    $gen.textContent = "Hubo un problema al analizar: " + (r?.error || "desconocido");
-    $status.textContent = "";
-    setBusy(false);
-    return;
-  }
+  if(!r?.ok){ $gen.textContent="Hubo un problema al analizar: "+(r?.error||"desconocido"); $status.textContent=""; setBusy(false); return; }
 
-  let ans = r.answer || {};
-  if(wantsList) ans = transformToCleanStudentList(ans);
+  let ans=r.answer||{};
+  if(wantsList) ans=transformToCleanStudentList(ans);
 
   $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
   renderLists(ans.lists||[]);
   renderTables(ans.tables||[]);
 
-  const totalRows = (ans.tables && ans.tables[0] && ans.tables[0].rows) ? ans.tables[0].rows.length : 0;
-  if(wantsList && totalRows && totalRows < 48){
-    $note.textContent = `Nota: se listaron ${totalRows} estudiantes.`;
-  }
+  const totalRows=(ans.tables && ans.tables[0] && ans.tables[0].rows)? ans.tables[0].rows.length : 0;
+  if(wantsList && totalRows && totalRows<48){ $note.textContent=`Nota: se listaron ${totalRows} estudiantes.`; }
 
-  const ms = Math.max(1, Math.round(performance.now()-t0));
-  $status.innerHTML = `Listo en ${ms/1000}s <span class="badge gpt">🧠 GPT-5</span>`;
+  const ms=Math.max(1,Math.round(performance.now()-t0));
+  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-3</span>`;
 
   speakFull(ans);
 
   session.items.push({ at:new Date().toISOString(), q:prompt, a:ans, meta:r.source||{} });
   saveSession();
   setBusy(false);
-});
+};
 
 /* Limpiar / nueva sesión */
-document.getElementById("clear").addEventListener("click", ()=>{
-  $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent="";
-});
-document.getElementById("new").addEventListener("click", ()=>{
-  sessionId="s-"+Date.now();
-  session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
-  $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent="";
-  alert("Nueva sesión creada.");
-});
+document.getElementById("clear").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; };
+document.getElementById("new").onclick=()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; alert("Nueva sesión creada."); };
 
-/* ====== Exportación ====== */
+/* ====== Export ====== */
 const vidEl=document.getElementById("vid");
 function sessionToHTML(sess){
-  const headerThumbs = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-      <img src="/left.png" alt="left" style="height:50px"/>
-      <video src="${vidEl.currentSrc||vidEl.src}" width="120" muted></video>
-      <img src="/right.png" alt="right" style="height:50px"/>
-    </div>`;
-  let html = `<h1>Sesión ${sess.id}</h1><p>Iniciada: ${new Date(sess.startedAt).toLocaleString()}</p>${headerThumbs}`;
+  const headerThumbs=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+    <img src="/left.png" alt="left" style="height:50px"/>
+    <video src="${vidEl.currentSrc||vidEl.src}" width="120" muted></video>
+    <img src="/right.png" alt="right" style="height:50px"/></div>`;
+  let html=`<h1>Sesión ${sess.id}</h1><p>Iniciada: ${new Date(sess.startedAt).toLocaleString()}</p>${headerThumbs}`;
   for(const it of (sess.items||[]).slice().reverse()){
-    html += `<hr><h2 style="font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
-    const a = it.a||{};
-    html += `<h2 style="font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
-    if (a.lists?.length){
-      html += `<h3 style="font-weight:normal;">Listas</h3>`;
-      a.lists.forEach(L=>{
-        html += `<h4>${L.title||" "}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`;
-      });
-    }
-    if (a.tables?.length){
-      html += `<h3 style="font-weight:normal;">Tablas</h3>`;
+    html+=`<hr><h2 style="font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
+    const a=it.a||{};
+    html+=`<h2 style="font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
+    if(a.lists?.length){ html+=`<h3 style="font-weight:normal;">Listas</h3>`; a.lists.forEach(L=>{ html+=`<h4>${L.title||" "}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`; }); }
+    if(a.tables?.length){
+      html+=`<h3 style="font-weight:normal;">Tablas</h3>`;
       a.tables.forEach(t=>{
-        const cols = ["#", ...(t.columns||[])];
-        html += `<h4>${t.title||"Tabla"}</h4>
+        const cols=["#", ...(t.columns||[])];
+        html+=`<h4>${t.title||"Tabla"}</h4>
         <table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%">
           <thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
-          <tbody>
-            ${(t.rows||[]).map((row,idx)=>{
-              const arr = Array.isArray(row)?row:[row];
-              return `<tr><td>${idx+1}</td>${arr.map(v=>`<td>${String(v)}</td>`).join("")}</tr>`;
-            }).join("")}
-          </tbody>
+          <tbody>${(t.rows||[]).map((row,idx)=>{ const arr=Array.isArray(row)?row:[row]; return `<tr><td>${idx+1}</td>${arr.map(v=>`<td>${String(v)}</td>`).join("")}</tr>`; }).join("")}</tbody>
         </table>`;
       });
     }
   }
   return `<!doctype html><html><head><meta charset="utf-8"><title>Exportación Sesión</title>
-  <style>
-    @page { size: A4; margin:12mm; }
-    body{ font-family:Arial, sans-serif; color:#111; }
-    table{ width:100%; border-collapse:collapse; margin:10px 0; table-layout:auto; }
-    th,td{ border:1px solid #ccc; padding:6px 8px; }
-    th{ background:#f5f5f5; }
-    h1,h2,h3,h4{ page-break-after: avoid; }
-    tr{ page-break-inside: avoid; }
-  </style></head><body>${html}</body></html>`;
+  <style>@page{size:A4;margin:12mm;} body{font-family:Arial,sans-serif;color:#111;}
+  table{width:100%;border-collapse:collapse;margin:10px 0;table-layout:auto;}
+  th,td{border:1px solid #ccc;padding:6px 8px;} th{background:#f5f5f5;}
+  h1,h2,h3,h4{page-break-after: avoid;} tr{page-break-inside: avoid;}</style></head><body>${html}</body></html>`;
 }
-document.getElementById("export").addEventListener("click", ()=>{
+document.getElementById("export").onclick=()=>{
   const kind=document.getElementById("exportKind").value;
-  const fullHTML = sessionToHTML(session);
-  if(kind==="pdf"){
-    const w = window.open("", "_blank");
-    w.document.write(fullHTML);
-    w.document.close(); w.focus(); w.print();
-  } else if(kind==="doc"){
-    const blob=new Blob([fullHTML],{type:"application/msword"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.doc`; a.click();
-  } else if(kind==="xls"){
-    let csv="";
-    (session.items||[]).forEach(it=>{
-      const a=it.a||{};
-      (a.tables||[]).forEach(t=>{
-        csv += (t.title||"Tabla") + "\n";
-        const header = ["#", ...(t.columns||[])];
-        csv += header.map(h=>`"${String(h).replace(/"/g,'""')}"`).join(",") + "\n";
-        (t.rows||[]).forEach((row,idx)=>{
-          const arr = Array.isArray(row)?row:[row];
-          const line = [String(idx+1), ...arr.map(v=>String(v))];
-          csv += line.map(x=>`"${x.replace(/"/g,'""')}"`).join(",") + "\n";
-        });
-        csv += "\n";
-      });
-    });
-    const blob=new Blob([csv],{type:"application/vnd.ms-excel"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.xls`; a.click();
+  const fullHTML=sessionToHTML(session);
+  if(kind==="pdf"){ const w=window.open("","_blank"); w.document.write(fullHTML); w.document.close(); w.focus(); w.print(); }
+  else if(kind==="doc"){ const blob=new Blob([fullHTML],{type:"application/msword"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.doc`; a.click(); }
+  else if(kind==="xls"){
+    let csv=""; (session.items||[]).forEach(it=>{ const a=it.a||{}; (a.tables||[]).forEach(t=>{ csv+=(t.title||"Tabla")+"\n"; const header=["#", ...(t.columns||[])]; csv+=header.map(h=>`"${String(h).replace(/"/g,'""')}"`).join(",")+"\n"; (t.rows||[]).forEach((row,idx)=>{ const arr=Array.isArray(row)?row:[row]; const line=[String(idx+1), ...arr.map(v=>String(v))]; csv+=line.map(x=>`"${x.replace(/"/g,'""')}"`).join(",")+"\n"; }); csv+="\n"; }); });
+    const blob=new Blob([csv],{type:"application/vnd.ms-excel"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.xls`; a.click();
   }
-});
+};
 </script>
 </body>
 </html>
