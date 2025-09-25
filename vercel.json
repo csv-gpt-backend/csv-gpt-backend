@@ -1,3 +1,9 @@
 {
-  "version": 2
+  "version": 2,
+  "functions": {
+    "api/answer.js": {
+      "runtime": "nodejs18.x",
+      "maxDuration": 120
+    }
+  }
 }
