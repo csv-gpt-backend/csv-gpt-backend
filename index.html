@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>OK Asistente · CSV</title>
+<title>Asistente · CSVREV</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <style>
   :root{
-    --headerH: 45vh;       /* Parte fija arriba = 45% de la pantalla */
+    --headerH: 45vh;       /* PARTE 1 fija = 45% vertical */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -32,17 +32,19 @@
   }
   .topbar img{ max-height: calc(var(--headerH) - 48px); width:auto; object-fit:contain; }
   .video-wrap{ width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; }
-  /* 75% del header: más grande */
+  /* 75% del header: más grande y forzado */
   .video-box{ width:100%; height:75% !important; display:flex; align-items:center; justify-content:center; }
   .video-box video{ width:100%; height:100%; object-fit:contain !important; border:0; background:#fff; }
 
   /* ===== Debajo de la franja fija ===== */
   main{ padding-top: var(--headerH); }
-  /* Un solo scroll compartido para texto + tablas */
+  /* Un sólo scroll para todo lo de respuestas */
   #scrollWrap{ height: calc(100vh - var(--headerH)); overflow:auto; display:block; }
 
-  /* PARTE 2 */
-  #pane2{ padding:14px 16px; border-bottom:1px solid #f2f2f2; }
+  /* RESPUESTAS (todo unido) */
+  #pane{
+    padding:14px 16px;
+  }
   .controls{ margin-bottom:10px; }
   .controls .row{
     display:flex; flex-wrap:wrap; gap:8px; justify-content:center !important; align-items:center; width:100%;
@@ -59,26 +61,21 @@
   .replay{ background:#e1bee7; }     /* Reproducir voz */
   .mic{ font-size:18px; padding:12px 16px; }
   .new{ background:#ffe082; }
-  h2{ margin:0 0 10px 0; font-size:18px; font-weight:normal; }
+  h2{ margin:8px 0 10px 0; font-size:18px; font-weight:normal; }
   .muted{ opacity:.5; }
   .status{ margin:6px 0 0; text-align:center; font-size:12px; color:#666; min-height:18px; }
   .badge{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
   .gpt{ background:#f0e6ff; color:#402060; }
   .note{ font-size:12px; color:#777; margin-top:6px; }
 
-  /* PARTE 3 */
-  #pane3{ padding:14px 16px; }
   table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; table-layout:auto; }
   th,td{ border:1px solid #e5e5e5; padding:6px 8px; text-align:left; vertical-align:top; }
   th{ background:#fafafa; }
   ol{ margin:10px 0 16px 22px; }
-  .list-card{ margin:10px 0; }
 
-  /* Leyenda de ayuda */
   .legend{ margin-top:6px; font-size:12px; color:#666; text-align:center; }
   .legend code{ background:#f7f7f7; padding:0 4px; border-radius:4px; }
 
-  /* Impresión (exportación a PDF en ventana) */
   @media print{
     @page { size: A4; margin:12mm; }
     table{ page-break-inside: avoid; width:100%; }
@@ -102,11 +99,8 @@
 </header>
 
 <main>
-  <!-- Un solo contenedor con scroll para las partes 2 y 3 -->
   <div id="scrollWrap">
-
-    <!-- PARTE 2 -->
-    <section id="pane2">
+    <section id="pane">
       <div class="controls">
         <div class="row">
           <textarea id="q" placeholder="Escribe tu pregunta (o usa el micrófono)…"></textarea>
@@ -114,17 +108,10 @@
         <div class="row">
           <button id="send" title="Enviar la pregunta y analizar">Enviar</button>
           <button id="mic" class="mic" title="Dictar por voz (es-MX/es-ES)">🎤 Dictar</button>
-
-          <!-- Pausar/Reanudar voz+video -->
           <button id="toggleVV" class="toggle" title="Pausar/Reanudar voz y video">⏯ Voz/Video</button>
-
-          <!-- Reproducir nuevamente la voz -->
           <button id="replay" class="replay" title="Volver a hablar toda la respuesta (texto + tablas + listas)">Reproducir voz</button>
-
           <button id="clear" title="Limpia el texto y tablas en pantalla (no borra memoria)">Limpiar</button>
           <button id="new" class="new" title="Crea una nueva sesión y borra todo el contexto">Nueva sesión</button>
-
-          <!-- Exportación directa (onchange) -->
           <select id="exportKind" title="Exporta inmediatamente al formato elegido">
             <option value="">Exportar…</option>
             <option value="pdf">PDF</option>
@@ -132,41 +119,46 @@
             <option value="doc">DOC</option>
           </select>
         </div>
-
-        <!-- Leyenda breve de los botones -->
         <div class="legend">
-          <strong>Ayuda rápida:</strong>
-          <code>Enviar</code> analiza; <code>🎤 Dictar</code> convierte voz a texto;
-          <code>⏯ Voz/Video</code> pausa/continúa la locución (y el video);
-          <code>Reproducir voz</code> vuelve a leer toda la respuesta;
-          <code>Limpiar</code> borra lo visible; <code>Nueva sesión</code> reinicia el contexto; <code>Exportar…</code> descarga toda la sesión.
+          <strong>Ayuda:</strong>
+          <code>Enviar</code> analiza; <code>🎤 Dictar</code> voz→texto;
+          <code>⏯ Voz/Video</code> pausa/continúa locución y video;
+          <code>Reproducir voz</code> vuelve a leer todo;
+          <code>Limpiar</code> borra lo visible; <code>Nueva sesión</code> reinicia; <code>Exportar…</code> descarga.
         </div>
-
         <div id="status" class="status"></div>
         <div id="note" class="note"></div>
       </div>
 
-      <h2>Respuesta (texto e información general)</h2>
+      <h2>Respuesta (texto, listas y tablas)</h2>
       <div id="general"></div>
-    </section>
-
-    <!-- PARTE 3 -->
-    <section id="pane3">
-      <h2>Listas numeradas y tablas</h2>
       <div id="lists"></div>
       <div id="tables"></div>
     </section>
-
   </div>
 </main>
 
 <script>
-/* ========= Warmup + flush cache al cargar ========= */
+/* ========= Warmup ========= */
 window.addEventListener("load", ()=>{
   fetch("/api/answer?flush=1&q=__warmup").catch(()=>{});
 });
 
-/* ========= Voz femenina fija en ES ========= */
+/* ========= Util: esperar voces del sistema ========= */
+function ensureVoicesReady(timeoutMs=2000){
+  return new Promise(resolve=>{
+    const start=Date.now();
+    const tick=()=>{
+      const vs=speechSynthesis.getVoices();
+      if(vs && vs.length){ resolve(vs); return; }
+      if(Date.now()-start>timeoutMs){ resolve(vs||[]); return; }
+      setTimeout(tick, 100);
+    };
+    tick();
+  });
+}
+
+/* ========= Voz femenina fija ========= */
 const FEMALE_PRIORITY=[
   "Microsoft Sabina Online (Natural) - Spanish (Mexico)","Microsoft Dalia Online (Natural) - Spanish (Mexico)",
   "Microsoft Helena Online (Natural) - Spanish (Spain)","Microsoft Camila Online (Natural) - Spanish (Colombia)",
@@ -185,11 +177,11 @@ function pickFemaleVoice(){
 speechSynthesis.onvoiceschanged=()=>{ pickFemaleVoice(); };
 
 const vid=document.getElementById("vid");
-let paused=false;     // estado del botón ⏯
-let speaking=false;   // hay locución en curso
-let lastAnswer=null;  // recordamos última respuesta para “Reproducir voz”
+let speaking=false, paused=false;
+let lastAnswer=null;
 
-function tablesToReadableText(tables){
+/* ========= Convertir tablas/listas a texto (desde objeto o DOM) ========= */
+function tablesObjToText(tables){
   if(!tables?.length) return "";
   let out="";
   tables.forEach(t=>{
@@ -203,7 +195,7 @@ function tablesToReadableText(tables){
   });
   return out.trim();
 }
-function listsToReadableText(lists){
+function listsObjToText(lists){
   if(!lists?.length) return "";
   let out="";
   lists.forEach(L=>{
@@ -212,24 +204,64 @@ function listsToReadableText(lists){
   });
   return out.trim();
 }
-function speakFull(ans){
-  if(!ans) return;
-  const text=[ans.general||"", listsToReadableText(ans.lists||[]), tablesToReadableText(ans.tables||[])].filter(Boolean).join(" ");
+/* Fallback: leer lo que está pintado en el DOM (por si el backend no incluyó listas/tablas) */
+function tablesDOMToText(){
+  const tbls=document.querySelectorAll("#tables table");
+  let out="";
+  tbls.forEach((table,ti)=>{
+    const titleEl=table.previousElementSibling;
+    const title=titleEl && titleEl.tagName.startsWith("H") ? titleEl.textContent.trim() : `Tabla ${ti+1}`;
+    out+=` Tabla: ${title}. `;
+    const headers=[...table.querySelectorAll("thead th")].map(th=>th.textContent.trim());
+    if(headers.length) out+=` Columnas: ${headers.join(", ")}. `;
+    const rows=[...table.querySelectorAll("tbody tr")];
+    rows.forEach((tr,i)=>{
+      const cells=[...tr.querySelectorAll("td")].map(td=>td.textContent.trim());
+      out+=` Fila ${i+1}: ${cells.join(", ")}.`;
+    });
+  });
+  return out.trim();
+}
+function listsDOMToText(){
+  const lists=[...document.querySelectorAll("#lists ol")];
+  let out="";
+  lists.forEach((ol,li)=>{
+    const tEl=ol.previousElementSibling;
+    const title=tEl && tEl.tagName.startsWith("H") ? tEl.textContent.trim() : `Lista ${li+1}`;
+    out+=` Lista: ${title}. `;
+    const items=[...ol.querySelectorAll("li")].map((li,i)=>`Ítem ${i+1}: ${li.textContent.trim()}.`).join(" ");
+    out+=items;
+  });
+  return out.trim();
+}
+
+/* ========= Hablar toda la respuesta ========= */
+async function speakFull(ans){
+  await ensureVoicesReady();
+  const v=pickFemaleVoice();
+
+  // Construir el texto a leer desde answer + fallback DOM
+  const general=ans?.general || document.getElementById("general").innerText || "";
+  const t1=tablesObjToText(ans?.tables||[]);
+  const l1=listsObjToText(ans?.lists||[]);
+  // Fallback si vino vacío en el objeto, leemos del DOM
+  const t2=t1 || tablesDOMToText();
+  const l2=l1 || listsDOMToText();
+
+  const text=[general, l2, t2].filter(Boolean).join(" ").trim();
   if(!text) return;
 
-  // Si estaba pausado, reanudar en vez de crear otra utterance
-  if (paused && speaking) {
+  // Si estaba pausado y hay utterance en curso -> reanudar
+  if(paused && speaking){
     try{ speechSynthesis.resume(); vid.play().catch(()=>{}); }catch{}
     paused=false; return;
   }
 
-  // Cancelar cualquier cola previa y hablar de cero
+  // Cancelar cualquier resto y hablar de cero
   try{ speechSynthesis.cancel(); }catch{}
 
   const u=new SpeechSynthesisUtterance(text);
-  const v=pickFemaleVoice();
-  u.lang=v?.lang||"es-MX";
-  if(v) u.voice=v;
+  u.lang=v?.lang||"es-MX"; if(v) u.voice=v;
   u.rate=1; u.pitch=1; u.volume=1;
 
   u.onstart=()=>{ speaking=true; try{ vid.currentTime=0; vid.loop=true; vid.play().catch(()=>{});}catch{} };
@@ -241,7 +273,6 @@ function speakFull(ans){
 /* Botón ⏯ Voz/Video */
 document.getElementById("toggleVV").onclick=()=>{
   if(!speaking){
-    // Si no hay voz activa, reproduce la última respuesta completa
     if(lastAnswer){ speakFull(lastAnswer); }
     return;
   }
@@ -262,6 +293,7 @@ document.getElementById("replay").onclick=()=>{
 };
 
 /* ========= Dictado (voz a texto) ========= */
+const q=document.getElementById("q");
 let rec,recOn=false;
 document.getElementById("mic").onclick=()=>{
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -275,25 +307,21 @@ document.getElementById("mic").onclick=()=>{
 };
 
 /* ========= Sesión local ========= */
-let sessionId="s-"+Date.now();
-let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
-const storeKey="sesiones-v1";
-function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
-function saveSession(){ const all=loadAllSessions(); const i=all.findIndex(s=>s.id===session.id); if(i>=0) all[i]=session; else all.unshift(session); localStorage.setItem(storeKey, JSON.stringify(all)); }
-
-/* ========= Heurística: “lista de estudiantes …” (opcional front) ========= */
-function looksListStudents(txt){ return /(lista|listado|despliega|muestr[ae]|dime)\s+.*(estudiant|alumn)/i.test(txt||""); }
-
-/* ========= Render ========= */
-const q=document.getElementById("q");
 const $gen=document.getElementById("general");
 const $lists=document.getElementById("lists");
 const $tables=document.getElementById("tables");
 const $status=document.getElementById("status");
 const $note=document.getElementById("note");
 
+let sessionId="s-"+Date.now();
+let session={ id:sessionId, startedAt:new Date().toISOString(), items:[] };
+const storeKey="sesiones-v1";
+function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
+function saveSession(){ const all=loadAllSessions(); const i=all.findIndex(s=>s.id===session.id); if(i>=0) all[i]=session; else all.unshift(session); localStorage.setItem(storeKey, JSON.stringify(all)); }
+
+/* ========= Render ========= */
 function renderLists(lists){ $lists.innerHTML=""; if(!lists?.length) return;
-  lists.forEach(L=>{ const wrap=document.createElement("div"); wrap.className="list-card";
+  lists.forEach(L=>{ const wrap=document.createElement("div");
     if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
     const ol=document.createElement("ol");
     (L.items||[]).forEach(it=>{ const li=document.createElement("li"); li.textContent=it; ol.appendChild(li); });
@@ -327,16 +355,19 @@ async function callAnswerAPI(prompt){
 document.getElementById("send").onclick=async()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
+
   document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=true; el.style.opacity=0.7; });
-  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-5</span>`;
+  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-6</span>`;
   $note.textContent=""; $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
   const t0=performance.now();
 
   let r;
   try{ r=await callAnswerAPI(prompt); }
-  catch(e){ $gen.textContent="Hubo un problema al analizar: "+(e.message||"desconocido"); $status.textContent=""; console.error("API error:",e); document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=false; el.style.opacity=1; }); return; }
+  catch(e){ $gen.textContent="Hubo un problema al analizar: "+(e.message||"desconocido"); $status.textContent=""; console.error("API error:",e);
+    document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=false; el.style.opacity=1; }); return; }
 
-  if(!r?.ok){ $gen.textContent="Hubo un problema al analizar: "+(r?.error||"desconocido"); $status.textContent=""; document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=false; el.style.opacity=1; }); return; }
+  if(!r?.ok){ $gen.textContent="Hubo un problema al analizar: "+(r?.error||"desconocido"); $status.textContent="";
+    document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=false; el.style.opacity=1; }); return; }
 
   const ans=r.answer||{};
   lastAnswer=ans;
@@ -346,23 +377,22 @@ document.getElementById("send").onclick=async()=>{
   renderTables(ans.tables||[]);
 
   const ms=Math.max(1,Math.round(performance.now()-t0));
-  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-5</span>`;
+  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-6</span>`;
 
-  // Iniciar locución completa (texto + listas + tablas)
+  // Hablar SIEMPRE toda la respuesta (texto + listas + tablas) con fallback DOM
   speakFull(ans);
 
-  // Guardar en sesión
   session.items.push({ at:new Date().toISOString(), q:prompt, a:ans, meta:r.source||{} });
   saveSession();
 
   document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=false; el.style.opacity=1; });
 };
 
-/* Limpiar / nueva sesión */
+/* ========= Limpiar / nueva sesión ========= */
 document.getElementById("clear").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; };
 document.getElementById("new").onclick=()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; alert("Nueva sesión creada."); };
 
-/* ========= Exportación directa (onchange) ========= */
+/* ========= Exportación directa ========= */
 const vidEl=document.getElementById("vid");
 function sessionToHTML(sess){
   const headerThumbs=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
@@ -373,7 +403,7 @@ function sessionToHTML(sess){
   for(const it of (sess.items||[]).slice().reverse()){
     html+=`<hr><h2 style="font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
     const a=it.a||{};
-    html+=`<h2 style="font-weight:normal;">Respuesta (texto e información general)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
+    html+=`<h2 style="font-weight:normal;">Respuesta (texto, listas y tablas)</h2><div>${(a.general||"").replace(/\n/g,"<br>")}</div>`;
     if(a.lists?.length){ html+=`<h3 style="font-weight:normal;">Listas</h3>`; a.lists.forEach(L=>{ html+=`<h4>${L.title||" "}</h4><ol>`+(L.items||[]).map(x=>`<li>${x}</li>`).join("")+`</ol>`; }); }
     if(a.tables?.length){
       html+=`<h3 style="font-weight:normal;">Tablas</h3>`;
@@ -402,7 +432,6 @@ function exportNow(kind){
     let csv=""; (session.items||[]).forEach(it=>{ const a=it.a||{}; (a.tables||[]).forEach(t=>{ csv+=(t.title||"Tabla")+"\n"; const header=["#", ...(t.columns||[])]; csv+=header.map(h=>`"${String(h).replace(/"/g,'""')}"`).join(",")+"\n"; (t.rows||[]).forEach((row,idx)=>{ const arr=Array.isArray(row)?row:[row]; const line=[String(idx+1), ...arr.map(v=>String(v))]; csv+=line.map(x=>`"${x.replace(/"/g,'""')}"`).join(",")+"\n"; }); csv+="\n"; }); });
     const blob=new Blob([csv],{type:"application/vnd.ms-excel"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`sesion-${session.id}.xls`; a.click();
   }
-  // volver al placeholder
   document.getElementById("exportKind").value="";
 }
 document.getElementById("exportKind").addEventListener("change", (e)=> exportNow(e.target.value));
