@@ -3,15 +3,16 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>bf Asistente · CSV</title>
+<title>nnAsistente · CSV</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <style>
   :root{
-    /* Alto relativo de la franja fija (video + logos) */
-    --headerH: 50vh;          /* puedes subir a 60–70vh si lo deseas */
-    --gapBelowHeader: 24px;   /* se sumará al alto real del header (calculado por JS) */
+    /* AHORA EXACTO 75% DE LA VENTANA */
+    --headerH: 75vh;
+    /* Un poco más de colchón para evitar que la sección 2 “suba” en pantallas justas */
+    --gapBelowHeader: 32px;
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -20,7 +21,7 @@
   /* ===== PARTE 1: FIJA ===== */
   header{
     position: fixed; top:0; left:0; right:0; height:var(--headerH);
-    background:#fff; /* SIN línea debajo */
+    background:#fff; /* sin línea */
     z-index:20;
   }
   #histLink{
@@ -48,11 +49,9 @@
   .video-box{ width:100%; height:100% !important; display:flex; align-items:center; justify-content:center; }
   .video-box video{ width:100%; height:100%; object-fit:contain !important; border:0; background:#fff; }
 
-  /* ===== Debajo de la franja fija =====
-     Estos valores NO son fijos: el JS calcula el padding real,
-     para que la caja de texto JAMÁS quede detrás del video. */
-  main{ padding-top: 1px; }         /* será actualizado por JS */
-  #scrollWrap{ height: 1px; }       /* será actualizado por JS */
+  /* ===== Debajo de la franja fija (se calcula por JS) ===== */
+  main{ padding-top: 1px; }
+  #scrollWrap{ height: 1px; }
 
   /* RESPUESTAS / controles */
   #pane{ padding:14px 16px; }
@@ -163,31 +162,31 @@
 </main>
 
 <script>
-/* ============== Ajuste dinámico debajo del video ================= */
+/* ===== Ajuste dinámico debajo del video ===== */
 function resizeLayout(){
   const hdr = document.getElementById("hdr");
   const main = document.getElementById("main");
   const wrap = document.getElementById("scrollWrap");
 
-  const headerPx = hdr.offsetHeight;                  // alto real del header (video + logos)
+  const headerPx = hdr.offsetHeight;
   const gap = parseInt(getComputedStyle(document.documentElement)
-              .getPropertyValue('--gapBelowHeader')) || 24;
+              .getPropertyValue('--gapBelowHeader')) || 32;
 
-  const padTop = headerPx + gap;                      // colchón real
+  const padTop = headerPx + gap;
   main.style.paddingTop = padTop + "px";
 
   const vh = window.innerHeight;
-  wrap.style.height = Math.max(200, vh - padTop) + "px";
+  wrap.style.height = Math.max(240, vh - padTop) + "px";
 }
 window.addEventListener("load", resizeLayout);
 window.addEventListener("resize", resizeLayout);
 
-/* ============== Warmup backend ============== */
+/* ===== Warmup backend ===== */
 window.addEventListener("load", ()=>{
   fetch("/api/answer?flush=1&q=__warmup").catch(()=>{});
 });
 
-/* ============== Voces: priorizar mujer en español ============== */
+/* ===== Voces: priorizar mujer en español ===== */
 function ensureVoicesReady(timeoutMs=2000){
   return new Promise(resolve=>{
     const start=Date.now();
@@ -196,10 +195,8 @@ function ensureVoicesReady(timeoutMs=2000){
     tick();
   });
 }
-
 const VOICE_KEY="voz-femenina-preferida";
-/* nombres femeninos conocidos y exclusión de masculinos */
-const FEMALE_PREF = [
+const FEMALE_PREF=[
   "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
   "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
   "Microsoft Helena Online (Natural) - Spanish (Spain)",
@@ -208,37 +205,22 @@ const FEMALE_PREF = [
   "Google español de Estados Unidos","Google español",
   "Sabina","Dalia","Helena","Camila","Lucia","Isabel","Ana","Paulina","Mónica","Olivia","Laura","Elena"
 ];
-const MALE_HINTS = /diego|jorge|carlos|miguel|pablo|javier|andrés|luis|sergio|josé|manuel|enrique|alejandro/i;
+const MALE_HINTS=/diego|jorge|carlos|miguel|pablo|javier|andrés|luis|sergio|josé|manuel|enrique|alejandro/i;
 
 function pickFemaleVoice(){
-  const all = speechSynthesis.getVoices() || [];
-
-  const saved = localStorage.getItem(VOICE_KEY);
-  if(saved){
-    const v = all.find(x=>x.name===saved);
-    if(v) return v;
-    localStorage.removeItem(VOICE_KEY);
-  }
-
-  for(const n of FEMALE_PREF){
-    const v = all.find(x=>x.name===n);
-    if(v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
-  }
-
-  // voces en español que NO parezcan masculinas
-  const esFem = all.find(v => /^(es|es-)/i.test(v.lang||"") && !MALE_HINTS.test(v.name||""));
-  if(esFem){ localStorage.setItem(VOICE_KEY, esFem.name); return esFem; }
-
-  // cualquier español
-  const esAny = all.find(v => /^(es|es-)/i.test(v.lang||""));
-  if(esAny){ localStorage.setItem(VOICE_KEY, esAny.name); return esAny; }
-
-  // fallback
-  return all[0] || null;
+  const all=speechSynthesis.getVoices()||[];
+  const saved=localStorage.getItem(VOICE_KEY);
+  if(saved){ const v=all.find(x=>x.name===saved); if(v) return v; localStorage.removeItem(VOICE_KEY); }
+  for(const n of FEMALE_PREF){ const v=all.find(x=>x.name===n); if(v){ localStorage.setItem(VOICE_KEY,v.name); return v; } }
+  const esFem=all.find(v=>/^(es|es-)/i.test(v.lang||"") && !MALE_HINTS.test(v.name||""));
+  if(esFem){ localStorage.setItem(VOICE_KEY,esFem.name); return esFem; }
+  const esAny=all.find(v=>/^(es|es-)/i.test(v.lang||""));
+  if(esAny){ localStorage.setItem(VOICE_KEY,esAny.name); return esAny; }
+  return all[0]||null;
 }
-speechSynthesis.onvoiceschanged = ()=>{ pickFemaleVoice(); };
+speechSynthesis.onvoiceschanged=()=>{ pickFemaleVoice(); };
 
-/* ============== Estado voz/video ============== */
+/* ===== Estado voz/video ===== */
 const vid=document.getElementById("vid");
 let speaking=false, paused=false;
 let lastAnswer=null;
@@ -249,11 +231,10 @@ function stopAllSpeechAndVideo(){
   speaking=false; paused=false;
 }
 
-/* Convertir tablas/listas a texto desde DOM (por si backend no trae) */
+/* DOM → texto para listas/tablas (por si el backend no las trae en texto) */
 function tablesDOMToText(){
   const tbls=document.querySelectorAll("#tables table");
-  let out="";
-  tbls.forEach((table,ti)=>{
+  let out=""; tbls.forEach((table,ti)=>{
     const titleEl=table.previousElementSibling;
     const title=titleEl && titleEl.tagName.startsWith("H") ? titleEl.textContent.trim() : `Tabla ${ti+1}`;
     out+=` Tabla: ${title}. `;
@@ -269,8 +250,7 @@ function tablesDOMToText(){
 }
 function listsDOMToText(){
   const lists=[...document.querySelectorAll("#lists ol")];
-  let out="";
-  lists.forEach((ol,li)=>{
+  let out=""; lists.forEach((ol,li)=>{
     const tEl=ol.previousElementSibling;
     const title=tEl && tEl.tagName.startsWith("H") ? tEl.textContent.trim() : `Lista ${li+1}`;
     out+=` Lista: ${title}. `;
@@ -280,7 +260,7 @@ function listsDOMToText(){
   return out.trim();
 }
 
-/* Hablar todo: general + listas + tablas */
+/* Hablar toda la respuesta */
 async function speakFull(ans){
   await ensureVoicesReady();
   const v=pickFemaleVoice();
@@ -315,7 +295,7 @@ document.getElementById("toggleVV").onclick=()=>{
 };
 document.getElementById("replay").onclick=()=>{ if(lastAnswer) speakFull(lastAnswer); };
 
-/* ============== Dictado ============== */
+/* ===== Dictado ===== */
 const q=document.getElementById("q");
 let rec,recOn=false;
 document.getElementById("mic").onclick=()=>{
@@ -329,7 +309,7 @@ document.getElementById("mic").onclick=()=>{
   } else { rec.stop(); recOn=false; mic.classList.remove("muted"); }
 };
 
-/* ============== Sesión local ============== */
+/* ===== Sesión local ===== */
 const $gen=document.getElementById("general");
 const $lists=document.getElementById("lists");
 const $tables=document.getElementById("tables");
@@ -360,7 +340,7 @@ function renderTables(tables){ $tables.innerHTML=""; (tables||[]).forEach(t=>{
   table.appendChild(thead); table.appendChild(tbody); $tables.appendChild(title); $tables.appendChild(table); });
 }
 
-/* ============== API ============== */
+/* ===== API ===== */
 async function callAnswerAPI(prompt){
   try{
     const res=await fetch("/api/answer",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ question: prompt }) });
@@ -374,7 +354,7 @@ async function callAnswerAPI(prompt){
   }
 }
 
-/* ============== Enviar ============== */
+/* ===== Enviar ===== */
 document.getElementById("send").onclick=async()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
