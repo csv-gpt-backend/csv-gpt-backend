@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Asistente · CSV 10 22</title>
+<title>OK Asistente · CSV</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <style>
   :root{
-    /* Ajusta aquí el alto del header:
-       50vh = 50% pantalla (actual). Si quieres 75% exacto de pantalla, usa 75vh */
-    --headerH: 50vh;
+    /* Alto de la PARTE 1: video e imágenes (fijo) */
+    --headerH: 50vh;        /* 50% pantalla. Si quieres 75%, cambia a 75vh */
+    --gapBelowHeader: 28px; /* espacio extra para que nada quede debajo del video */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -30,35 +30,42 @@
 
   .topbar{
     position:relative; height:100%;
-    display:grid; grid-template-columns:1fr 2.5fr 1fr; gap:12px; align-items:center; padding:0 var(--pad);
+    display:grid; grid-template-columns:1fr 2.6fr 1fr; gap:12px; align-items:center; padding:0 var(--pad);
   }
-  /* Las imágenes laterales no deben “comerse” la altura del video */
+
+  /* Imágenes laterales reducidas */
   .topbar img{
-    max-height: calc(var(--headerH) - 24px);
-    width:auto; object-fit:contain;
+    max-height: calc(var(--headerH) * 0.45); /* 45% del header */
+    max-width: 140px; width:auto; object-fit:contain;
+    opacity:.95;
   }
+
   .video-wrap{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
-  /* El video ocupa el 100% del header (más grande) */
   .video-box{ width:100%; height:100% !important; display:flex; align-items:center; justify-content:center; }
   .video-box video{ width:100%; height:100%; object-fit:contain !important; border:0; background:#fff; }
 
-  /* ===== Debajo de la franja fija ===== */
-  main{ padding-top: var(--headerH); }
-  /* Un sólo scroll para todo lo de respuestas */
-  #scrollWrap{ height: calc(100vh - var(--headerH)); overflow:auto; display:block; }
+  /* ===== Debajo de la franja fija =====
+     Se agrega un margen extra para que la parte 2 NUNCA quede tapada */
+  main{ padding-top: calc(var(--headerH) + var(--gapBelowHeader)); }
+  #scrollWrap{ height: calc(100vh - (var(--headerH) + var(--gapBelowHeader))); overflow:auto; display:block; }
 
   /* RESPUESTAS (todo unido) */
-  #pane{
-    padding:14px 16px;
-  }
+  #pane{ padding:14px 16px; }
   .controls{ margin-bottom:10px; }
   .controls .row{
     display:flex; flex-wrap:wrap; gap:8px; justify-content:center !important; align-items:center; width:100%;
   }
+
+  /* Caja de texto: 2 líneas aprox */
   textarea{
-    width:min(1100px,98%); height:64px; padding:10px; font-size:15px;
+    width:min(1100px,98%);
+    height: 52px;             /* ~2 líneas */
+    line-height: 1.3;
+    padding:10px; font-size:15px;
     border:1px solid #e6e6e6; border-radius:8px; background:#fff; outline:none;
+    resize: vertical; max-height: 90px;      /* permite un poco más si el usuario estira */
   }
+
   button, select{
     padding:10px 12px; font-size:14px; cursor:pointer; border:none; outline:none; border-radius:8px; background:#f3f3f3; color:#111;
   }
@@ -81,6 +88,11 @@
 
   .legend{ margin-top:6px; font-size:12px; color:#666; text-align:center; }
   .legend code{ background:#f7f7f7; padding:0 4px; border-radius:4px; }
+
+  @media (max-width: 900px){
+    .topbar{ grid-template-columns: .8fr 2.8fr .8fr; }
+    .topbar img{ max-width: 100px; max-height: calc(var(--headerH) * 0.38); }
+  }
 
   @media print{
     @page { size: A4; margin:12mm; }
@@ -370,7 +382,7 @@ document.getElementById("send").onclick=async()=>{
   stopAllSpeechAndVideo();
 
   document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=true; el.style.opacity=0.7; });
-  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-7</span>`;
+  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-8</span>`;
   $note.textContent=""; $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
   const t0=performance.now();
 
@@ -390,7 +402,7 @@ document.getElementById("send").onclick=async()=>{
   renderTables(ans.tables||[]);
 
   const ms=Math.max(1,Math.round(performance.now()-t0));
-  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-7</span>`;
+  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-8</span>`;
 
   // Hablar SIEMPRE toda la respuesta
   speakFull(ans);
@@ -408,7 +420,7 @@ document.getElementById("clear").onclick=()=>{
 
   $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML="";
   q.value=""; $note.textContent="";
-  $status.innerHTML=`Listo <span class="badge gpt">v-hotfix-7</span>`;
+  $status.innerHTML=`Listo <span class="badge gpt">v-hotfix-8</span>`;
 };
 
 document.getElementById("new").onclick=()=>{
@@ -425,9 +437,9 @@ document.getElementById("new").onclick=()=>{
 const vidEl=document.getElementById("vid");
 function sessionToHTML(sess){
   const headerThumbs=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-    <img src="/left.png" alt="left" style="height:50px"/>
-    <video src="${vidEl.currentSrc||vidEl.src}" width="120" muted></video>
-    <img src="/right.png" alt="right" style="height:50px"/></div>`;
+    <img src="/left.png" alt="left" style="height:40px"/>
+    <video src="${vidEl.currentSrc||vidEl.src}" width="110" muted></video>
+    <img src="/right.png" alt="right" style="height:40px"/></div>`;
   let html=`<h1>Sesión ${sess.id}</h1><p>Iniciada: ${new Date(sess.startedAt).toLocaleString()}</p>${headerThumbs}`;
   for(const it of (sess.items||[]).slice().reverse()){
     html+=`<hr><h2 style="font-weight:normal;">Pregunta</h2><p>${(it.q||"").replace(/\n/g,"<br>")}</p>`;
