@@ -3,13 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Asistente · CSVREV</title>
+<title>Asistente · CSV 10 22</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <style>
   :root{
-    --headerH: 45vh;       /* PARTE 1 fija = 45% vertical */
+    /* Ajusta aquí el alto del header:
+       50vh = 50% pantalla (actual). Si quieres 75% exacto de pantalla, usa 75vh */
+    --headerH: 50vh;
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -28,12 +30,16 @@
 
   .topbar{
     position:relative; height:100%;
-    display:grid; grid-template-columns:1fr 2fr 1fr; gap:12px; align-items:center; padding:0 var(--pad);
+    display:grid; grid-template-columns:1fr 2.5fr 1fr; gap:12px; align-items:center; padding:0 var(--pad);
   }
-  .topbar img{ max-height: calc(var(--headerH) - 48px); width:auto; object-fit:contain; }
-  .video-wrap{ width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; }
-  /* 75% del header: más grande y forzado */
-  .video-box{ width:100%; height:75% !important; display:flex; align-items:center; justify-content:center; }
+  /* Las imágenes laterales no deben “comerse” la altura del video */
+  .topbar img{
+    max-height: calc(var(--headerH) - 24px);
+    width:auto; object-fit:contain;
+  }
+  .video-wrap{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+  /* El video ocupa el 100% del header (más grande) */
+  .video-box{ width:100%; height:100% !important; display:flex; align-items:center; justify-content:center; }
   .video-box video{ width:100%; height:100%; object-fit:contain !important; border:0; background:#fff; }
 
   /* ===== Debajo de la franja fija ===== */
@@ -110,8 +116,8 @@
           <button id="mic" class="mic" title="Dictar por voz (es-MX/es-ES)">🎤 Dictar</button>
           <button id="toggleVV" class="toggle" title="Pausar/Reanudar voz y video">⏯ Voz/Video</button>
           <button id="replay" class="replay" title="Volver a hablar toda la respuesta (texto + tablas + listas)">Reproducir voz</button>
-          <button id="clear" title="Limpia el texto y tablas en pantalla (no borra memoria)">Limpiar</button>
-          <button id="new" class="new" title="Crea una nueva sesión y borra todo el contexto">Nueva sesión</button>
+          <button id="clear" title="Limpia texto y tablas y DETIENE voz/video">Limpiar</button>
+          <button id="new" class="new" title="Crea una nueva sesión, borra contexto y DETIENE voz/video">Nueva sesión</button>
           <select id="exportKind" title="Exporta inmediatamente al formato elegido">
             <option value="">Exportar…</option>
             <option value="pdf">PDF</option>
@@ -124,7 +130,8 @@
           <code>Enviar</code> analiza; <code>🎤 Dictar</code> voz→texto;
           <code>⏯ Voz/Video</code> pausa/continúa locución y video;
           <code>Reproducir voz</code> vuelve a leer todo;
-          <code>Limpiar</code> borra lo visible; <code>Nueva sesión</code> reinicia; <code>Exportar…</code> descarga.
+          <code>Limpiar</code> borra y detiene voz/video;
+          <code>Nueva sesión</code> reinicia y detiene voz/video; <code>Exportar…</code> descarga.
         </div>
         <div id="status" class="status"></div>
         <div id="note" class="note"></div>
@@ -235,21 +242,17 @@ function listsDOMToText(){
   return out.trim();
 }
 
+/* ========= Detener TODO (voz + video) ========= */
+function stopAllSpeechAndVideo(){
+  try{ speechSynthesis.cancel(); }catch{}
+  try{ vid.loop=false; vid.pause(); }catch{}
+  speaking=false; paused=false;
+}
+
 /* ========= Hablar toda la respuesta ========= */
 async function speakFull(ans){
   await ensureVoicesReady();
   const v=pickFemaleVoice();
-
-  // Construir el texto a leer desde answer + fallback DOM
-  const general=ans?.general || document.getElementById("general").innerText || "";
-  const t1=tablesObjToText(ans?.tables||[]);
-  const l1=listsObjToText(ans?.lists||[]);
-  // Fallback si vino vacío en el objeto, leemos del DOM
-  const t2=t1 || tablesDOMToText();
-  const l2=l1 || listsDOMToText();
-
-  const text=[general, l2, t2].filter(Boolean).join(" ").trim();
-  if(!text) return;
 
   // Si estaba pausado y hay utterance en curso -> reanudar
   if(paused && speaking){
@@ -257,8 +260,15 @@ async function speakFull(ans){
     paused=false; return;
   }
 
-  // Cancelar cualquier resto y hablar de cero
-  try{ speechSynthesis.cancel(); }catch{}
+  // Cancelar cualquier utterance anterior ANTES de hablar de cero
+  stopAllSpeechAndVideo();
+
+  // Construir el texto a leer desde answer + fallback DOM
+  const general=ans?.general || document.getElementById("general").innerText || "";
+  const t1=tablesObjToText(ans?.tables||[]); const l1=listsObjToText(ans?.lists||[]);
+  const t2=t1 || tablesDOMToText(); const l2=l1 || listsDOMToText();
+  const text=[general, l2, t2].filter(Boolean).join(" ").trim();
+  if(!text) return;
 
   const u=new SpeechSynthesisUtterance(text);
   u.lang=v?.lang||"es-MX"; if(v) u.voice=v;
@@ -356,8 +366,11 @@ document.getElementById("send").onclick=async()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
 
+  // si venía hablando, detenemos antes de la nueva consulta
+  stopAllSpeechAndVideo();
+
   document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=true; el.style.opacity=0.7; });
-  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-6</span>`;
+  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-7</span>`;
   $note.textContent=""; $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
   const t0=performance.now();
 
@@ -377,9 +390,9 @@ document.getElementById("send").onclick=async()=>{
   renderTables(ans.tables||[]);
 
   const ms=Math.max(1,Math.round(performance.now()-t0));
-  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-6</span>`;
+  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-7</span>`;
 
-  // Hablar SIEMPRE toda la respuesta (texto + listas + tablas) con fallback DOM
+  // Hablar SIEMPRE toda la respuesta
   speakFull(ans);
 
   session.items.push({ at:new Date().toISOString(), q:prompt, a:ans, meta:r.source||{} });
@@ -389,8 +402,24 @@ document.getElementById("send").onclick=async()=>{
 };
 
 /* ========= Limpiar / nueva sesión ========= */
-document.getElementById("clear").onclick=()=>{ $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; };
-document.getElementById("new").onclick=()=>{ sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]}; $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML=""; q.value=""; $note.textContent=""; alert("Nueva sesión creada."); };
+document.getElementById("clear").onclick=()=>{
+  // Detener voz y video inmediatamente
+  stopAllSpeechAndVideo();
+
+  $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML="";
+  q.value=""; $note.textContent="";
+  $status.innerHTML=`Listo <span class="badge gpt">v-hotfix-7</span>`;
+};
+
+document.getElementById("new").onclick=()=>{
+  // Detener voz y video inmediatamente
+  stopAllSpeechAndVideo();
+
+  sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]};
+  $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML="";
+  q.value=""; $note.textContent="";
+  alert("Nueva sesión creada.");
+};
 
 /* ========= Exportación directa ========= */
 const vidEl=document.getElementById("vid");
