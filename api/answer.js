@@ -1,356 +1,262 @@
-// /api/answer.js
-// Fuente: /datos/decimo.csv (+ fallback ./public/decimo.csv, ./decimo.csv) + /data/texto_base.js (conceptual)
-// Requiere: open_ai_key (u OPENAI_API_KEY)
+// api/answer.js
+export const maxDuration = 60;              // Vercel: hasta 60s de ejecución
+export const runtime = "nodejs18.x";        // Node runtime (permite leer FS)
 
-import fs from "fs";
-import path from "path";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const config = { runtime: "nodejs" };
+// ====== CONFIG ======
+const MODEL = (process.env.OPENAI_MODEL || "gpt-5").trim();
+const OPENAI_API_KEY = (process.env.open_ai_key || process.env.OPENAI_API_KEY || "").trim();
 
-/* ===== Helpers ===== */
-const clip = (s, max=90000) => {
-  const t = String(s||"");
-  return t.length>max ? t.slice(0, max) + "\n[... recortado ...]" : t;
-};
-const safeRead  = p => { try { return fs.readFileSync(p, "utf8"); } catch { return ""; } };
-const statMtime = p => { try { return fs.statSync(p).mtimeMs || 0; } catch { return 0; } };
-const isNum = v => typeof v === "number" && isFinite(v);
+// Rutas locales (según tu repo)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const CSV_PATH = path.join(__dirname, "..", "datos", "decimo.csv");
+const TEXTO_BASE_PATH = path.join(__dirname, "..", "data", "texto_base.js");
 
-/* ===== CSV parsing + stats ===== */
-function parseCSV(str){
-  const lines = String(str||"").trim().split(/\r?\n/).filter(Boolean);
-  if(!lines.length) return { headers:[], rows:[] };
-  const headers = lines[0].split(",").map(s=>s.trim());
-  const rows = lines.slice(1).map(line=>{
-    const cols = line.split(",").map(s=>s.trim());
-    const obj = {};
-    headers.forEach((h,i)=>{
-      const v = cols[i] ?? "";
-      const num = Number(v.replace(",", "."));
-      obj[h] = (!isNaN(num) && v!=="") ? num : v;
-    });
-    return obj;
-  });
-  return { headers, rows };
+// ====== CACHE GLOBAL (no se borra entre invocaciones mientras “caliente”) ======
+const STATE = globalThis.__CSV_ASSIST__ || (globalThis.__CSV_ASSIST__ = {
+  csv: null,          // { columns:[], rows:[[]], delimiter:';'|',' , rowCount }
+  textoBase: "",      // string
+  loadedAt: 0
+});
+
+// ====== UTILIDADES ======
+function splitSmart(line) {
+  // Soporta CSV simple con ; o , (sin comillas complejas)
+  if (line.includes(";")) return line.split(";").map(s=>s.trim());
+  return line.split(",").map(s=>s.trim());
 }
-function statsForNumericColumns(rows){
-  const nums = {};
-  rows.forEach(r=>{
-    Object.entries(r).forEach(([k,v])=>{
-      if(isNum(v)){ (nums[k] ||= []).push(v); }
-    });
-  });
-  const out = {};
-  for(const [k,arr] of Object.entries(nums)){
-    const n=arr.length; if(!n) continue;
-    const sorted=[...arr].sort((a,b)=>a-b);
-    const sum=arr.reduce((a,b)=>a+b,0);
-    const mean=sum/n;
-    const min=sorted[0], max=sorted[n-1];
-    const median = n%2 ? sorted[(n-1)/2] : (sorted[n/2-1]+sorted[n/2])/2;
-    const varSample = arr.reduce((a,b)=>a+(b-mean)**2,0)/(n-1||1);
-    const stdev = Math.sqrt(varSample);
-    // percentiles básicos aproximados
-    const pct = (p)=> {
-      if (n===1) return sorted[0];
-      const idx = (p/100)*(n-1);
-      const lo = Math.floor(idx), hi = Math.ceil(idx);
-      if (lo===hi) return sorted[lo];
-      const w = idx - lo;
-      return sorted[lo]*(1-w) + sorted[hi]*w;
-    };
-    out[k] = { n, min, max, mean, median, stdev, sum,
-               p10:pct(10), p25:pct(25), p50:median, p75:pct(75), p90:pct(90) };
+
+function parseCSV(raw) {
+  const lines = raw.split(/\r?\n/).filter(l => l.trim().length);
+  if (!lines.length) return { columns: [], rows: [], rowCount: 0, delimiter: "," };
+  const header = splitSmart(lines[0]);
+  const delimiter = lines[0].includes(";") ? ";" : ",";
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const parts = splitSmart(lines[i]);
+    // normaliza al largo del header
+    while (parts.length < header.length) parts.push("");
+    rows.push(parts.slice(0, header.length));
   }
-  return out;
+  return { columns: header, rows, rowCount: rows.length, delimiter };
 }
 
-/* ===== CSV path: el lugar más cercano y accesible ===== */
-function readCSVClosest(){
-  const roots = [
-    path.join(process.cwd(), "datos", "decimo.csv"),
-    path.join(process.cwd(), "public", "decimo.csv"),
-    path.join(process.cwd(), "decimo.csv"),
-  ];
-  for (const p of roots){
-    const txt = safeRead(p);
-    if (txt) return { txt, path: p };
-  }
-  return { txt:"", path: roots[0] };
-}
+async function loadCSVandText() {
+  if (STATE.csv && STATE.textoBase) return;
 
-/* ===== Cache ===== */
-let CACHE = { key:"", csv:{headers:[],rows:[]}, csvStats:{}, textoBase:"" };
-function clearCache(){ CACHE = { key:"", csv:{headers:[],rows:[]}, csvStats:{}, textoBase:"" }; }
-
-async function loadCache(){
-  const textoBasePath = path.join(process.cwd(), "data", "texto_base.js");
-  const { txt:csvRaw, path:csvPath } = readCSVClosest();
-  const key = `tb:${statMtime(textoBasePath)}|csv:${statMtime(csvPath)}`;
-  if (CACHE.key === key && CACHE.csv.rows.length) return CACHE;
-
-  let textoBase = "";
+  // Cargar CSV
   try {
-    const mod = await import("../data/texto_base.js");
-    textoBase = String(mod?.TEXTO_BASE ?? "");
-  } catch { textoBase = ""; }
-
-  const csv = parseCSV(csvRaw);
-  const csvStats = statsForNumericColumns(csv.rows);
-  CACHE = { key, csv, csvStats, textoBase };
-  return CACHE;
-}
-
-/* ===== Column helpers ===== */
-function findNameColumns(headers){
-  const cand = [/^nombre(s)?$/i, /^apellid/i, /estudiante/i, /alumn/i];
-  const picks = [];
-  headers.forEach(h=>{ if (cand.some(rx=>rx.test(h))) picks.push(h); });
-  if (!picks.length) {
-    const byContains = headers.find(h=>/nombre/i.test(h));
-    if (byContains) picks.push(byContains);
-  }
-  return picks;
-}
-function fullNameFrom(row, nameCols){
-  const parts = nameCols.map(c=>row[c]).filter(Boolean);
-  return parts.join(" ").replace(/\s+/g," ").trim();
-}
-function findParallelColumn(headers){
-  return headers.find(h=>/paralelo|secci[oó]n|curso/i.test(h)) || null;
-}
-function findCourseColumn(headers){
-  // curso/grado/nivel/año
-  return headers.find(h=>/curso|grado|nivel|a[nñ]o|anio|year|grade/i.test(h)) || null;
-}
-function filterByParallel(rows, parCol, q){
-  if(!parCol) return rows;
-  if (/paralelo\s*A\b/i.test(q)) return rows.filter(r=>String(r[parCol]).toUpperCase().includes("A"));
-  if (/paralelo\s*B\b/i.test(q)) return rows.filter(r=>String(r[parCol]).toUpperCase().includes("B"));
-  return rows;
-}
-function findNumericColumn(headers, q){
-  const lower = q.toLowerCase();
-  const scored = headers
-    .map(h=>({h, score: lower.includes(h.toLowerCase()) ? h.length : 0}))
-    .filter(x=>x.score>0)
-    .sort((a,b)=>b.score-a.score);
-  return scored.length ? scored[0].h : null;
-}
-
-/* ===== Fast paths (sin GPT) ===== */
-function looksListStudents(q){ return /(lista|listado|despliega|muestr[a|e]|dime)\s+.*(estudiant|alumn)/i.test(q); }
-function looksAverage(q){ return /(promedio|media|average)/i.test(q); }
-function looksMedian(q){ return /(mediana)/i.test(q); }
-function looksStd(q){ return /(desviaci[oó]n\s*est[aá]ndar|stdev)/i.test(q); }
-function looksTop(q){ return /(top\s*\d+|mejores\s*\d+)/i.test(q); }
-function looksBottom(q){ return /(peores\s*\d+)/i.test(q); }
-function looksCount(q){ return /(cu[aá]ntos|conteo|n[úu]mero\s+de\s+estudiantes)/i.test(q); }
-function extractN(q, def=10){
-  const m = q.match(/(top|mejores|peores)\s*(\d+)/i);
-  return m ? Math.max(1, parseInt(m[2],10)) : def;
-}
-
-function fastAnswer(question, csv){
-  const q = String(question||"");
-  const namesCols = findNameColumns(csv.headers);
-  const parCol = findParallelColumn(csv.headers);
-  const curCol = findCourseColumn(csv.headers);
-
-  // 0) Conteo estudiantes (global / A / B)
-  if (looksCount(q)){
-    const filtered = filterByParallel(csv.rows, parCol, q);
-    return {
-      general: `Conteo de estudiantes${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B")+ ")" : ""}: ${filtered.length}.`,
-      lists:[],
-      tables:[{ title:"Conteo", columns:["Métrica","Valor"], rows:[["Estudiantes", String(filtered.length)]] }]
-    };
+    const raw = await fs.readFile(CSV_PATH, "utf8");
+    STATE.csv = parseCSV(raw);
+  } catch (e) {
+    console.error("No se pudo leer decimo.csv:", e);
+    STATE.csv = { columns: [], rows: [], rowCount: 0, delimiter: "," };
   }
 
-  // 1) Lista de estudiantes (global o por A/B) -> #, Nombre, Curso, Paralelo
-  if (looksListStudents(q) && namesCols.length) {
-    const filtered = filterByParallel(csv.rows, parCol, q);
-    const rows = filtered.map(r=>{
-      const nombre = fullNameFrom(r, namesCols);
-      const curso = curCol ? (r[curCol] ?? "") : "";
-      const paralelo = parCol ? (r[parCol] ?? "") : "";
-      return [nombre, String(curso), String(paralelo)];
-    }).filter(r=>r[0]); // requiere nombre
-    // ordenar por nombre
-    rows.sort((a,b)=>a[0].localeCompare(b[0], 'es'));
-    return {
-      general: `Se listan ${rows.length} estudiantes${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B")+ ")" : ""}.`,
-      lists: [],
-      tables: [{
-        title: "Listado de estudiantes",
-        columns: ["Nombre","Curso","Paralelo"],  // (el front añade #)
-        rows
-      }]
-    };
-  }
-
-  // 2) Promedio / Mediana / Desv.Est. de <col> (global o por A/B)
-  const col = findNumericColumn(csv.headers, q);
-  if (col) {
-    const filtered = filterByParallel(csv.rows, parCol, q).filter(r=>isNum(r[col]));
-    if (filtered.length){
-      const vals = filtered.map(r=>r[col]);
-      const n = vals.length;
-      const sum = vals.reduce((a,b)=>a+b,0);
-      const mean = sum/n;
-      const sorted = [...vals].sort((a,b)=>a-b);
-      const median = n%2 ? sorted[(n-1)/2] : (sorted[n/2-1]+sorted[n/2])/2;
-      const varSample = vals.reduce((a,b)=>a+(b-mean)**2,0)/(n-1||1);
-      const stdev = Math.sqrt(varSample);
-      if (looksAverage(q) || looksMedian(q) || looksStd(q)) {
-        const rows2 = [
-          ["n", String(n)],
-          ["Promedio", mean.toFixed(4)],
-          ["Mediana", median.toFixed(4)],
-          ["Desviación estándar", stdev.toFixed(4)]
-        ];
-        return {
-          general: `Estadísticos para ${col}${parCol? " ("+( /A\b/i.test(q)?"Paralelo A": /B\b/i.test(q)?"Paralelo B":"A y B")+ ")" : ""}.`,
-          lists:[],
-          tables:[{ title:`Estadísticos de ${col}`, columns:["Métrica","Valor"], rows: rows2 }]
-        };
-      }
+  // Cargar texto_base.js (export const TEXTO_BASE = `...`)
+  try {
+    // import dinámico del módulo para capturar TEXTO_BASE
+    const m = await import(pathToFileURL(TEXTO_BASE_PATH).href);
+    STATE.textoBase = (m.TEXTO_BASE || "").toString();
+  } catch (e) {
+    // fallback: intentar leer crudo
+    try {
+      const raw = await fs.readFile(TEXTO_BASE_PATH, "utf8");
+      // extrae todo entre backticks si está como template literal
+      const match = raw.match(/`([\s\S]*?)`/);
+      STATE.textoBase = match ? match[1] : raw;
+    } catch (e2) {
+      console.error("No se pudo cargar texto_base.js:", e2);
+      STATE.textoBase = "";
     }
   }
 
-  // 3) Top N / Mejores N de <col>
-  if (looksTop(q) && col && namesCols.length) {
-    const N = extractN(q, 10);
-    const filtered = filterByParallel(csv.rows, parCol, q)
-      .filter(r=>isNum(r[col]));
-    filtered.sort((a,b)=>b[col]-a[col]);
-    const top = filtered.slice(0, N).map((r)=>{
-      const nombre = fullNameFrom(r, namesCols);
-      return [ nombre, r[col] ];
-    });
-    return {
-      general: `Top ${Math.min(N, top.length)} en ${col}.`,
-      tables:[{
-        title:`Top ${N} en ${col}`,
-        columns:["Estudiante", col],
-        rows: top.map(([n,v])=>[n, String(v)])
-      }],
-      lists:[]
-    };
-  }
-
-  // 4) Peores N de <col>
-  if (looksBottom(q) && col && namesCols.length) {
-    const N = extractN(q, 10);
-    const filtered = filterByParallel(csv.rows, parCol, q)
-      .filter(r=>isNum(r[col]));
-    filtered.sort((a,b)=>a[col]-b[col]);
-    const bot = filtered.slice(0, N).map((r)=>{
-      const nombre = fullNameFrom(r, namesCols);
-      return [ nombre, r[col] ];
-    });
-    return {
-      general: `Peores ${Math.min(N, bot.length)} en ${col}.`,
-      tables:[{
-        title:`Peores ${N} en ${col}`,
-        columns:["Estudiante", col],
-        rows: bot.map(([n,v])=>[n, String(v)])
-      }],
-      lists:[]
-    };
-  }
-
-  return null;
+  STATE.loadedAt = Date.now();
 }
 
-/* ===== OpenAI ===== */
-async function callOpenAI({ question, cache, model, apiKey }){
-  const OpenAI = (await import("openai")).default;
-  const client = new OpenAI({ apiKey });
+function pathToFileURL(p) {
+  const u = new URL("file://");
+  u.pathname = path.resolve(p).replace(/\\/g, "/");
+  return u;
+}
 
-  const system = `
-Eres una analista experta. Responde SIEMPRE en español (MX/EC).
-Nunca digas que faltan datos o que no existe el CSV; procede con lo disponible y calcula.
-Realiza cálculos psicométricos y estadísticos (media, mediana, percentiles aproximados, desviación estándar, correlaciones simples si aplica), promedios, progresiones y razonamientos lógicos.
-Cuando se soliciten listas o tablas, devuelve tablas en JSON.
-Devuelve EXCLUSIVAMENTE JSON válido:
+// Pequeño preview del CSV (para el prompt). Aquí mandamos TODO (48 filas × ~20 cols) — el cliente pidió explicación completa.
+function buildCSVContext(csv) {
+  return {
+    columns: csv.columns,
+    rowCount: csv.rowCount,
+    // enviamos todas las filas; si quisieras menos, usa slice(0, N)
+    rows: csv.rows
+  };
+}
+
+// Prepara prompt-instrucciones sólidas en español, pidiendo salida JSON estricta.
+function buildPrompt(question, csvCtx, textoBase) {
+  return `
+Eres un analista psicométrico experto. Responde SIEMPRE en español (Ecuador/México), con explicación completa, y entrega la salida EXCLUSIVAMENTE en formato JSON con esta forma:
+
 {
-  "general": "<texto>",
-  "tables": [{"title":"...","columns":["Col1","Col2"],"rows":[["v1","v2"]]}],
-  "lists": [{"title":"...","items":["item1","item2"]}]
+  "general": "texto explicativo y conclusiones (máxima claridad, sin asteriscos)",
+  "lists": [
+    { "title": "Título de la lista", "items": ["item 1", "item 2", "..."] }
+  ],
+  "tables": [
+    { "title": "Título de la tabla", "columns": ["Col1","Col2","..."], "rows": [ ["v1","v2","..."], ["..."] ] }
+  ]
 }
-`.trim();
 
-  const { headers, rows } = cache.csv;
-  const sample = rows.slice(0, 15); // muestra pequeña (más rápido)
-  const csvStats = cache.csvStats;
-  const textoBase = cache.textoBase;
+Instrucciones IMPORTANTES:
+- Evita asteriscos y frases meta (no digas “según el CSV…”); responde directo.
+- Numerar las tablas en pantalla NO es tu trabajo (el frontend las numera), pero incluye las columnas correctas y filas en el orden esperado.
+- Cuando pida “lista/listado de estudiantes”, incluye en una tabla las columnas: Nombre, Curso, Paralelo (sin puntajes, a menos que los pidan).
+- Si el usuario solicita cálculos, realiza análisis matemáticos/psicométricos/estadísticos con la información disponible (promedios, percentiles, Gauss, desviación estándar, correlaciones simples si procede).
+- Si solicitan interpretaciones (p. ej., percentiles), ofrece explicación clara sobre la lectura de percentiles y rangos.
+- El texto de apoyo a continuación (texto_base) es referencia normativa/descriptiva: úsalo para fundamentar explicaciones.
+- El conjunto CSV representa 48 estudiantes con ~20 columnas de puntuaciones (curso y paralelo incluidos).
 
-  const user = `
-PREGUNTA: ${String(question||"").replaceAll("*","")}
+### Datos CSV (JSON):
+${JSON.stringify(csvCtx, null, 2)}
 
-Contexto del CSV decimo.csv:
-- Guía: 48 estudiantes (paralelos A y B) y ~18 columnas de calificaciones/puntuaciones.
-- Cabeceras: ${JSON.stringify(headers)}
-- Muestra (primeras 15 filas): ${JSON.stringify(sample)}
-- Estadísticos por columna numérica: ${JSON.stringify(csvStats)}
+### Texto base (referencia):
+${textoBase}
 
-TEXTO BASE (conceptual/metodológico):
-${clip(textoBase, 15000)}
-`.trim();
+### Pregunta del usuario:
+${question}
 
-  const resp = await client.chat.completions.create({
-    model: model || process.env.OPENAI_MODEL || "gpt-4o-mini",
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user }
-    ],
-    response_format: { type: "json_object" }
+DEVUELVE SOLO el JSON de salida sin texto adicional.
+`;
+}
+
+function extractJSON(text) {
+  // Intenta localizar el primer objeto JSON válido { ... }
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) throw new Error("No JSON object found");
+  const candidate = text.slice(start, end + 1);
+  return JSON.parse(candidate);
+}
+
+// ====== Llamada a OpenAI (Responses API) ======
+async function callOpenAI(prompt) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 55000);
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: MODEL,                 // gpt-5
+        // Para gpt-5, evita temperature custom (usa el default del modelo).
+        input: prompt,
+        // Salida larga: sube el máximo de tokens
+        max_output_tokens: 4000
+      })
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(()=>"");
+      throw new Error(`OpenAI ${res.status}: ${txt}`);
+    }
+    const data = await res.json();
+    const text = data?.output?.[0]?.content?.[0]?.text
+             || data?.output_text
+             || JSON.stringify(data);
+
+    return extractJSON(text);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ====== HANDLER ======
+function jsonResponse(obj, code=200) {
+  return new Response(JSON.stringify(obj), {
+    status: code,
+    headers: { "Content-Type": "application/json; charset=utf-8" }
   });
-
-  const content = resp.choices?.[0]?.message?.content || "{}";
-  try { return JSON.parse(content); }
-  catch { return { general: content, tables: [], lists: [] }; }
 }
 
-/* ===== Handler ===== */
-export default async function handler(req, res){
-  if(req.method==="OPTIONS") return res.status(200).end();
-  try{
-    const body = req.method==="POST" ? (req.body||{}) : (req.query||{});
-    const question = String(body.question || body.q || "");
-    const model = String(body.model || "");
-    const apiKey = process.env.open_ai_key || process.env.OPENAI_API_KEY;
-    const flush = body.flush || req.query.flush;
+export async function GET(req) {
+  try {
+    if (!OPENAI_API_KEY) return jsonResponse({ ok:false, error:"Falta API Key (open_ai_key)" }, 500);
 
-    if (flush) { clearCache(); }
+    const { searchParams } = new URL(req.url);
+    const q = (searchParams.get("q") || "").trim();
 
-    if(!apiKey) return res.status(500).json({ ok:false, error:"Falta open_ai_key/OPENAI_API_KEY" });
-
-    // warmup
-    if (question === "__warmup") {
-      await loadCache();
-      return res.status(200).json({ ok:true, warmup:true });
-    }
-    if(!question.trim()) return res.status(400).json({ ok:false, error:"Falta la pregunta (question|q)" });
-
-    const cache = await loadCache();
-
-    // FAST PATHS (sin GPT) primero
-    const quick = fastAnswer(question, cache.csv);
-    if (quick) {
-      return res.status(200).json({
-        ok:true,
-        source:{ fast:true },
-        answer: quick
-      });
+    if (q === "__warmup") {
+      await loadCSVandText();
+      return jsonResponse({ ok:true, warmup:true });
     }
 
-    // Si no es una consulta estándar, usa GPT con contexto mínimo
-    const answer = await callOpenAI({ question, cache, model, apiKey });
-    return res.status(200).json({ ok:true, source:{ fast:false }, answer });
-  }catch(err){
-    console.error("answer.js error:", err);
-    return res.status(200).json({ ok:false, error:String(err?.message||err) });
+    const question = q || "Describe y analiza los datos disponibles.";
+    await loadCSVandText();
+
+    const csvCtx = buildCSVContext(STATE.csv);
+    const prompt = buildPrompt(question, csvCtx, STATE.textoBase);
+
+    const t0 = Date.now();
+    let answerJSON;
+    try {
+      answerJSON = await callOpenAI(prompt);
+    } catch (e) {
+      // fallback mínimo si el modelo devuelve texto no-JSON
+      answerJSON = { general: "Hubo un problema al analizar: "+e.message, lists:[], tables:[] };
+    }
+    const ms = Date.now() - t0;
+
+    return jsonResponse({
+      ok: true,
+      source: { model: MODEL, ms, loadedAt: STATE.loadedAt, rowCount: STATE.csv.rowCount },
+      answer: answerJSON
+    });
+  } catch (e) {
+    console.error(e);
+    return jsonResponse({ ok:false, error: String(e?.message||e) }, 500);
+  }
+}
+
+export async function POST(req) {
+  try {
+    if (!OPENAI_API_KEY) return jsonResponse({ ok:false, error:"Falta API Key (open_ai_key)" }, 500);
+    const body = await req.json().catch(()=>({}));
+    const q = (body?.question || "").trim();
+
+    if (q === "__warmup") {
+      await loadCSVandText();
+      return jsonResponse({ ok:true, warmup:true });
+    }
+
+    const question = q || "Describe y analiza los datos disponibles.";
+    await loadCSVandText();
+
+    const csvCtx = buildCSVContext(STATE.csv);
+    const prompt = buildPrompt(question, csvCtx, STATE.textoBase);
+
+    const t0 = Date.now();
+    let answerJSON;
+    try {
+      answerJSON = await callOpenAI(prompt);
+    } catch (e) {
+      answerJSON = { general: "Hubo un problema al analizar: "+e.message, lists:[], tables:[] };
+    }
+    const ms = Date.now() - t0;
+
+    return jsonResponse({
+      ok: true,
+      source: { model: MODEL, ms, loadedAt: STATE.loadedAt, rowCount: STATE.csv.rowCount },
+      answer: answerJSON
+    });
+  } catch (e) {
+    console.error(e);
+    return jsonResponse({ ok:false, error: String(e?.message||e) }, 500);
   }
 }
