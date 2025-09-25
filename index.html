@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>nnAsistente · CSV</title>
+<title>kkkAsistente · CSV</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <style>
   :root{
-    /* AHORA EXACTO 75% DE LA VENTANA */
+    /* Sección fija = 75% exacto del alto de la ventana */
     --headerH: 75vh;
-    /* Un poco más de colchón para evitar que la sección 2 “suba” en pantallas justas */
-    --gapBelowHeader: 32px;
+    /* Separación mínima entre header y la sección 2 */
+    --gapBelowHeader: 8px;
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
@@ -21,8 +21,10 @@
   /* ===== PARTE 1: FIJA ===== */
   header{
     position: fixed; top:0; left:0; right:0; height:var(--headerH);
-    background:#fff; /* sin línea */
+    background:#fff;
     z-index:20;
+    /* un pequeño respiro superior para que no “chocque” */
+    padding-top: 6px;
   }
   #histLink{
     position:absolute; top:6px; right:10px; font-size:12px; color:#666; text-decoration:none;
@@ -31,25 +33,29 @@
   #histLink:hover{ opacity:.85; text-decoration:underline; }
 
   .topbar{
-    position:relative; height:100%;
+    position:relative; height:calc(100% - 6px); /* compensa el padding-top del header */
     display:grid;
     grid-template-columns: 1fr 2.6fr 1fr;
-    gap:12px; align-items:center; padding:0 var(--pad);
+    gap:12px;
+    /* CLAVE: pegar todo arriba */
+    align-items:flex-start;
+    padding:0 var(--pad);
   }
 
-  /* Logos laterales centrados */
+  /* Logos laterales centrados entre video y borde, sin ocupar espacio vertical extra */
   .topbar img{
     justify-self: center;
-    max-height: calc(var(--headerH) * 0.40);
-    max-width: 130px;
+    margin-top: 4px;
+    max-height: calc(var(--headerH) * 0.38);
+    max-width: 120px;
     width:auto; object-fit:contain; opacity:.95;
   }
 
-  .video-wrap{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
-  .video-box{ width:100%; height:100% !important; display:flex; align-items:center; justify-content:center; }
+  .video-wrap{ width:100%; height:100%; display:flex; align-items:flex-start; justify-content:center; }
+  .video-box{ width:100%; height:100% !important; display:flex; align-items:flex-start; justify-content:center; }
   .video-box video{ width:100%; height:100%; object-fit:contain !important; border:0; background:#fff; }
 
-  /* ===== Debajo de la franja fija (se calcula por JS) ===== */
+  /* ===== Debajo de la franja fija (altura y posición calculadas por JS) ===== */
   main{ padding-top: 1px; }
   #scrollWrap{ height: 1px; }
 
@@ -60,7 +66,7 @@
     display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; width:100%;
   }
 
-  /* Caja de texto: 2 líneas aprox */
+  /* Caja de texto: 2 líneas aprox, para ganar espacio visual */
   textarea{
     width:min(1100px,98%);
     height: 52px;             /* ~2 líneas */
@@ -95,7 +101,7 @@
 
   @media (max-width: 900px){
     .topbar{ grid-template-columns: .9fr 2.8fr .9fr; }
-    .topbar img{ max-width: 95px; max-height: calc(var(--headerH) * 0.34); }
+    .topbar img{ max-width: 92px; max-height: calc(var(--headerH) * 0.32); }
   }
 
   @media print{
@@ -170,7 +176,7 @@ function resizeLayout(){
 
   const headerPx = hdr.offsetHeight;
   const gap = parseInt(getComputedStyle(document.documentElement)
-              .getPropertyValue('--gapBelowHeader')) || 32;
+              .getPropertyValue('--gapBelowHeader')) || 8;
 
   const padTop = headerPx + gap;
   main.style.paddingTop = padTop + "px";
@@ -362,7 +368,7 @@ document.getElementById("send").onclick=async()=>{
   stopAllSpeechAndVideo();
 
   document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=true; el.style.opacity=0.7; });
-  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-10</span>`;
+  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-11</span>`;
   $note.textContent=""; $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
   const t0=performance.now();
 
@@ -381,7 +387,7 @@ document.getElementById("send").onclick=async()=>{
   renderTables(ans.tables||[]);
 
   const ms=Math.max(1,Math.round(performance.now()-t0));
-  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-10</span>`;
+  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-11</span>`;
 
   speakFull(ans);
 
@@ -396,7 +402,7 @@ document.getElementById("clear").onclick=()=>{
   stopAllSpeechAndVideo();
   $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML="";
   q.value=""; $note.textContent="";
-  $status.innerHTML=`Listo <span class="badge gpt">v-hotfix-10</span>`;
+  $status.innerHTML=`Listo <span class="badge gpt">v-hotfix-11</span>`;
 };
 document.getElementById("new").onclick=()=>{
   stopAllSpeechAndVideo();
