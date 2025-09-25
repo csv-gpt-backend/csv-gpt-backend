@@ -3,25 +3,25 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>HEADER Asistente · CSV</title>
+<title>bf Asistente · CSV</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <style>
   :root{
-    /* Alto de la PARTE 1 (video e imágenes) */
-    --headerH: 50vh;         /* puedes subir a 60–75vh si lo deseas */
-    /* Colchón extra para que NADA quede debajo del video */
-    --gapBelowHeader: 72px;  /* antes 28px → ahora 72px */
+    /* Alto relativo de la franja fija (video + logos) */
+    --headerH: 50vh;          /* puedes subir a 60–70vh si lo deseas */
+    --gapBelowHeader: 24px;   /* se sumará al alto real del header (calculado por JS) */
     --pad: 12px;
   }
   *{ box-sizing: border-box; }
   html,body{ height:100%; margin:0; font-family:Arial, system-ui, sans-serif; background:#fff; color:#111; }
 
-  /* ===== PARTE 1: FIJA (no se mueve) ===== */
+  /* ===== PARTE 1: FIJA ===== */
   header{
     position: fixed; top:0; left:0; right:0; height:var(--headerH);
-    background:#fff; border-bottom:1px solid #eee; z-index:20;
+    background:#fff; /* SIN línea debajo */
+    z-index:20;
   }
   #histLink{
     position:absolute; top:6px; right:10px; font-size:12px; color:#666; text-decoration:none;
@@ -36,28 +36,29 @@
     gap:12px; align-items:center; padding:0 var(--pad);
   }
 
-  /* Imágenes laterales: CENTRADAS y reducidas */
+  /* Logos laterales centrados */
   .topbar img{
-    justify-self: center;          /* <- centrado horizontal en su columna */
+    justify-self: center;
     max-height: calc(var(--headerH) * 0.40);
     max-width: 130px;
-    width:auto; object-fit:contain;
-    opacity:.95;
+    width:auto; object-fit:contain; opacity:.95;
   }
 
   .video-wrap{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
   .video-box{ width:100%; height:100% !important; display:flex; align-items:center; justify-content:center; }
   .video-box video{ width:100%; height:100%; object-fit:contain !important; border:0; background:#fff; }
 
-  /* ===== Debajo de la franja fija ===== */
-  main{ padding-top: calc(var(--headerH) + var(--gapBelowHeader)); }
-  #scrollWrap{ height: calc(100vh - (var(--headerH) + var(--gapBelowHeader))); overflow:auto; display:block; }
+  /* ===== Debajo de la franja fija =====
+     Estos valores NO son fijos: el JS calcula el padding real,
+     para que la caja de texto JAMÁS quede detrás del video. */
+  main{ padding-top: 1px; }         /* será actualizado por JS */
+  #scrollWrap{ height: 1px; }       /* será actualizado por JS */
 
   /* RESPUESTAS / controles */
   #pane{ padding:14px 16px; }
   .controls{ margin-bottom:10px; }
   .controls .row{
-    display:flex; flex-wrap:wrap; gap:8px; justify-content:center !important; align-items:center; width:100%;
+    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; width:100%;
   }
 
   /* Caja de texto: 2 líneas aprox */
@@ -107,7 +108,7 @@
 </head>
 <body>
 
-<header>
+<header id="hdr">
   <div class="topbar">
     <a id="histLink" href="/historial.html" title="Ver historial de sesiones">Historial</a>
     <img src="/left.png" alt="left">
@@ -120,7 +121,7 @@
   </div>
 </header>
 
-<main>
+<main id="main">
   <div id="scrollWrap">
     <section id="pane">
       <div class="controls">
@@ -162,71 +163,93 @@
 </main>
 
 <script>
-/* ========= Warmup ========= */
+/* ============== Ajuste dinámico debajo del video ================= */
+function resizeLayout(){
+  const hdr = document.getElementById("hdr");
+  const main = document.getElementById("main");
+  const wrap = document.getElementById("scrollWrap");
+
+  const headerPx = hdr.offsetHeight;                  // alto real del header (video + logos)
+  const gap = parseInt(getComputedStyle(document.documentElement)
+              .getPropertyValue('--gapBelowHeader')) || 24;
+
+  const padTop = headerPx + gap;                      // colchón real
+  main.style.paddingTop = padTop + "px";
+
+  const vh = window.innerHeight;
+  wrap.style.height = Math.max(200, vh - padTop) + "px";
+}
+window.addEventListener("load", resizeLayout);
+window.addEventListener("resize", resizeLayout);
+
+/* ============== Warmup backend ============== */
 window.addEventListener("load", ()=>{
   fetch("/api/answer?flush=1&q=__warmup").catch(()=>{});
 });
 
-/* ========= Util: esperar voces del sistema ========= */
+/* ============== Voces: priorizar mujer en español ============== */
 function ensureVoicesReady(timeoutMs=2000){
   return new Promise(resolve=>{
     const start=Date.now();
-    const tick=()=>{
-      const vs=speechSynthesis.getVoices();
-      if(vs && vs.length){ resolve(vs); return; }
-      if(Date.now()-start>timeoutMs){ resolve(vs||[]); return; }
-      setTimeout(tick, 100);
-    };
+    const tick=()=>{ const vs=speechSynthesis.getVoices(); if(vs && vs.length){ resolve(vs); return; }
+      if(Date.now()-start>timeoutMs){ resolve(vs||[]); return; } setTimeout(tick, 100); };
     tick();
   });
 }
 
-/* ========= Voz femenina fija ========= */
-const FEMALE_PRIORITY=[
-  "Microsoft Sabina Online (Natural) - Spanish (Mexico)","Microsoft Dalia Online (Natural) - Spanish (Mexico)",
-  "Microsoft Helena Online (Natural) - Spanish (Spain)","Microsoft Camila Online (Natural) - Spanish (Colombia)",
-  "Microsoft Lorena Online (Natural) - Spanish (Mexico)","Google español de Estados Unidos","Google español",
-  "Sabina","Dalia","Helena","Camila","Ana","Lucia","Isabel"
-];
 const VOICE_KEY="voz-femenina-preferida";
-function pickFemaleVoice(){
-  const all=speechSynthesis.getVoices();
-  const saved=localStorage.getItem(VOICE_KEY);
-  if(saved){ const v=all.find(x=>x.name===saved); if(v) return v; localStorage.removeItem(VOICE_KEY); }
-  for(const n of FEMALE_PRIORITY){ const v=all.find(x=>x.name===n); if(v){ localStorage.setItem(VOICE_KEY,v.name); return v; } }
-  const v=all.find(x=>/es/i.test(x.lang)); if(v){ localStorage.setItem(VOICE_KEY,v.name); return v; }
-  return null;
-}
-speechSynthesis.onvoiceschanged=()=>{ pickFemaleVoice(); };
+/* nombres femeninos conocidos y exclusión de masculinos */
+const FEMALE_PREF = [
+  "Microsoft Sabina Online (Natural) - Spanish (Mexico)",
+  "Microsoft Dalia Online (Natural) - Spanish (Mexico)",
+  "Microsoft Helena Online (Natural) - Spanish (Spain)",
+  "Microsoft Camila Online (Natural) - Spanish (Colombia)",
+  "Microsoft Lorena Online (Natural) - Spanish (Mexico)",
+  "Google español de Estados Unidos","Google español",
+  "Sabina","Dalia","Helena","Camila","Lucia","Isabel","Ana","Paulina","Mónica","Olivia","Laura","Elena"
+];
+const MALE_HINTS = /diego|jorge|carlos|miguel|pablo|javier|andrés|luis|sergio|josé|manuel|enrique|alejandro/i;
 
+function pickFemaleVoice(){
+  const all = speechSynthesis.getVoices() || [];
+
+  const saved = localStorage.getItem(VOICE_KEY);
+  if(saved){
+    const v = all.find(x=>x.name===saved);
+    if(v) return v;
+    localStorage.removeItem(VOICE_KEY);
+  }
+
+  for(const n of FEMALE_PREF){
+    const v = all.find(x=>x.name===n);
+    if(v){ localStorage.setItem(VOICE_KEY, v.name); return v; }
+  }
+
+  // voces en español que NO parezcan masculinas
+  const esFem = all.find(v => /^(es|es-)/i.test(v.lang||"") && !MALE_HINTS.test(v.name||""));
+  if(esFem){ localStorage.setItem(VOICE_KEY, esFem.name); return esFem; }
+
+  // cualquier español
+  const esAny = all.find(v => /^(es|es-)/i.test(v.lang||""));
+  if(esAny){ localStorage.setItem(VOICE_KEY, esAny.name); return esAny; }
+
+  // fallback
+  return all[0] || null;
+}
+speechSynthesis.onvoiceschanged = ()=>{ pickFemaleVoice(); };
+
+/* ============== Estado voz/video ============== */
 const vid=document.getElementById("vid");
 let speaking=false, paused=false;
 let lastAnswer=null;
 
-/* ========= Convertir tablas/listas a texto (desde objeto o DOM) ========= */
-function tablesObjToText(tables){
-  if(!tables?.length) return "";
-  let out="";
-  tables.forEach(t=>{
-    out+=` Tabla: ${(t.title||"Tabla")}. `;
-    const cols=t.columns?.length?t.columns:[];
-    if(cols.length) out+=` Columnas: ${cols.join(", ")}. `;
-    (t.rows||[]).forEach((row,i)=>{
-      const arr=Array.isArray(row)?row:[row];
-      out+=` Fila ${i+1}: ${arr.join(", ")}.`;
-    });
-  });
-  return out.trim();
+function stopAllSpeechAndVideo(){
+  try{ speechSynthesis.cancel(); }catch{}
+  try{ vid.loop=false; vid.pause(); }catch{}
+  speaking=false; paused=false;
 }
-function listsObjToText(lists){
-  if(!lists?.length) return "";
-  let out="";
-  lists.forEach(L=>{
-    if(L.title) out+=` Lista: ${L.title}. `;
-    (L.items||[]).forEach((it,i)=> out+=` Ítem ${i+1}: ${it}.`);
-  });
-  return out.trim();
-}
+
+/* Convertir tablas/listas a texto desde DOM (por si backend no trae) */
 function tablesDOMToText(){
   const tbls=document.querySelectorAll("#tables table");
   let out="";
@@ -257,14 +280,7 @@ function listsDOMToText(){
   return out.trim();
 }
 
-/* ========= Detener TODO (voz + video) ========= */
-function stopAllSpeechAndVideo(){
-  try{ speechSynthesis.cancel(); }catch{}
-  try{ vid.loop=false; vid.pause(); }catch{}
-  speaking=false; paused=false;
-}
-
-/* ========= Hablar toda la respuesta ========= */
+/* Hablar todo: general + listas + tablas */
 async function speakFull(ans){
   await ensureVoicesReady();
   const v=pickFemaleVoice();
@@ -276,9 +292,9 @@ async function speakFull(ans){
   stopAllSpeechAndVideo();
 
   const general=ans?.general || document.getElementById("general").innerText || "";
-  const t1=tablesObjToText(ans?.tables||[]); const l1=listsObjToText(ans?.lists||[]);
-  const t2=t1 || tablesDOMToText(); const l2=l1 || listsDOMToText();
-  const text=[general, l2, t2].filter(Boolean).join(" ").trim();
+  const listsTxt=listsDOMToText();
+  const tablesTxt=tablesDOMToText();
+  const text=[general, listsTxt, tablesTxt].filter(Boolean).join(" ").trim();
   if(!text) return;
 
   const u=new SpeechSynthesisUtterance(text);
@@ -291,29 +307,15 @@ async function speakFull(ans){
   speechSynthesis.speak(u);
 }
 
-/* Botón ⏯ Voz/Video */
+/* Botones de voz/video */
 document.getElementById("toggleVV").onclick=()=>{
-  if(!speaking){
-    if(lastAnswer){ speakFull(lastAnswer); }
-    return;
-  }
-  if(!paused){
-    try{ speechSynthesis.pause(); }catch{}
-    try{ vid.pause(); }catch{}
-    paused=true;
-  }else{
-    try{ speechSynthesis.resume(); }catch{}
-    try{ vid.play().catch(()=>{}); }catch{}
-    paused=false;
-  }
+  if(!speaking){ if(lastAnswer){ speakFull(lastAnswer); } return; }
+  if(!paused){ try{ speechSynthesis.pause(); }catch{} try{ vid.pause(); }catch{} paused=true; }
+  else{ try{ speechSynthesis.resume(); }catch{} try{ vid.play().catch(()=>{});}catch{} paused=false; }
 };
+document.getElementById("replay").onclick=()=>{ if(lastAnswer) speakFull(lastAnswer); };
 
-/* Reproducir nuevamente toda la respuesta */
-document.getElementById("replay").onclick=()=>{
-  if(lastAnswer){ speakFull(lastAnswer); }
-};
-
-/* ========= Dictado ========= */
+/* ============== Dictado ============== */
 const q=document.getElementById("q");
 let rec,recOn=false;
 document.getElementById("mic").onclick=()=>{
@@ -327,7 +329,7 @@ document.getElementById("mic").onclick=()=>{
   } else { rec.stop(); recOn=false; mic.classList.remove("muted"); }
 };
 
-/* ========= Sesión local ========= */
+/* ============== Sesión local ============== */
 const $gen=document.getElementById("general");
 const $lists=document.getElementById("lists");
 const $tables=document.getElementById("tables");
@@ -340,7 +342,7 @@ const storeKey="sesiones-v1";
 function loadAllSessions(){ try{ return JSON.parse(localStorage.getItem(storeKey)||"[]"); }catch{ return []; } }
 function saveSession(){ const all=loadAllSessions(); const i=all.findIndex(s=>s.id===session.id); if(i>=0) all[i]=session; else all.unshift(session); localStorage.setItem(storeKey, JSON.stringify(all)); }
 
-/* ========= Render ========= */
+/* Render helpers */
 function renderLists(lists){ $lists.innerHTML=""; if(!lists?.length) return;
   lists.forEach(L=>{ const wrap=document.createElement("div");
     if(L.title){ const h=document.createElement("h3"); h.textContent=L.title; wrap.appendChild(h); }
@@ -358,7 +360,7 @@ function renderTables(tables){ $tables.innerHTML=""; (tables||[]).forEach(t=>{
   table.appendChild(thead); table.appendChild(tbody); $tables.appendChild(title); $tables.appendChild(table); });
 }
 
-/* ========= API ========= */
+/* ============== API ============== */
 async function callAnswerAPI(prompt){
   try{
     const res=await fetch("/api/answer",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ question: prompt }) });
@@ -372,7 +374,7 @@ async function callAnswerAPI(prompt){
   }
 }
 
-/* ========= Enviar ========= */
+/* ============== Enviar ============== */
 document.getElementById("send").onclick=async()=>{
   const prompt=(q.value||"").replaceAll("*","");
   if(!prompt.trim()){ q.focus(); return; }
@@ -380,7 +382,7 @@ document.getElementById("send").onclick=async()=>{
   stopAllSpeechAndVideo();
 
   document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=true; el.style.opacity=0.7; });
-  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-9</span>`;
+  $status.innerHTML=`Procesando… <span class="badge gpt">v-hotfix-10</span>`;
   $note.textContent=""; $gen.innerHTML="<em>Analizando…</em>"; $lists.innerHTML=""; $tables.innerHTML="";
   const t0=performance.now();
 
@@ -392,15 +394,14 @@ document.getElementById("send").onclick=async()=>{
   if(!r?.ok){ $gen.textContent="Hubo un problema al analizar: "+(r?.error||"desconocido"); $status.textContent="";
     document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=false; el.style.opacity=1; }); return; }
 
-  const ans=r.answer||{};
-  lastAnswer=ans;
+  const ans=r.answer||{}; lastAnswer=ans;
 
   $gen.innerHTML=(ans.general||"").replace(/\n/g,"<br>");
   renderLists(ans.lists||[]);
   renderTables(ans.tables||[]);
 
   const ms=Math.max(1,Math.round(performance.now()-t0));
-  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-9</span>`;
+  $status.innerHTML=`Listo en ${ms/1000}s <span class="badge gpt">v-hotfix-10</span>`;
 
   speakFull(ans);
 
@@ -410,14 +411,13 @@ document.getElementById("send").onclick=async()=>{
   document.querySelectorAll("button,select,textarea").forEach(el=>{ el.disabled=false; el.style.opacity=1; });
 };
 
-/* ========= Limpiar / nueva sesión ========= */
+/* Limpiar / nueva sesión */
 document.getElementById("clear").onclick=()=>{
   stopAllSpeechAndVideo();
   $gen.innerHTML=""; $lists.innerHTML=""; $tables.innerHTML="";
   q.value=""; $note.textContent="";
-  $status.innerHTML=`Listo <span class="badge gpt">v-hotfix-9</span>`;
+  $status.innerHTML=`Listo <span class="badge gpt">v-hotfix-10</span>`;
 };
-
 document.getElementById("new").onclick=()=>{
   stopAllSpeechAndVideo();
   sessionId="s-"+Date.now(); session={id:sessionId, startedAt:new Date().toISOString(), items:[]};
@@ -426,7 +426,7 @@ document.getElementById("new").onclick=()=>{
   alert("Nueva sesión creada.");
 };
 
-/* ========= Exportación directa ========= */
+/* Exportación inmediata */
 const vidEl=document.getElementById("vid");
 function sessionToHTML(sess){
   const headerThumbs=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
